@@ -1,0 +1,109 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model TypeDocumentIdentification {
+  id   Int    @id @default(autoincrement())
+  name String @unique
+  code String @unique
+  @@map("type_document_identifications")
+}
+
+model Gender {
+  id   Int    @id @default(autoincrement())
+  name String @unique
+  code String @unique
+  @@map("genders")
+}
+
+model User {
+  id       Int    @id @default(autoincrement())
+  email    String @unique
+  password String
+  name     String
+
+  roleId Int?
+  role   Role? @relation(fields: [roleId], references: [id])
+
+  loginAudits LoginAudit[]
+
+  isActive Boolean @default(true)
+
+  @@map("users")
+}
+
+model Role {
+  id          Int     @id @default(autoincrement())
+  name        String  @unique
+  description String?
+  
+  isActive    Boolean @default(true)
+
+  rolePermissions RolePermission[]
+  users           User[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          Int     @id @default(autoincrement())
+  name        String  @unique
+  description String?
+  
+  isActive    Boolean @default(true)
+
+  rolePermissions RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       Int
+  permissionId Int
+
+  role       Role       @relation(fields: [roleId], references: [id])
+  permission Permission @relation(fields: [permissionId], references: [id])
+
+  isActive Boolean @default(true)
+
+  @@id([roleId, permissionId]) // Clave primaria compuesta
+  @@map("role_permissions")
+}
+
+model LoginAudit {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  sessionId String   @default("unknown")
+  ip        String
+  device    String // user-agent
+  location  String?
+  timestamp DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("logins")
+}
+
+model Change {
+  id        Int      @id @default(autoincrement())
+  model     String
+  action    String
+  before    Json?
+  after     Json?
+  timestamp DateTime @default(now())
+  userId    Int
+
+  @@map("changes")
+}
+
