@@ -5,10 +5,10 @@ export class PaginationDto {
   @Type(() => Number) // Primero transforma
   @IsOptional()
   @IsPositive()
-  page?: number = 1;
+  page?: number;
 
   @Type(() => Number) // Primero transforma
   @IsOptional()
   @IsPositive()
-  limit?: number = 10;
+  limit?: number;
 }

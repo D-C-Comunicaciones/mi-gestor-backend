@@ -17,14 +17,6 @@ interface EnvVars {
     // SERVER
     APP_PORT: number;
 
-    // EMAIL
-    MAIL_HOST: string;
-    MAIL_PORT: number;
-    MAIL_USER: string;
-    MAIL_PASS: string;
-    MAIL_FROM?: string;
-    FRONTEND_URL?: string;
-
     // JWT - ✅ Cambiar a string
     JWT_SECRET: string;
     BCRYPT_SALT_ROUNDS: string;
@@ -38,6 +30,8 @@ interface EnvVars {
     APP_REDIS_PASSWORD: string;
 
     APP_IP_GEOLOCATION: string;
+
+    FRONTEND_URL: string;
 }
 
 const envVarsSchema = joi.object({
@@ -60,14 +54,6 @@ const envVarsSchema = joi.object({
 
     // ENVIRONMENT
     NODE_ENV: joi.string().valid('development', 'production', 'test').default('development'),
-
-    // EMAIL
-    MAIL_HOST: joi.string().required(),
-    MAIL_PORT: joi.number().default(587),
-    MAIL_USER: joi.string().email().required(),
-    MAIL_PASS: joi.string().required(),
-    MAIL_FROM: joi.string().email().optional(),
-    FRONTEND_URL: joi.string().uri().optional(),
 
     // JWT - ✅ Corregir validaciones
     JWT_SECRET: joi.string().required(),
@@ -109,14 +95,6 @@ export const envs = {
 
     // ENVIRONMENT
     environment: envVars.APP_ENVIRONMENT,
-    mail: {
-        host: envVars.MAIL_HOST,
-        port: envVars.MAIL_PORT,
-        user: envVars.MAIL_USER,
-        pass: envVars.MAIL_PASS,
-        from: envVars.MAIL_FROM || `${envVars.MAIL_USER}`,
-        frontendUrl: envVars.FRONTEND_URL || 'http://localhost:3000',
-    },
 
     // JWT - ✅ Usar string consistentemente
     jwtSecret: envVars.JWT_SECRET,

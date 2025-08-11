@@ -18,15 +18,21 @@
     "strictBindCallApply": false,
     "noFallthroughCasesInSwitch": false,
     "paths": {
-      "@config/*": ["src/config/*"],
-      "@components/*": ["src/components/*"],
-      "@modules/*": ["src/modules/*"],
       "@infraestructure/*": ["src/infraestructure/*"],
-      "@prisma/*": ["src/infraestructure/prisma/*"],
-      "@redis/*": ["src/infraestructure/redis/*"],
+      "@modules/*": ["src/modules/*"],
       "@common/*": ["src/common/*"],
+      "@config/*": ["src/config/*"],
       "@auth/*": ["src/modules/auth/*"],
+      "@collectors/*": ["src/modules/collectors/*"],
+      "@clients/*": ["src/modules/clients/*"],
+      "@permissions/*": ["src/modules/permissions/*"],
+      "@roles/*": ["src/modules/roles/*"],
       "@users/*": ["src/modules/users/*"],
+      "@types/*": ["src/types/*"],
+      "@prisma/*": ["src/infraestructure/prisma/*"],
+      "@redis/*": ["src/infraestructure/redis/*"]
     }
-  }
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
 }

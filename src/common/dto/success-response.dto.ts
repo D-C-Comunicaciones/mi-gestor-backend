@@ -1,7 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 
 export class SuccessResponseDto<T> {
-  @ApiProperty({ example: 'Estudiante actualizado correctamente' })
+  @ApiProperty({ example: 'Crédito actualizado correctamente' })
   message: string;
 
   @ApiProperty({ example: 200 })

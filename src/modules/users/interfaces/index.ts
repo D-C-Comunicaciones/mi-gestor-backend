@@ -1,1 +1,1 @@
-export * from './type-user-interface'
+export * from './user-response.interface';

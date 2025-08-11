@@ -1,5 +1,6 @@
-import { ResponseRoleDto } from '../dto';
 import { ResponsePermissionDto } from '@permissions/dto';
+import { ResponseRoleDto } from '../dto';
+
 export interface RoleResponse {
     customMessage: string;
     role: ResponseRoleDto;
