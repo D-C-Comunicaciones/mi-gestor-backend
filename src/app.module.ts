@@ -4,6 +4,8 @@ import { AppService } from './app.service';
 import { ClsModule } from 'nestjs-cls';
 import { CollectorsModule } from '@modules/collectors/collectors.module';
 import { AuthModule } from '@modules/auth/auth.module';
+import { ChangesModule } from './modules/changes/changes.module';
+import { CustomersModule } from '@modules/customers/customers.module';
 
 @Module({
   imports: [
@@ -13,6 +15,8 @@ import { AuthModule } from '@modules/auth/auth.module';
     }),
     AuthModule,
     CollectorsModule,
+    CustomersModule,
+    ChangesModule,
   ],
   controllers: [AppController],
   providers: [AppService],

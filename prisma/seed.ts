@@ -4,7 +4,43 @@ import { Logger } from '@nestjs/common';
 
 const prisma = new PrismaClient();
 
+// Función para limpiar todas las tablas y reiniciar IDs
+async function resetDatabase() {
+  const dbUrl = process.env.DATABASE_URL || '';
+  const isPostgres = dbUrl.startsWith('postgres://') || dbUrl.startsWith('postgresql://');
+  const isMySQL = dbUrl.startsWith('mysql://');
+
+  if (isPostgres) {
+    // Obtener todas las tablas públicas excepto _prisma_migrations
+    const tables: Array<{ tablename: string }> = await prisma.$queryRawUnsafe(
+      `SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename NOT IN ('_prisma_migrations');`
+    );
+
+    if (tables.length > 0) {
+      const tableList = tables.map(t => `"${t.tablename}"`).join(', ');
+      // Truncar y reiniciar identidades en cascada
+      await prisma.$executeRawUnsafe(`TRUNCATE TABLE ${tableList} RESTART IDENTITY CASCADE;`);
+    }
+  } else if (isMySQL) {
+    // Obtener tablas (excepto _prisma_migrations)
+    const tables: Array<{ TABLE_NAME: string }> = await prisma.$queryRawUnsafe(
+      `SELECT TABLE_NAME FROM information_schema.tables WHERE table_schema = DATABASE() AND TABLE_NAME <> '_prisma_migrations';`
+    );
+
+    await prisma.$executeRawUnsafe(`SET FOREIGN_KEY_CHECKS = 0;`);
+    for (const { TABLE_NAME } of tables) {
+      await prisma.$executeRawUnsafe(`TRUNCATE TABLE \`${TABLE_NAME}\`;`);
+    }
+    await prisma.$executeRawUnsafe(`SET FOREIGN_KEY_CHECKS = 1;`);
+  } else {
+    console.warn('resetDatabase: Motor no detectado (PostgreSQL/MySQL). Operación omitida.');
+  }
+}
+
 async function main() {
+  // Limpiar base antes del seed
+  await resetDatabase();
+
   // Seed Zones
   await prisma.zone.createMany({
     data: [
@@ -46,6 +82,9 @@ async function main() {
     data: [
       { name: 'all.permissions', description: 'Permiso total para admin' },
       { name: 'create.payments', description: 'Permiso para crear pagos' },
+      { name: 'create.collectors', description: 'Permiso para crear cobradores' },
+      { name: 'view.collectors', description: 'Permiso para ver cobradores' },
+      { name: 'update.collectors', description: 'Permiso para actualizar cobradores' },
     ],
   });
 
@@ -76,39 +115,43 @@ async function main() {
   }
 
   // Seed Users (passwords hashed)
-  const hashedPasswordAdmin = await bcrypt.hash('AdminPass123', 10);
-  const hashedPasswordCollector = await bcrypt.hash('CollectorPass123', 10);
+  const hashedPasswordAdmin = await bcrypt.hash('password123', 10);
+  const hashedPasswordCollector = await bcrypt.hash('password123', 10);
 
   await prisma.user.createMany({
     data: [
-      { email: 'admin@example.com', password: hashedPasswordAdmin, name: 'Admin User', roleId: adminRole?.id },
-      { email: 'collector@example.com', password: hashedPasswordCollector, name: 'Collector User', roleId: collectorRole?.id },
+      { email: 'admin@dcmigestor.co', password: hashedPasswordAdmin, name: 'Admin User', roleId: adminRole?.id },
+      { email: 'collector@dcmigestor.co', password: hashedPasswordCollector, name: 'Collector User', roleId: collectorRole?.id },
     ],
   });
 
-  // Seed Customers
-  const typeDocs = await prisma.typeDocumentIdentification.findMany();
+  // Seed Customers (schema actualizado: firstName, lastName, typeDocumentIdentificationId, birthDate, documentNumber:int)
+  const docTypes = await prisma.typeDocumentIdentification.findMany();
   const genders = await prisma.gender.findMany();
   const zones = await prisma.zone.findMany();
 
   await prisma.customer.createMany({
     data: [
       {
-        name: 'Juan Pérez',
+        firstName: 'Juan',
+        lastName: 'Pérez',
         phone: '3001234567',
         address: 'Calle 123 #45-67',
-        typeDocumentId: typeDocs[0].id,
-        documentNumber: '1234567890',
+        typeDocumentIdentificationId: docTypes[0].id,
+        documentNumber: 1234567890,
         genderId: genders[0].id,
+        birthDate: new Date('1990-05-15'),
         zoneId: zones[0].id,
       },
       {
-        name: 'María Gómez',
+        firstName: 'María',
+        lastName: 'Gómez',
         phone: '3009876543',
         address: 'Carrera 45 #67-89',
-        typeDocumentId: typeDocs[1].id,
-        documentNumber: '0987654321',
+        typeDocumentIdentificationId: docTypes[1].id,
+        documentNumber: 987654321,
         genderId: genders[1].id,
+        birthDate: new Date('1992-09-21'),
         zoneId: zones[1].id,
       },
     ],

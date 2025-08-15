@@ -24,7 +24,7 @@
       "@config/*": ["src/config/*"],
       "@auth/*": ["src/modules/auth/*"],
       "@collectors/*": ["src/modules/collectors/*"],
-      "@clients/*": ["src/modules/clients/*"],
+      "@customers/*": ["src/modules/customers/*"],
       "@permissions/*": ["src/modules/permissions/*"],
       "@roles/*": ["src/modules/roles/*"],
       "@users/*": ["src/modules/users/*"],

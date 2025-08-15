@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, IsOptional, IsInt, IsBoolean, IsPhoneNumber, IsDateString, IsEmail } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsInt, IsPhoneNumber, IsDateString, IsEmail } from 'class-validator';
 
 export class CreateCollectorDto {
   @ApiProperty({ example: 'Juan', description: 'Nombre del cobrador' })
@@ -16,11 +16,11 @@ export class CreateCollectorDto {
   @IsInt()
   typeDocumentIdentificationId: number;
 
-  @ApiProperty({ example: '1234567890', description: 'Número de documento del cobrador' })
-  @IsString()
-  documentNumber: string;
+  @ApiProperty({ example: 1234567890, description: 'Número de documento (único)' })
+  @IsInt()
+  documentNumber: number;
 
-  @ApiProperty({ example: '1990-01-01', description: 'Fecha de nacimiento del cobrador' })
+  @ApiProperty({ example: '1990-05-14', description: 'Fecha de nacimiento (YYYY-MM-DD)' })
   @IsDateString()
   birthDate: string;
 
@@ -28,16 +28,16 @@ export class CreateCollectorDto {
   @IsInt()
   genderId: number;
 
-  @ApiProperty({ example: '+573001234567', description: 'Número de teléfono del cobrador (formato internacional CO)' })
+  @ApiProperty({ example: '+573001234567', description: 'Teléfono en formato internacional' })
   @IsString()
   @IsPhoneNumber('CO')
   phone: string;
 
-  @ApiProperty({ example: 'Calle 111#16-21', description: 'Dirección del estudiante' })
+  @ApiProperty({ example: 'Calle 111#16-21', description: 'Dirección de residencia' })
   @IsString()
   address: string;
 
-  @ApiProperty({ example: 'cobrador1@migestor.com', description: 'Correo electrónico del cobrador' })
+  @ApiProperty({ example: 'cobrador1@migestor.com', description: 'Email único del cobrador' })
   @IsEmail()
   email: string;
 
@@ -46,9 +46,12 @@ export class CreateCollectorDto {
   @IsInt()
   zoneId?: number;
 
-  @ApiPropertyOptional({ example: 5, description: 'ID del usuario asociado (opcional)' })
+  @ApiPropertyOptional({ example: true, description: 'Estado inicial (por defecto true)' })
+  @IsOptional()
+  isActive?: boolean;
+
+  @ApiPropertyOptional({ example: 5, description: 'ID de usuario (normalmente se genera automáticamente)' })
   @IsOptional()
   @IsInt()
   userId?: number;
-
 }

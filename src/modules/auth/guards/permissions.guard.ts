@@ -59,11 +59,13 @@ export class PermissionsGuard implements CanActivate {
 
 
       //permissions messages
-      'create permissions': 'crear permisos',
-      'list permissions': 'listar permisos',
-      'view permission': 'ver información de permisos',
-      'update permissions': 'actualizar permisos',
-      'change permissions status': 'cambiar estado de permisos',
+      'view.collectors': 'ver información de cobradores',
+      'create.collectors': 'crear cobradores',
+      'update.collectors': 'actualizar cobradores',
+      'view.customers': 'ver información de clientes',
+      'create.customers': 'crear clientes',
+      'update.customers': 'actualizar clientes',
+      'change.customers.status': 'cambiar estado de clientes',
 
       // assign/revoke roles to users
       'assign roles to users': 'asignar roles a usuarios',

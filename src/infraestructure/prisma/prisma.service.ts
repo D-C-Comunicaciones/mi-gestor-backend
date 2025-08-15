@@ -15,7 +15,6 @@ export class PrismaService
 
       // Excluir modelos que no se desean auditar
       const excludedModels = ['Change', 'LoginAudit'];
-
       if (
         !model ||
         excludedModels.includes(model) ||
@@ -24,10 +23,8 @@ export class PrismaService
         return next(params);
       }
 
-      let before: Prisma.InputJsonValue | typeof Prisma.JsonNull =
-        Prisma.JsonNull;
-      let after: Prisma.InputJsonValue | typeof Prisma.JsonNull =
-        Prisma.JsonNull;
+      let before: Prisma.InputJsonValue | typeof Prisma.JsonNull = Prisma.JsonNull;
+      let after: Prisma.InputJsonValue | typeof Prisma.JsonNull = Prisma.JsonNull;
 
       // Obtener estado previo para update y delete
       if (['update', 'delete'].includes(action)) {
@@ -36,10 +33,7 @@ export class PrismaService
             (await this[model].findUnique({ where: args.where })) ??
             Prisma.JsonNull;
         } catch (err) {
-          console.warn(
-            `[AUDIT] Error al obtener estado anterior de ${model}:`,
-            err,
-          );
+          console.warn(`[AUDIT] Error al obtener estado anterior de ${model}:`, err);
         }
       }
 
@@ -50,15 +44,29 @@ export class PrismaService
         after = result ?? Prisma.JsonNull;
       }
 
-      // Obtener userId del contexto CLS
-      let userId = this.cls.get('userId');
-      if (!userId) {
-        userId = 1; // ✅ asigna por defecto
+      // Determinar modelId
+      const extractId = (obj: any): number | null =>
+        obj && typeof obj.id === 'number' ? obj.id : null;
+
+      let recordId: number | null = null;
+      if (action === 'create' || action === 'update') {
+        recordId = extractId(result) ?? extractId(args?.where) ?? null;
+      } else if (action === 'delete') {
+        recordId =
+          extractId(before) ??
+          extractId(args?.where) ??
+          null;
       }
+
+      // userId desde CLS (fallback 1)
+      let userId = this.cls.get('userId');
+      if (!userId) userId = 1;
+
       try {
         await this.change.create({
           data: {
             model,
+            modelId: recordId ?? 0, // 0 si no se pudo determinar
             action,
             before,
             after,
