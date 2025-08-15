@@ -1,0 +1,31 @@
+version: "3.9"
+
+services:
+  api:
+    build: .
+    container_name: mi-gestor-api
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+    # Ya no exponemos 3000 públicamente; acceso interno solo para caddy
+    command: sh -c "npx prisma migrate deploy && node dist/main"
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: mi-gestor-caddy
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:
