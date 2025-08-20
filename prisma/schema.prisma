@@ -282,23 +282,23 @@ model Loan {
   customerId Int // FK al customer propietario del crédito
   customer   Customer @relation(fields: [customerId], references: [id])
 
-  loanAmount         Decimal          @db.Decimal(12, 2) // Monto prestado original (capital inicial)
-  remainingBalance   Decimal          @db.Decimal(12, 2) // Saldo actual restante (se reduce al aplicar principal)
+  loanAmount         Decimal  @db.Decimal(10, 0) // Monto prestado original (capital inicial)
+  remainingBalance   Decimal  @db.Decimal(10, 0) // Saldo actual restante (se reduce al aplicar principal)
   interestRateId     Int // Tasa de interés (ej. 0.0500 => 5% anual o según convención)
-  paymentAmount      Decimal?         @db.Decimal(12, 2) // Cuota fija (si aplica) — puede ser null para interés-only
+  paymentAmount      Decimal? @db.Decimal(10, 0) // Cuota fija (si aplica) — puede ser null para interés-only
   termId             Int
   paymentFrequencyId Int // FK frecuencia de pago (diario, semanal...)
   loanTypeId         Int // FK al tipo de crédito (cuota fija vs interés mensual)
   loanStatusId       Int // FK estado (ACTIVO, CANCELADO...)
 
-  interestRate       InterestRate     @relation(fields: [interestRateId], references: [id])
-  loanType           LoanType         @relation(fields: [loanTypeId], references: [id])
-  loanStatus         LoanStatus       @relation(fields: [loanStatusId], references: [id])
-  paymentFrequency   PaymentFrequency @relation(fields: [paymentFrequencyId], references: [id])
-  term               Term             @relation(fields: [termId], references: [id])
+  interestRate     InterestRate     @relation(fields: [interestRateId], references: [id])
+  loanType         LoanType         @relation(fields: [loanTypeId], references: [id])
+  loanStatus       LoanStatus       @relation(fields: [loanStatusId], references: [id])
+  paymentFrequency PaymentFrequency @relation(fields: [paymentFrequencyId], references: [id])
+  term             Term             @relation(fields: [termId], references: [id])
 
-  startDate   DateTime // Fecha de inicio del crédito
-  nextDueDate DateTime? // Próxima fecha esperada de pago (actualizable por la lógica)
+  startDate   DateTime  @db.Date // Fecha de inicio del crédito
+  nextDueDate DateTime? @db.Date // Próxima fecha esperada de pago (actualizable por la lógica)
   isActive    Boolean   @default(true) // Soft-delete / activo
 
   installments         Installment[] // Cronograma de cuotas generadas
@@ -326,8 +326,8 @@ model InterestRate {
 }
 
 model Term {
-  id    Int     @id @default(autoincrement()) // PK
-  value Int     // Número de cuotas/plazos (si aplica)
+  id    Int    @id @default(autoincrement()) // PK
+  value Int // Número de cuotas/plazos (si aplica)
   loan  Loan[]
 
   @@index([value])
@@ -342,11 +342,11 @@ model Installment {
   loanId         Int // FK al crédito
   loan           Loan      @relation(fields: [loanId], references: [id])
   sequence       Int // Número de cuota en el cronograma (1..N)
-  dueDate        DateTime // Fecha de vencimiento de esta cuota
-  capitalAmount  Decimal   @db.Decimal(12, 2) // Porción de capital esperada
-  interestAmount Decimal   @db.Decimal(12, 2) // Porción de interés esperada
-  totalAmount    Decimal   @db.Decimal(12, 2) // capitalAmount + interestAmount (valor esperado)
-  paidAmount     Decimal   @default(0) @db.Decimal(12, 2) // Acumulado pagado contra esta cuota
+  dueDate        DateTime  @db.Date// Fecha de vencimiento de esta cuota
+  capitalAmount  Decimal   @db.Decimal(10, 0) // Porción de capital esperada
+  interestAmount Decimal   @db.Decimal(10, 0) // Porción de interés esperada
+  totalAmount    Decimal   @db.Decimal(10, 0) // capitalAmount + interestAmount (valor esperado)
+  paidAmount     Decimal   @default(0) @db.Decimal(10, 0) // Acumulado pagado contra esta cuota
   isPaid         Boolean   @default(false) // Si la cuota está completamente pagada
   isActive       Boolean   @default(true) // Activación de la cuota (soft delete)
   paidAt         DateTime? // Fecha en la que se completó el pago total de la cuota
@@ -366,7 +366,7 @@ model Payment {
   installmentId Int? // FK opcional a cuota si el pago se aplica a una cuota específica
   installment   Installment? @relation(fields: [installmentId], references: [id])
 
-  amount        Decimal     @db.Decimal(12, 2) // Monto total del registro de pago
+  amount        Decimal     @db.Decimal(10, 0) // Monto total del registro de pago
   paymentTypeId Int
   paymentType   PaymentType @relation(fields: [paymentTypeId], references: [id]) // Tipo (capital, interés, mora...)
 
@@ -376,9 +376,9 @@ model Payment {
   date DateTime @default(now()) // Fecha en que se registró el pago
 
   // DESGLOSE: resultados de la lógica al aplicar el pago
-  appliedToCapital  Decimal @default("0.00") @db.Decimal(12, 2) // Parte aplicada a capital (debe reducir remainingBalance)
-  appliedToInterest Decimal @default("0.00") @db.Decimal(12, 2) // Parte aplicada a intereses (registro para reporting)
-  appliedToLateFee  Decimal @default("0.00") @db.Decimal(12, 2) // Parte aplicada a mora (si procede)
+  appliedToCapital  Decimal @default("0.00") @db.Decimal(10, 0) // Parte aplicada a capital (debe reducir remainingBalance)
+  appliedToInterest Decimal @default("0.00") @db.Decimal(10, 0) // Parte aplicada a intereses (registro para reporting)
+  appliedToLateFee  Decimal @default("0.00") @db.Decimal(10, 0) // Parte aplicada a mora (si procede)
 
   recordedByUserId Int? // Usuario que registró este pago (audit)
   recordedByUser   User? @relation("PaymentsRecordedByUser", fields: [recordedByUserId], references: [id])
@@ -398,10 +398,10 @@ model Refinancing {
   newLoan        Loan? @relation("NewLoan", fields: [newLoanId], references: [id])
 
   // Campos que registran el estado antes y después (útiles para trazabilidad y reporting)
-  oldPrincipal    Decimal  @db.Decimal(12, 2) // Principal antes del refinanciamiento
-  oldRemaining    Decimal  @db.Decimal(12, 2) // Saldo restante antes
-  newPrincipal    Decimal  @db.Decimal(12, 2) // Nuevo principal luego del ajuste
-  newRemaining    Decimal  @db.Decimal(12, 2) // Nuevo saldo luego del ajuste
+  oldPrincipal    Decimal  @db.Decimal(10, 0) // Principal antes del refinanciamiento
+  oldRemaining    Decimal  @db.Decimal(10, 0) // Saldo restante antes
+  newPrincipal    Decimal  @db.Decimal(10, 0) // Nuevo principal luego del ajuste
+  newRemaining    Decimal  @db.Decimal(10, 0) // Nuevo saldo luego del ajuste
   oldInterestRate Decimal  @db.Decimal(6, 4) // Tasa anterior
   newInterestRate Decimal  @db.Decimal(6, 4) // Tasa nueva
   date            DateTime @default(now()) // Fecha del evento de refinanciación

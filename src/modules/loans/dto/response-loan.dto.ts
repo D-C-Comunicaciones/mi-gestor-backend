@@ -1,69 +1,80 @@
-import { Expose, Transform } from 'class-transformer';
+import { Expose, Transform, Type } from 'class-transformer';
 import { format } from 'date-fns';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-
-const toTrimmedString = (value: any) => {
-  if (value == null) return value;
-  const s = value.toString();
-  return s.includes('.') ? s.replace(/\.?0+$/, '') : s;
-};
+import { ResponseInstallmentDto } from '@modules/installments/dto';
+import { ResponseCustomerDto } from '@modules/customers/dto';
 
 export class ResponseLoanDto {
   @ApiProperty({ example: 1 }) @Expose() id: number;
   @ApiProperty({ example: 3 }) @Expose() customerId: number;
-
-  @ApiProperty({ example: '1000.5' })
+  
+  @ApiProperty({ example: 1000000 }) @Expose() loanAmount: number;
+  @ApiProperty({ example: 1000000 }) @Expose() remainingBalance: number;
+  @ApiProperty({ example: 1 }) @Expose() interestRateId: number;
+  
+  @ApiProperty({ example: 10 })
   @Expose()
-  @Transform(({ obj }) => toTrimmedString(obj.loanAmount?.toString()), { toPlainOnly: true })
-  loanAmount: string;
-
-  @ApiProperty({ example: '950.25' })
+  @Transform(({ obj }) => obj.interestRate?.value)
+  interestRateValue: number;
+  
+  @ApiProperty({ example: 0 }) @Expose() paymentAmount: number;
+  @ApiProperty({ example: 1 }) @Expose() termId: number;
+  
+  @ApiProperty({ example: 6 })
   @Expose()
-  @Transform(({ obj }) => toTrimmedString(obj.remainingBalance?.toString()), { toPlainOnly: true })
-  remainingBalance: string;
-
-  @ApiProperty({ example: '12.5' })
+  @Transform(({ obj }) => obj.term?.value)
+  termValue: number;
+  
+  @ApiProperty({ example: 3 }) @Expose() paymentFrequencyId: number;
+  
+  @ApiProperty({ example: 'DIARIA' })
   @Expose()
-  @Transform(({ obj }) => toTrimmedString(obj.interestRate?.value?.toString()), { toPlainOnly: true })
-  interestRate: string;
-
-  @ApiPropertyOptional({ example: '120.75', nullable: true })
-  @Expose()
-  @Transform(({ obj }) => (obj.paymentAmount == null ? null : toTrimmedString(obj.paymentAmount.toString())), { toPlainOnly: true })
-  paymentAmount?: string | null;
-
-  @ApiPropertyOptional({ example: 12, nullable: true }) @Expose() term?: number | null;
-
-  @ApiProperty({ example: 2 }) @Expose() paymentFrequencyId: number;
+  @Transform(({ obj }) => obj.paymentFrequency?.name)
+  paymentFrequencyName: string;
+  
   @ApiProperty({ example: 1 }) @Expose() loanTypeId: number;
+  
+  @ApiProperty({ example: 'cuotas fijas' })
+  @Expose()
+  @Transform(({ obj }) => obj.loanType?.name)
+  loanTypeName: string;
+  
   @ApiProperty({ example: 1 }) @Expose() loanStatusId: number;
-
-  @ApiProperty({ example: '2025-01-10' })
+  
+  @ApiProperty({ example: 'Al día' })
   @Expose()
-  @Transform(({ value }) => (value ? format(new Date(value), 'yyyy-MM-dd') : value), { toPlainOnly: true })
-  startDate: Date;
-
-  @ApiPropertyOptional({ example: '2025-02-10', nullable: true })
+  @Transform(({ obj }) => obj.loanStatus?.name)
+  loanStatusName: string;
+  
+  @ApiProperty({ example: '2025-05-04' })
   @Expose()
-  @Transform(({ value }) => (value ? format(new Date(value), 'yyyy-MM-dd') : value), { toPlainOnly: true })
-  nextDueDate?: Date | null;
-
+  @Transform(({ value }) => value ? format(new Date(value), 'yyyy-MM-dd') : null)
+  startDate: string;
+  
+  @ApiPropertyOptional({ example: '2025-06-04', nullable: true })
+  @Expose()
+  @Transform(({ value }) => value ? format(new Date(value), 'yyyy-MM-dd') : null)
+  nextDueDate?: string;
+  
   @ApiProperty({ example: true }) @Expose() isActive: boolean;
-
-  @ApiProperty({ example: '2025-01-01 10:00:00' })
+  
+  @ApiProperty({ example: '2025-05-04 10:00:00' })
   @Expose()
-  @Transform(({ value }) => (value ? format(new Date(value), 'yyyy-MM-dd HH:mm:ss') : value), { toPlainOnly: true })
-  createdAt: Date;
-
-  @ApiProperty({ example: '2025-01-05 11:15:30' })
+  @Transform(({ value }) => value ? format(new Date(value), 'yyyy-MM-dd HH:mm:ss') : null)
+  createdAt: string;
+  
+  @ApiProperty({ example: '2025-05-04 10:00:00' })
   @Expose()
-  @Transform(({ value }) => (value ? format(new Date(value), 'yyyy-MM-dd HH:mm:ss') : value), { toPlainOnly: true })
-  updatedAt: Date;
-
-  @ApiPropertyOptional({ nullable: true }) @Expose() customer?: any;
-  @ApiPropertyOptional({ nullable: true }) @Expose() paymentFrequency?: any;
-  @ApiPropertyOptional({ nullable: true }) @Expose() loanType?: any;
-  @ApiPropertyOptional({ nullable: true }) @Expose() loanStatus?: any;
-  @ApiPropertyOptional({ isArray: true, nullable: true }) @Expose() installments?: any[];
-  @ApiPropertyOptional({ isArray: true, nullable: true }) @Expose() payments?: any[];
+  @Transform(({ value }) => value ? format(new Date(value), 'yyyy-MM-dd HH:mm:ss') : null)
+  updatedAt: string;
+  
+  @ApiPropertyOptional({ type: ResponseCustomerDto })
+  @Expose()
+  @Type(() => ResponseCustomerDto)
+  customer?: ResponseCustomerDto;
+  
+  @ApiPropertyOptional({ isArray: true, type: () => ResponseInstallmentDto })
+  @Expose()
+  @Type(() => ResponseInstallmentDto)
+  installments?: ResponseInstallmentDto[];
 }

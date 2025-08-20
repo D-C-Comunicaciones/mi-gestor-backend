@@ -1,16 +1,21 @@
-import { IsNumber, IsOptional, IsDate } from 'class-validator';
+// create-installment.dto.ts
+import { IsInt, IsPositive, IsDateString, IsOptional } from 'class-validator';
 
 export class CreateInstallmentDto {
-  @IsNumber()
-  loanId: number; // FK al préstamo
+  @IsInt()
+  @IsPositive()
+  loanId: number;
 
-  @IsNumber()
   @IsOptional()
-  count?: number; // Número de cuotas a generar (opcional, puede calcularse internamente)
+  @IsDateString()
+  startDate: Date;
 
-  @IsNumber()
-  paymentFrequencyId: number; // FK a frecuencia de pago
+  @IsInt()
+  @IsPositive()
+  paymentFrequencyId: number;
 
-  @IsDate()
-  startDate: Date; // Fecha de primera cuota
+  @IsOptional() // 👈 Hacer opcional
+  @IsInt()
+  @IsPositive()
+  count?: number; // 👈 Agregar count
 }

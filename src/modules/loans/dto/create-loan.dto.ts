@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsDateString, IsInt, IsNumber, IsOptional, IsPositive } from 'class-validator';
+import { IsDateString, IsInt, IsNumber, IsOptional, IsPositive, ValidateIf } from 'class-validator';
 import { Transform } from 'class-transformer';
 
 export class CreateLoanDto {
@@ -30,10 +30,10 @@ export class CreateLoanDto {
   @IsNumber({ maxDecimalPlaces: 2 })
   paymentAmount?: number | null;
 
-  @ApiPropertyOptional({ description: 'Número de cuotas/plazo (si aplica)', example: 12 })
   @IsOptional()
   @IsInt()
-  termId: number | null;
+  @IsPositive()
+  termId: number;
 
   @ApiProperty({ description: 'ID de la frecuencia de pago' })
   @IsInt()
@@ -46,10 +46,6 @@ export class CreateLoanDto {
   @ApiProperty({ description: 'ID del estado del préstamo (ACTIVO, CANCELADO, etc.)' })
   @IsInt()
   loanStatusId: number;
-
-  @ApiProperty({ description: 'Fecha de inicio del préstamo (ISO8601)' })
-  @IsDateString()
-  startDate: string;
 
   @ApiPropertyOptional({ description: 'Próxima fecha de pago', example: '2025-09-19T00:00:00.000Z' })
   @IsOptional()

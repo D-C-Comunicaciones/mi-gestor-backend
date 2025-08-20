@@ -1,7 +1,6 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query, Res, UseGuards, UseInterceptors } from '@nestjs/common';
 import { LoansService } from './loans.service';
-import { CreateLoanDto } from './dto/create-loan.dto';
-import { UpdateLoanDto } from './dto/update-loan.dto';
+import { CreateLoanDto, UpdateLoanDto } from './dto';
 import { LoanPaginationDto } from './dto/loan-pagination.dto';
 import { Response } from 'express';
 import { Permissions } from '@auth/decorators';
@@ -15,12 +14,14 @@ import {
 import { plainToInstance } from 'class-transformer';
 import { ResponseLoanDto } from './dto';
 import { LoanListResponse, LoanResponse, LoanUpdateResponse, LoanRegenerateInstallmentsResponse } from './interfaces';
+import { DecimalInterceptor } from '@common/interceptors';
 
 @ApiTags('Loans')
 @ApiBearerAuth()
 @ApiExtraModels(ResponseLoanDto)
 @Controller('loans')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
+@UseInterceptors(DecimalInterceptor)
 export class LoansController {
   constructor(private readonly loansService: LoansService) { }
 
@@ -65,8 +66,9 @@ export class LoansController {
     @Query() paginationDto: LoanPaginationDto,
     @Res({ passthrough: true }) res: Response,
   ): Promise<LoanListResponse> {
-    const { rawLoans, meta } = await this.loansService.findAll(paginationDto);
-    const arr = Array.isArray(rawLoans) ? rawLoans : [rawLoans];
+    const { loans, meta } = await this.loansService.findAll(paginationDto);
+    const arr = Array.isArray(loans) ? loans : [loans];
+
     if (arr.length === 0) {
       res.status(404);
       return {
@@ -75,14 +77,19 @@ export class LoansController {
         meta,
       };
     }
-    const loans = plainToInstance(ResponseLoanDto, arr, { excludeExtraneousValues: true });
+
+    // loans ya están convertidos y formateados por el servicio, 
+    // solo falta aplicar el DTO de respuesta
+    const responseLoans = plainToInstance(ResponseLoanDto, arr, {
+      excludeExtraneousValues: true
+    });
+
     return {
       customMessage: 'Préstamos obtenidos correctamente',
-      loans,
+      loans: responseLoans,
       meta,
     };
   }
-
   @Get(':id')
   @Permissions('view.loans')
   @ApiOperation({ summary: 'Obtener préstamo', description: 'Retorna un préstamo por id.' })
@@ -107,7 +114,7 @@ export class LoansController {
     @Query('include') include?: string,
   ): Promise<LoanResponse> {
     const raw = await this.loansService.findOne(id, include);
-    const loan = plainToInstance(ResponseLoanDto, raw, { excludeExtraneousValues: true });
+    const [loan] = plainToInstance(ResponseLoanDto, [raw], { excludeExtraneousValues: true });
     return {
       customMessage: 'Préstamo obtenido correctamente',
       loan,
@@ -131,17 +138,23 @@ export class LoansController {
   @ApiBadRequestResponse({ description: 'Validación / lógica' })
   @ApiUnauthorizedResponse()
   @ApiForbiddenResponse()
-  async create(@Body() dto: CreateLoanDto): Promise<LoanResponse> {
-    const raw = await this.loansService.create(dto);
+  @Post()
+  async create(@Body() dto: CreateLoanDto) {
+    const { loan, installments } = await this.loansService.create(dto);
 
-    // 🔑 Transformar a ResponseLoanDto (aquí aplican tus @Transform y @Expose)
-    const loan = plainToInstance(ResponseLoanDto, raw, {
-      excludeExtraneousValues: true,
-    });
-    
+    // Los Decimal ya están convertidos a números en el servicio
+    const response = plainToInstance(
+      ResponseLoanDto,
+      {
+        ...loan,
+        installments,
+      },
+      { excludeExtraneousValues: true },
+    );
+
     return {
       customMessage: 'Préstamo creado correctamente',
-      loan,
+      response,
     };
   }
   @Patch(':id')

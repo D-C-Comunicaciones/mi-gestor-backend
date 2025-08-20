@@ -15,7 +15,7 @@ async function bootstrap() {
   app.use(cookieParser()); 
 
   app.enableCors({
-    origin: [envs.frontendUrl],
+    origin: ['*'],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
     allowedHeaders: ['Content-Type', 'Authorization'],
@@ -40,7 +40,7 @@ async function bootstrap() {
 
   // Interceptor global para respuestas exitosas
   app.useGlobalInterceptors(
-    new DecimalInterceptor(),
+    // new DecimalInterceptor(),
     new ResponseInterceptor(),
     new ClassSerializerInterceptor(app.get(Reflector)),
   );

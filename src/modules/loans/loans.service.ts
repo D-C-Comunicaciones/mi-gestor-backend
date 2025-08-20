@@ -16,95 +16,157 @@ export class LoansService {
     private readonly installmentsService: InstallmentsService,
   ) { }
 
-// ---------- CREATE ----------
-async create(dto: CreateLoanDto) {
-  // Validar referencias externas
-  await this.ensureRefs(dto);
+  // ---------- CREATE ----------
+  async create(dto: CreateLoanDto) {
+    // Validar referencias externas
+    await this.ensureRefs(dto);
 
-  // Ejecutar todo en una transacción
-  const loan = await this.prisma.$transaction(async tx => {
-    let termId: number;
+    const { loan, installments } = await this.prisma.$transaction(async tx => {
+      let termId: number;
+      let termValue: number; // 👈 Variable para almacenar el valor del término
+      let generatedInstallments: any = null;
 
-    // Determinar termId según tipo de préstamo
-    if (dto.loanTypeId === 1) {
-      // Cuotas fijas
-      if (dto.termId) {
-        termId = dto.termId;
+      // ✅ Siempre usar fecha actual (now())
+      const currentDate = new Date();
+      // ✅ Quitar la hora (solo fecha)
+      const startDateWithoutTime = new Date(currentDate.setHours(0, 0, 0, 0));
+
+      // Determinar termId según tipo de préstamo
+      if (dto.loanTypeId === 1) {
+        // Cuotas fijas
+        if (dto.termId) {
+          termId = dto.termId;
+          // 👇 CONSULTAR el término existente para obtener el value
+          const term = await tx.term.findUnique({
+            where: { id: dto.termId }
+          });
+          if (!term) {
+            throw new BadRequestException(`Término con ID ${dto.termId} no encontrado`);
+          }
+          termValue = term.value; // 👈 Obtener el valor
+        } else {
+          const defaultInstallments = 12;
+          const term = await tx.term.create({ data: { value: defaultInstallments } });
+          termId = term.id;
+          termValue = defaultInstallments;
+        }
       } else {
-        const calculatedValue = Math.ceil(dto.loanAmount / 100);
-        const term = await tx.term.create({ data: { value: calculatedValue } });
+        // Interés mensual flexible → sin cuotas
+        const term = await tx.term.create({ data: { value: 0 } });
         termId = term.id;
+        termValue = 0;
       }
-    } else {
-      // Interés mensual flexible → sin cuotas
-      const term = await tx.term.create({ data: { value: 0 } });
-      termId = term.id;
-    }
 
-    // Crear préstamo
-    const created = await tx.loan.create({
-      data: {
-        customerId: dto.customerId,
-        loanAmount: dto.loanAmount,
-        remainingBalance: dto.remainingBalance ?? dto.loanAmount,
-        interestRateId: dto.interestRateId,
-        paymentAmount: null,
-        termId,
-        paymentFrequencyId: dto.paymentFrequencyId,
-        loanTypeId: dto.loanTypeId,
-        loanStatusId: dto.loanStatusId,
-        startDate: new Date(dto.startDate),
-        nextDueDate: dto.nextDueDate ? new Date(dto.nextDueDate) : null,
-      },
+      // Crear préstamo con relaciones
+      const loan = await tx.loan.create({
+        data: {
+          customerId: dto.customerId,
+          loanAmount: dto.loanAmount,
+          remainingBalance: dto.remainingBalance ?? dto.loanAmount,
+          interestRateId: dto.interestRateId,
+          paymentAmount: 0,
+          termId,
+          paymentFrequencyId: dto.paymentFrequencyId,
+          loanTypeId: dto.loanTypeId,
+          loanStatusId: dto.loanStatusId,
+          startDate: startDateWithoutTime,
+          nextDueDate: null, // 👈 Se establecerá después
+        },
+        include: {
+          customer: {
+            include: {
+              typeDocumentIdentification: true,
+              gender: true,
+              zone: true
+            }
+          },
+          interestRate: true,
+          term: true,
+          paymentFrequency: true,
+          loanType: true,
+          loanStatus: true,
+        },
+      });
+
+      // Generar cuotas si aplica (solo para cuotas fijas)
+      if (loan.loanTypeId === 1) {
+        generatedInstallments = await this.installmentsService.create(
+          {
+            loanId: loan.id,
+            startDate: loan.startDate,
+            paymentFrequencyId: loan.paymentFrequencyId,
+            count: termValue, // 👈 Pasar el número de cuotas
+          },
+          tx
+        );
+
+        // Establecer la próxima fecha de pago como la primera cuota
+        if (generatedInstallments && generatedInstallments.length > 0) {
+          const firstDueDate = generatedInstallments[0].dueDate;
+          await tx.loan.update({
+            where: { id: loan.id },
+            data: { nextDueDate: firstDueDate },
+          });
+          // 👇 Actualizar el objeto loan para que refleje el cambio
+          loan.nextDueDate = firstDueDate;
+        }
+      } else if (loan.loanTypeId === 2 || loan.loanTypeId === 3) {
+        // Para préstamos de interés mensual, establecer próxima fecha basada en frecuencia
+        const nextDue = this.calculateNextDueDate(loan.startDate, loan.paymentFrequency.name);
+        await tx.loan.update({
+          where: { id: loan.id },
+          data: { nextDueDate: nextDue },
+        });
+        // 👇 Actualizar el objeto loan para que refleje el cambio
+        loan.nextDueDate = nextDue;
+      } else {
+        throw new BadRequestException('LoanType no soportado');
+      }
+
+      return {
+        loan: {
+          ...loan,
+          termValue: termValue // 👈 Agregar termValue al objeto loan
+        },
+        installments: generatedInstallments
+      };
     });
 
-    // ----------------------------
-    // Generar cuotas si aplica
-    // ----------------------------
-    if (created.loanTypeId === 1) {
-      const termValue = (await tx.term.findUnique({ where: { id: termId } }))!.value;
+    // 👇 Obtener timestamps
+    const loanWithTimestamps = await this.appendTimestamps(loan);
 
-      // Llamada al InstallmentsService usando la transacción
-      await this.installmentsService.create(
-        {
-          loanId: created.id,
-          count: termValue,
-          startDate: created.startDate,
-          paymentFrequencyId: created.paymentFrequencyId,
-        },
-        tx
-      );
-    } else if (created.loanTypeId === 2 || created.loanTypeId === 3) {
-      // Solo actualizar nextDueDate mensual
-      const nextDue = addMonths(created.startDate, 1);
-      await tx.loan.update({
-        where: { id: created.id },
-        data: { nextDueDate: nextDue },
-      });
-    } else {
-      throw new BadRequestException('LoanType no soportado');
+    // Convertir Decimal a números y formatear
+    const plainLoan = this.convertLoanToPlain({
+      ...loanWithTimestamps,
+      installments: installments ?? []
+    });
+
+    // Formatear el customer con los nombres de las relaciones
+    if (plainLoan.customer) {
+      plainLoan.customer = this.formatCustomer(plainLoan.customer);
     }
 
-    return created;
-  });
+    return {
+      loan: plainLoan,
+      installments: plainLoan.installments
+    };
+  }
 
-  return this.appendTimestamps(loan);
-}
-
-
-  // ---------- FIND ----------
+  // ---------- FIND ALL ----------
   async findAll(p: LoanPaginationDto) {
     const page = p.page ?? 1;
     const limit = p.limit ?? 10;
     const where: Prisma.LoanWhereInput = p.isActive !== undefined ? { isActive: p.isActive } : {};
 
     const total = await this.prisma.loan.count({ where });
-    if (total === 0) return { rawLoans: [], meta: { total: 0, page: 1, lastPage: 0, limit, hasNextPage: false } };
+    if (total === 0) return { loans: [], meta: { total: 0, page: 1, lastPage: 0, limit, hasNextPage: false } };
 
     const lastPage = Math.ceil(total / limit) || 1;
     if (page > lastPage) throw new BadRequestException(`La página #${page} no existe`);
 
-    const include = this.buildInclude(p.include);
+    // 👇 Usar include básico (sin customer ni installments)
+    const include = this.buildBasicInclude();
+
     const items = await this.prisma.loan.findMany({
       where,
       include,
@@ -113,74 +175,170 @@ async create(dto: CreateLoanDto) {
       orderBy: { id: 'desc' },
     });
 
-    const rawLoans = await Promise.all(items.map(l => this.appendTimestamps(l)));
+    // ✅ Convertir todos los loans
+    const loans = await Promise.all(
+      items.map(async (loan) => {
+        const loanWithTimestamps = await this.appendTimestamps(loan);
+        const plainLoan = this.convertLoanToPlain(loanWithTimestamps);
 
-    return { rawLoans, meta: { total, page, lastPage, limit, hasNextPage: page < lastPage } };
+        return plainLoan;
+      })
+    );
+
+    return {
+      loans,
+      meta: {
+        total,
+        page,
+        lastPage,
+        limit,
+        hasNextPage: page < lastPage
+      }
+    };
   }
-
   async findOne(id: number, include?: string) {
-    const loan = await this.prisma.loan.findUnique({ where: { id }, include: this.buildInclude(include) });
+    const loan = await this.prisma.loan.findUnique({
+      where: { id },
+      include: this.buildInclude(include)
+    });
+
     if (!loan) throw new NotFoundException('Préstamo no encontrado');
-    return this.appendTimestamps(loan);
+
+    const loanWithTimestamps = await this.appendTimestamps(loan);
+    const plainLoan = this.convertLoanToPlain(loanWithTimestamps);
+
+    // ✅ Formatear customer si existe
+    if (plainLoan.customer) {
+      plainLoan.customer = this.formatCustomer(plainLoan.customer);
+    }
+    console.log(plainLoan);
+    return plainLoan;
   }
 
   // ---------- UPDATE ----------
-  async update(id: number, dto: UpdateLoanDto) {
-    const existing = await this.prisma.loan.findUnique({ where: { id } });
-    if (!existing) throw new NotFoundException('Préstamo no encontrado');
+// ---------- UPDATE ----------
+async update(id: number, dto: UpdateLoanDto) {
+  const existing = await this.prisma.loan.findUnique({ 
+    where: { id },
+    include: {
+      interestRate: true,
+      term: true,
+      paymentFrequency: true,
+      loanType: true,
+      loanStatus: true,
+    }
+  });
+  
+  if (!existing) throw new NotFoundException('Préstamo no encontrado');
 
-    const detected = this.detectChanges(existing, dto);
-    if (!Object.keys(detected).length) throw new BadRequestException('No se detectaron cambios.');
+  const detected = this.detectChanges(existing, dto);
+  if (!Object.keys(detected).length) throw new BadRequestException('No se detectaron cambios.');
 
-    const data: Prisma.LoanUpdateInput = {};
-    const changes: any = [];
+  const data: Prisma.LoanUpdateInput = {};
+  const changes: any = [];
 
-    // Campos escalares
-    if (detected.remainingBalance !== undefined) {
-      data.remainingBalance = new Prisma.Decimal(detected.remainingBalance as number);
-      changes.push({ field: 'remainingBalance', old: existing.remainingBalance, new: detected.remainingBalance });
-    }
-    if (detected.paymentAmount !== undefined) {
-      data.paymentAmount = detected.paymentAmount === null ? null : new Prisma.Decimal(detected.paymentAmount as number);
-      changes.push({ field: 'paymentAmount', old: existing.paymentAmount, new: detected.paymentAmount });
-    }
-    if (detected.nextDueDate !== undefined) {
-      data.nextDueDate = detected.nextDueDate === null ? null : new Date(detected.nextDueDate as string);
-      changes.push({ field: 'nextDueDate', old: existing.nextDueDate, new: detected.nextDueDate });
-    }
-    if (detected.isActive !== undefined) {
-      data.isActive = detected.isActive as boolean;
-      changes.push({ field: 'isActive', old: existing.isActive, new: detected.isActive });
-    }
-
-    // Relaciones
-    if (detected.loanStatusId !== undefined) {
-      data.loanStatus = { connect: { id: detected.loanStatusId as number } };
-      changes.push({ field: 'loanStatusId', old: existing.loanStatusId, new: detected.loanStatusId });
-    }
-    if (detected.paymentFrequencyId !== undefined) {
-      data.paymentFrequency = { connect: { id: detected.paymentFrequencyId as number } };
-      changes.push({ field: 'paymentFrequencyId', old: existing.paymentFrequencyId, new: detected.paymentFrequencyId });
-    }
-    if (detected.loanTypeId !== undefined) {
-      data.loanType = { connect: { id: detected.loanTypeId as number } };
-      changes.push({ field: 'loanTypeId', old: existing.loanTypeId, new: detected.loanTypeId });
-    }
-    if (detected.interestRateId !== undefined) {
-      data.interestRate = { connect: { id: detected.interestRateId as number } };
-      changes.push({ field: 'interestRateId', old: existing.interestRateId, new: detected.interestRateId });
-    }
-    if (detected.termId !== undefined) {
-      data.term = { connect: { id: detected.termId as number } };
-      changes.push({ field: 'termId', old: existing.termId, new: detected.termId });
-    }
-
-    const updatedCore = await this.prisma.loan.update({ where: { id }, data });
-    const updated = await this.appendTimestamps(updatedCore);
-
-    return { updated, changes };
+  // Campos escalares
+  if (detected.remainingBalance !== undefined) {
+    data.remainingBalance = new Prisma.Decimal(detected.remainingBalance);
+    changes.push({ 
+      field: 'remainingBalance', 
+      old: existing.remainingBalance?.toNumber?.(), 
+      new: detected.remainingBalance 
+    });
+  }
+  
+  if (detected.paymentAmount !== undefined) {
+    data.paymentAmount = detected.paymentAmount === null ? 
+      null : new Prisma.Decimal(detected.paymentAmount);
+    changes.push({ 
+      field: 'paymentAmount', 
+      old: existing.paymentAmount?.toNumber?.(), 
+      new: detected.paymentAmount 
+    });
+  }
+  
+  if (detected.nextDueDate !== undefined) {
+    data.nextDueDate = detected.nextDueDate === null ? 
+      null : new Date(detected.nextDueDate);
+    changes.push({ 
+      field: 'nextDueDate', 
+      old: existing.nextDueDate, 
+      new: detected.nextDueDate 
+    });
+  }
+  
+  if (detected.isActive !== undefined) {
+    data.isActive = detected.isActive;
+    changes.push({ 
+      field: 'isActive', 
+      old: existing.isActive, 
+      new: detected.isActive 
+    });
   }
 
+  // Relaciones
+  if (detected.loanStatusId !== undefined) {
+    data.loanStatus = { connect: { id: detected.loanStatusId } };
+    changes.push({ 
+      field: 'loanStatusId', 
+      old: existing.loanStatusId, 
+      new: detected.loanStatusId 
+    });
+  }
+  
+  if (detected.paymentFrequencyId !== undefined) {
+    data.paymentFrequency = { connect: { id: detected.paymentFrequencyId } };
+    changes.push({ 
+      field: 'paymentFrequencyId', 
+      old: existing.paymentFrequencyId, 
+      new: detected.paymentFrequencyId 
+    });
+  }
+  
+  if (detected.loanTypeId !== undefined) {
+    data.loanType = { connect: { id: detected.loanTypeId } };
+    changes.push({ 
+      field: 'loanTypeId', 
+      old: existing.loanTypeId, 
+      new: detected.loanTypeId 
+    });
+  }
+  
+  if (detected.interestRateId !== undefined) {
+    data.interestRate = { connect: { id: detected.interestRateId } };
+    changes.push({ 
+      field: 'interestRateId', 
+      old: existing.interestRateId, 
+      new: detected.interestRateId 
+    });
+  }
+  
+  if (detected.termId !== undefined) {
+    data.term = { connect: { id: detected.termId } };
+    changes.push({ 
+      field: 'termId', 
+      old: existing.termId, 
+      new: detected.termId 
+    });
+  }
+
+  const updatedCore = await this.prisma.loan.update({ 
+    where: { id }, 
+    data,
+    include: {
+      interestRate: true,
+      term: true,
+      paymentFrequency: true,
+      loanType: true,
+      loanStatus: true,
+    }
+  });
+  
+  const updatedWithTimestamps = await this.appendTimestamps(updatedCore);
+  const updated = this.convertLoanToPlain(updatedWithTimestamps);
+
+  return { updated, changes };
+}
 
   // ---------- SOFT DELETE ----------
   async softDelete(id: number) {
@@ -205,62 +363,128 @@ async create(dto: CreateLoanDto) {
     if (!status) throw new BadRequestException('LoanStatus no encontrada');
   }
 
-  private buildInclude(include?: string): Prisma.LoanInclude | undefined {
-    if (!include) return undefined;
-    const parts = include.split(',').map(p => p.trim().toLowerCase());
-    return {
-      customer: parts.includes('customer'),
-      paymentFrequency: parts.includes('frequency'),
-      loanType: parts.includes('type'),
-      loanStatus: parts.includes('status'),
-      installments: parts.includes('installments'),
-      payments: parts.includes('payments'),
+  private buildInclude(include?: string): Prisma.LoanInclude {
+    const includeRelations: Prisma.LoanInclude = {
+      customer: {
+        include: {
+          typeDocumentIdentification: true,
+          gender: true,
+          zone: true
+        }
+      },
+      interestRate: true,
+      term: true,
+      paymentFrequency: true,
+      loanType: true,
+      loanStatus: true,
+      installments: {
+        orderBy: { sequence: 'asc' } // 👈 Ordenar cuotas por secuencia
+      }
     };
+
+    if (include) {
+      const relations = include.split(',');
+
+      // Si se piden específicamente installments o payments
+      if (!relations.includes('installments')) {
+        delete includeRelations.installments;
+      }
+
+      if (!relations.includes('payments')) {
+        delete includeRelations.payments;
+      }
+
+      // Puedes agregar más relaciones condicionales aquí
+    }
+
+    return includeRelations;
   }
 
   private async appendTimestamps<T extends { id: number }>(entity: T): Promise<T & { createdAt: Date; updatedAt: Date }> {
-    const { create, lastUpdate } = await this.changesService.getChanges('loan', entity.id).catch(() => ({ create: null, lastUpdate: null }));
-    const now = new Date();
-    return {
-      ...entity,
-      createdAt: create?.timestamp || lastUpdate?.timestamp || now,
-      updatedAt: lastUpdate?.timestamp || create?.timestamp || now,
-    };
-  }
-
-  private detectChanges(existing: Loan, dto: UpdateLoanDto): Partial<UpdateLoanDto> {
-    const changes: Partial<UpdateLoanDto> = {};
-
-    const compareDecimal = (oldVal: any, newVal: any) => {
-      if (newVal === undefined) return false;
-      if (oldVal == null && newVal == null) return false;
-      if (oldVal == null || newVal == null) return true;
-      return oldVal.toString() !== newVal.toString();
-    };
-
-    // Campos escalares
-    if (compareDecimal(existing.remainingBalance, dto.remainingBalance)) changes.remainingBalance = dto.remainingBalance;
-    if (compareDecimal(existing.paymentAmount, dto.paymentAmount)) changes.paymentAmount = dto.paymentAmount;
-
-    // Fechas
-    if (dto.nextDueDate !== undefined) {
-      const oldDate = existing.nextDueDate ? existing.nextDueDate.toISOString().split('T')[0] : null;
-      const newDate = dto.nextDueDate === null ? null : new Date(dto.nextDueDate).toISOString().split('T')[0];
-      if (oldDate !== newDate) changes.nextDueDate = dto.nextDueDate;
+    try {
+      const { create, lastUpdate } = await this.changesService.getChanges('loan', entity.id);
+      const now = new Date();
+      return {
+        ...entity,
+        createdAt: create?.timestamp || (entity as any).createdAt || now,
+        updatedAt: lastUpdate?.timestamp || (entity as any).updatedAt || now,
+      };
+    } catch (error) {
+      const now = new Date();
+      return {
+        ...entity,
+        createdAt: (entity as any).createdAt || now,
+        updatedAt: (entity as any).updatedAt || now,
+      };
     }
-
-    // Booleanos
-    if (dto.isActive !== undefined && dto.isActive !== existing.isActive) changes.isActive = dto.isActive;
-
-    // Relaciones
-    if (dto.loanStatusId !== undefined && dto.loanStatusId !== existing.loanStatusId) changes.loanStatusId = dto.loanStatusId;
-    if (dto.paymentFrequencyId !== undefined && dto.paymentFrequencyId !== existing.paymentFrequencyId) changes.paymentFrequencyId = dto.paymentFrequencyId;
-    if (dto.loanTypeId !== undefined && dto.loanTypeId !== existing.loanTypeId) changes.loanTypeId = dto.loanTypeId;
-    if (dto.interestRateId !== undefined && dto.interestRateId !== existing.interestRateId) changes.interestRateId = dto.interestRateId;
-    if (dto.termId !== undefined && dto.termId !== existing.termId) changes.termId = dto.termId;
-
-    return changes;
   }
+
+private detectChanges(existing: any, dto: UpdateLoanDto): Partial<UpdateLoanDto> {
+  const changes: Partial<UpdateLoanDto> = {};
+
+  // Función mejorada para comparar Decimal
+  const compareDecimal = (oldVal: any, newVal: any): boolean => {
+    if (newVal === undefined) return false;
+    if (oldVal == null && newVal == null) return false;
+    if (oldVal == null || newVal == null) return true;
+    
+    // Convertir ambos a número para comparar
+    const oldNum = typeof oldVal === 'object' && 'toNumber' in oldVal ? 
+      oldVal.toNumber() : Number(oldVal);
+    const newNum = Number(newVal);
+    
+    return oldNum !== newNum;
+  };
+
+  // Campos escalares
+  if (compareDecimal(existing.remainingBalance, dto.remainingBalance)) {
+    changes.remainingBalance = dto.remainingBalance;
+  }
+  
+  if (compareDecimal(existing.paymentAmount, dto.paymentAmount)) {
+    changes.paymentAmount = dto.paymentAmount;
+  }
+
+  // Fechas - comparar como strings ISO para evitar problemas de timezone
+  if (dto.nextDueDate !== undefined) {
+    const oldDate = existing.nextDueDate ? 
+      existing.nextDueDate.toISOString().split('T')[0] : null;
+    const newDate = dto.nextDueDate ? 
+      new Date(dto.nextDueDate).toISOString().split('T')[0] : null;
+    
+    if (oldDate !== newDate) {
+      changes.nextDueDate = dto.nextDueDate;
+    }
+  }
+
+  // Booleanos
+  if (dto.isActive !== undefined && dto.isActive !== existing.isActive) {
+    changes.isActive = dto.isActive;
+  }
+
+  // Relaciones - comparar números directamente
+  if (dto.loanStatusId !== undefined && dto.loanStatusId !== existing.loanStatusId) {
+    changes.loanStatusId = dto.loanStatusId;
+  }
+  
+  if (dto.paymentFrequencyId !== undefined && dto.paymentFrequencyId !== existing.paymentFrequencyId) {
+    changes.paymentFrequencyId = dto.paymentFrequencyId;
+  }
+  
+  if (dto.loanTypeId !== undefined && dto.loanTypeId !== existing.loanTypeId) {
+    changes.loanTypeId = dto.loanTypeId;
+  }
+  
+  if (dto.interestRateId !== undefined && dto.interestRateId !== existing.interestRateId) {
+    changes.interestRateId = dto.interestRateId;
+  }
+  
+  if (dto.termId !== undefined && dto.termId !== existing.termId) {
+    changes.termId = dto.termId;
+  }
+
+  return changes;
+}
 
   /**
    * Regenera todas las cuotas de un préstamo: elimina las existentes y crea nuevas.
@@ -349,4 +573,114 @@ async create(dto: CreateLoanDto) {
     if (name.includes('MONTH')) return (d, s) => addMonths(d, s);
     return (d, s) => addMonths(d, s); // fallback
   }
+
+  private convertLoanToPlain(loan: any): any {
+    // Función helper para convertir Decimal seguro
+    const safeConvertDecimal = (value: any): number | null => {
+      if (value === null || value === undefined) return null;
+      try {
+        if (typeof value === 'object' && value !== null) {
+          if ('toNumber' in value && typeof value.toNumber === 'function') {
+            return value.toNumber();
+          }
+          return Number(value);
+        }
+        return Number(value);
+      } catch (error) {
+        return null;
+      }
+    };
+
+    const termValue =
+      safeConvertDecimal(loan.termValue) ?? // 👈 Primero buscar en nivel principal
+      safeConvertDecimal(loan.term?.value); // 👈 Luego en el objeto term
+
+    return {
+      ...loan,
+      loanAmount: safeConvertDecimal(loan.loanAmount),
+      remainingBalance: safeConvertDecimal(loan.remainingBalance),
+      paymentAmount: safeConvertDecimal(loan.paymentAmount),
+
+      // 👇 termValue siempre disponible
+      termValue: termValue,
+
+      interestRate: loan.interestRate ? {
+        ...loan.interestRate,
+        value: safeConvertDecimal(loan.interestRate.value)
+      } : null,
+
+      term: loan.term ? {
+        ...loan.term,
+        value: termValue
+      } : null,
+
+      paymentFrequency: loan.paymentFrequency,
+      loanType: loan.loanType,
+      loanStatus: loan.loanStatus,
+
+      installments: loan.installments?.map(installment => ({
+        ...installment,
+        capitalAmount: safeConvertDecimal(installment.capitalAmount),
+        interestAmount: safeConvertDecimal(installment.interestAmount),
+        totalAmount: safeConvertDecimal(installment.totalAmount),
+        paidAmount: safeConvertDecimal(installment.paidAmount)
+      }))
+    };
+  }
+
+  private formatCustomer(customer: any): any {
+    if (!customer) return null;
+
+    return {
+      id: customer.id,
+      firstName: customer.firstName,
+      lastName: customer.lastName,
+      typeDocumentIdentificationId: customer.typeDocumentIdentificationId,
+      typeDocumentIdentificationName: customer.typeDocumentIdentification?.name,
+      documentNumber: customer.documentNumber,
+      genderId: customer.genderId,
+      genderName: customer.gender?.name,
+      birthDate: customer.birthDate,
+      address: customer.address,
+      phone: customer.phone,
+      zoneId: customer.zoneId,
+      zoneName: customer.zone?.name,
+      zoneCode: customer.zone?.code,
+      userId: customer.userId,
+      isActive: customer.isActive
+    };
+  }
+
+  /** Calcula la próxima fecha de pago para préstamos de interés */
+  private calculateNextDueDate(startDate: Date, frequencyName: string): Date {
+    const freq = frequencyName.toUpperCase();
+    const date = new Date(startDate);
+
+    if (freq.includes('DIARIA') || freq.includes('DAILY')) {
+      return addDays(date, 1); // 👈 1 día después
+    }
+    if (freq.includes('SEMANAL') || freq.includes('WEEKLY')) {
+      return addWeeks(date, 1); // 👈 1 semana después
+    }
+    if (freq.includes('QUINCENAL') || freq.includes('BIWEEKLY')) {
+      return addDays(date, 15); // 👈 15 días después
+    }
+    if (freq.includes('MENSUAL') || freq.includes('MONTHLY')) {
+      return addMonths(date, 1); // 👈 1 mes después
+    }
+
+    return addMonths(date, 1); // Default mensual
+  }
+
+  private buildBasicInclude(): Prisma.LoanInclude {
+    // 👇 Solo las relaciones necesarias para la lista básica
+    return {
+      interestRate: true,
+      term: true,
+      paymentFrequency: true,
+      loanType: true,
+      loanStatus: true,
+    };
+  }
 }
+
