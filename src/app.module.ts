@@ -6,6 +6,8 @@ import { CollectorsModule } from '@modules/collectors/collectors.module';
 import { AuthModule } from '@modules/auth/auth.module';
 import { ChangesModule } from './modules/changes/changes.module';
 import { CustomersModule } from '@modules/customers/customers.module';
+import { LoansModule } from '@modules/loans/loans.module';
+import { InstallmentsModule } from './modules/installments/installments.module';
 
 @Module({
   imports: [
@@ -17,6 +19,8 @@ import { CustomersModule } from '@modules/customers/customers.module';
     CollectorsModule,
     CustomersModule,
     ChangesModule,
+    LoansModule,
+    InstallmentsModule
   ],
   controllers: [AppController],
   providers: [AppService],

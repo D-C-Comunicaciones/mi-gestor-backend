@@ -56,16 +56,16 @@ model Gender {
   @@map("genders")
 }
 
-model CreditType {
+model LoanType {
   id       Int     @id @default(autoincrement()) // PK: id del tipo de crédito
   name     String  @unique // Ej: CUOTA_FIJA, INTERES_MENSUAL (método)
   isActive Boolean @default(true) // Permite activar/desactivar tipos
 
-  credits Credit[] // Créditos asociados a este tipo
+  loans Loan[] // Créditos asociados a este tipo
 
   @@index([name])
   @@index([isActive])
-  @@map("credit_types")
+  @@map("loan_types")
 }
 
 model PaymentFrequency {
@@ -73,23 +73,23 @@ model PaymentFrequency {
   name     String  @unique // Ej: DAILY, WEEKLY, BIWEEKLY, MONTHLY
   isActive Boolean @default(true) // Activación para administrar frecuencias
 
-  credits Credit[] // Créditos que usan esta frecuencia
+  loans Loan[] // Créditos que usan esta frecuencia
 
   @@index([name])
   @@index([isActive])
   @@map("payment_frequencies")
 }
 
-model CreditStatus {
+model LoanStatus {
   id       Int     @id @default(autoincrement()) // PK: id del estado del crédito
   name     String  @unique // Ej: ACTIVO, CANCELADO, REFINANCIADO
   isActive Boolean @default(true) // Permite mantener catálogo dinámico
 
-  credits Credit[] // Créditos en ese estado
+  loans Loan[] // Créditos en ese estado
 
   @@index([name])
   @@index([isActive])
-  @@map("credit_statuses")
+  @@map("loan_statuses")
 }
 
 model PaymentType {
@@ -190,7 +190,7 @@ model LoginAudit {
 
 model Change {
   id        Int      @id @default(autoincrement()) // PK: registro de cambios (audit trail)
-  model     String // Nombre del modelo afectado (ej: "Credit")
+  model     String // Nombre del modelo afectado (ej: "loan")
   modelId   Int // ID del registro afectado (ej: crédito específico)
   action    String // Acción (CREATE, UPDATE, DELETE)
   before    Json? // Estado anterior (JSON) - útil para revert/registro
@@ -230,11 +230,10 @@ model Customer {
   isActive       Boolean  @default(true) // Activación del cobrador
 
   // Relaciones
-  zone     Zone?     @relation(fields: [zoneId], references: [id])
-  user     User?     @relation(fields: [userId], references: [id])
+  zone Zone? @relation(fields: [zoneId], references: [id])
+  user User? @relation(fields: [userId], references: [id])
 
-  credits Credit[] // Créditos asociados a este customer
-
+  loans Loan[] // Créditos asociados a este customer
 
   @@index([firstName])
   @@index([lastName])
@@ -278,63 +277,83 @@ model Collector {
 /// CRÉDITOS, CUOTAS, PAGOS Y REFINANCIACIONES
 /// -------------------------------------
 
-model Credit {
+model Loan {
   id         Int      @id @default(autoincrement()) // PK crédito
   customerId Int // FK al customer propietario del crédito
   customer   Customer @relation(fields: [customerId], references: [id])
 
-  principal          Decimal          @db.Decimal(12, 2) // Monto prestado original (capital inicial)
-  remainingBalance   Decimal          @db.Decimal(12, 2) // Saldo actual restante (se reduce al aplicar principal)
-  interestRate       Decimal          @db.Decimal(6, 4) // Tasa de interés (ej. 0.0500 => 5% anual o según convención)
-  paymentAmount      Decimal?         @db.Decimal(12, 2) // Cuota fija (si aplica) — puede ser null para interés-only
-  term               Int? // Número de cuotas/plazos (si aplica)
+  loanAmount         Decimal  @db.Decimal(10, 0) // Monto prestado original (capital inicial)
+  remainingBalance   Decimal  @db.Decimal(10, 0) // Saldo actual restante (se reduce al aplicar principal)
+  interestRateId     Int // Tasa de interés (ej. 0.0500 => 5% anual o según convención)
+  paymentAmount      Decimal? @db.Decimal(10, 0) // Cuota fija (si aplica) — puede ser null para interés-only
+  termId             Int
   paymentFrequencyId Int // FK frecuencia de pago (diario, semanal...)
-  paymentFrequency   PaymentFrequency @relation(fields: [paymentFrequencyId], references: [id])
-  creditTypeId       Int // FK al tipo de crédito (cuota fija vs interés mensual)
-  creditType         CreditType       @relation(fields: [creditTypeId], references: [id])
-  creditStatusId     Int // FK estado (ACTIVO, CANCELADO...)
-  creditStatus       CreditStatus     @relation(fields: [creditStatusId], references: [id])
+  loanTypeId         Int // FK al tipo de crédito (cuota fija vs interés mensual)
+  loanStatusId       Int // FK estado (ACTIVO, CANCELADO...)
 
-  startDate   DateTime // Fecha de inicio del crédito
-  nextDueDate DateTime? // Próxima fecha esperada de pago (actualizable por la lógica)
+  interestRate     InterestRate     @relation(fields: [interestRateId], references: [id])
+  loanType         LoanType         @relation(fields: [loanTypeId], references: [id])
+  loanStatus       LoanStatus       @relation(fields: [loanStatusId], references: [id])
+  paymentFrequency PaymentFrequency @relation(fields: [paymentFrequencyId], references: [id])
+  term             Term             @relation(fields: [termId], references: [id])
+
+  startDate   DateTime  @db.Date // Fecha de inicio del crédito
+  nextDueDate DateTime? @db.Date // Próxima fecha esperada de pago (actualizable por la lógica)
   isActive    Boolean   @default(true) // Soft-delete / activo
 
   installments         Installment[] // Cronograma de cuotas generadas
   payments             Payment[] // Pagos registrados que afectan este crédito
-  refinancingsOriginal Refinancing[] @relation("OriginalCredit") // Lista de refinanciamientos donde este crédito fue el original
-  refinancingsNew      Refinancing[] @relation("NewCredit") // Lista donde este crédito fue el nuevo producto tras refinanciación
-
-  createdAt DateTime @default(now()) // Fecha creación del registro
-  updatedAt DateTime @updatedAt // Última actualización automática
+  refinancingsOriginal Refinancing[] @relation("OriginalLoan") // Lista de refinanciamientos donde este crédito fue el original
+  refinancingsNew      Refinancing[] @relation("NewLoan") // Lista donde este crédito fue el nuevo producto tras refinanciación
 
   @@index([customerId])
   @@index([paymentFrequencyId])
-  @@index([creditTypeId])
-  @@index([creditStatusId])
+  @@index([loanTypeId])
+  @@index([interestRateId])
+  @@index([startDate])
+  @@index([loanStatusId])
   @@index([isActive])
-  @@map("credits")
+  @@map("loans")
+}
+
+model InterestRate {
+  id    Int     @id @default(autoincrement()) // PK
+  value Decimal @db.Decimal(6, 4) // Tasa de interés (ej. 0.0500 => 5% anual o según convención)
+  loan  Loan[]
+
+  @@index([value])
+  @@map("interest_rates")
+}
+
+model Term {
+  id    Int    @id @default(autoincrement()) // PK
+  value Int // Número de cuotas/plazos (si aplica)
+  loan  Loan[]
+
+  @@index([value])
+  @@map("terms")
 }
 
 /// -------------------------------------
 /// TABLA DE CUOTAS (INSTALLMENTS)
 /// -------------------------------------
 model Installment {
-  id              Int       @id @default(autoincrement()) // PK cuota (installment)
-  creditId        Int // FK al crédito
-  credit          Credit    @relation(fields: [creditId], references: [id])
-  sequence        Int // Número de cuota en el cronograma (1..N)
-  dueDate         DateTime // Fecha de vencimiento de esta cuota
-  principalAmount Decimal   @db.Decimal(12, 2) // Porción de capital esperada
-  interestAmount  Decimal   @db.Decimal(12, 2) // Porción de interés esperada
-  totalAmount     Decimal   @db.Decimal(12, 2) // principalAmount + interestAmount (valor esperado)
-  paidAmount      Decimal   @default(0) @db.Decimal(12, 2) // Acumulado pagado contra esta cuota
-  isPaid          Boolean   @default(false) // Si la cuota está completamente pagada
-  isActive        Boolean   @default(true) // Activación de la cuota (soft delete)
-  paidAt          DateTime? // Fecha en la que se completó el pago total de la cuota
+  id             Int       @id @default(autoincrement()) // PK cuota (installment)
+  loanId         Int // FK al crédito
+  loan           Loan      @relation(fields: [loanId], references: [id])
+  sequence       Int // Número de cuota en el cronograma (1..N)
+  dueDate        DateTime  @db.Date// Fecha de vencimiento de esta cuota
+  capitalAmount  Decimal   @db.Decimal(10, 0) // Porción de capital esperada
+  interestAmount Decimal   @db.Decimal(10, 0) // Porción de interés esperada
+  totalAmount    Decimal   @db.Decimal(10, 0) // capitalAmount + interestAmount (valor esperado)
+  paidAmount     Decimal   @default(0) @db.Decimal(10, 0) // Acumulado pagado contra esta cuota
+  isPaid         Boolean   @default(false) // Si la cuota está completamente pagada
+  isActive       Boolean   @default(true) // Activación de la cuota (soft delete)
+  paidAt         DateTime? // Fecha en la que se completó el pago total de la cuota
 
   payments Payment[] // Pagos aplicados a esta cuota (vínculo para trazabilidad)
 
-  @@index([creditId])
+  @@index([loanId])
   @@index([dueDate])
   @@index([isPaid])
   @@map("installments")
@@ -342,12 +361,12 @@ model Installment {
 
 model Payment {
   id            Int          @id @default(autoincrement()) // PK pago
-  creditId      Int // FK al crédito afectado
-  credit        Credit       @relation(fields: [creditId], references: [id])
+  loanId        Int // FK al crédito afectado
+  loan          Loan         @relation(fields: [loanId], references: [id])
   installmentId Int? // FK opcional a cuota si el pago se aplica a una cuota específica
   installment   Installment? @relation(fields: [installmentId], references: [id])
 
-  amount        Decimal     @db.Decimal(12, 2) // Monto total del registro de pago
+  amount        Decimal     @db.Decimal(10, 0) // Monto total del registro de pago
   paymentTypeId Int
   paymentType   PaymentType @relation(fields: [paymentTypeId], references: [id]) // Tipo (capital, interés, mora...)
 
@@ -357,14 +376,14 @@ model Payment {
   date DateTime @default(now()) // Fecha en que se registró el pago
 
   // DESGLOSE: resultados de la lógica al aplicar el pago
-  appliedToPrincipal Decimal @default("0.00") @db.Decimal(12, 2) // Parte aplicada a capital (debe reducir remainingBalance)
-  appliedToInterest  Decimal @default("0.00") @db.Decimal(12, 2) // Parte aplicada a intereses (registro para reporting)
-  appliedToLateFee   Decimal @default("0.00") @db.Decimal(12, 2) // Parte aplicada a mora (si procede)
+  appliedToCapital  Decimal @default("0.00") @db.Decimal(10, 0) // Parte aplicada a capital (debe reducir remainingBalance)
+  appliedToInterest Decimal @default("0.00") @db.Decimal(10, 0) // Parte aplicada a intereses (registro para reporting)
+  appliedToLateFee  Decimal @default("0.00") @db.Decimal(10, 0) // Parte aplicada a mora (si procede)
 
   recordedByUserId Int? // Usuario que registró este pago (audit)
   recordedByUser   User? @relation("PaymentsRecordedByUser", fields: [recordedByUserId], references: [id])
 
-  @@index([creditId])
+  @@index([loanId])
   @@index([installmentId])
   @@index([paymentTypeId])
   @@index([collectorId])
@@ -372,24 +391,24 @@ model Payment {
 }
 
 model Refinancing {
-  id               Int     @id @default(autoincrement()) // PK refinanciamiento
-  originalCreditId Int // FK al crédito original (antes de refinanciar)
-  originalCredit   Credit  @relation("OriginalCredit", fields: [originalCreditId], references: [id])
-  newCreditId      Int? // FK opcional al nuevo crédito (si se crea uno nuevo)
-  newCredit        Credit? @relation("NewCredit", fields: [newCreditId], references: [id])
+  id             Int   @id @default(autoincrement()) // PK refinanciamiento
+  originalLoanId Int // FK al crédito original (antes de refinanciar)
+  originalLoan   Loan  @relation("OriginalLoan", fields: [originalLoanId], references: [id])
+  newLoanId      Int? // FK opcional al nuevo crédito (si se crea uno nuevo)
+  newLoan        Loan? @relation("NewLoan", fields: [newLoanId], references: [id])
 
   // Campos que registran el estado antes y después (útiles para trazabilidad y reporting)
-  oldPrincipal    Decimal  @db.Decimal(12, 2) // Principal antes del refinanciamiento
-  oldRemaining    Decimal  @db.Decimal(12, 2) // Saldo restante antes
-  newPrincipal    Decimal  @db.Decimal(12, 2) // Nuevo principal luego del ajuste
-  newRemaining    Decimal  @db.Decimal(12, 2) // Nuevo saldo luego del ajuste
+  oldPrincipal    Decimal  @db.Decimal(10, 0) // Principal antes del refinanciamiento
+  oldRemaining    Decimal  @db.Decimal(10, 0) // Saldo restante antes
+  newPrincipal    Decimal  @db.Decimal(10, 0) // Nuevo principal luego del ajuste
+  newRemaining    Decimal  @db.Decimal(10, 0) // Nuevo saldo luego del ajuste
   oldInterestRate Decimal  @db.Decimal(6, 4) // Tasa anterior
   newInterestRate Decimal  @db.Decimal(6, 4) // Tasa nueva
   date            DateTime @default(now()) // Fecha del evento de refinanciación
   notes           String? // Observaciones
 
-  @@index([originalCreditId])
-  @@index([newCreditId])
+  @@index([originalLoanId])
+  @@index([newLoanId])
   @@index([date])
   @@map("refinancings")
 }

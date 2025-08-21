@@ -67,6 +67,12 @@ export class PermissionsGuard implements CanActivate {
       'update.customers': 'actualizar clientes',
       'change.customers.status': 'cambiar estado de clientes',
 
+      // loan messages
+      'view.loans': 'ver información de préstamos',
+      'create.loans': 'crear préstamos',
+      'update.loans': 'actualizar préstamos',
+      'delete.loans': 'eliminar préstamos',
+
       // assign/revoke roles to users
       'assign roles to users': 'asignar roles a usuarios',
       'revoke roles to users': 'revocar roles a usuarios',

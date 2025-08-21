@@ -1,28 +1,29 @@
-dcmigestor.co {
-	encode zstd gzip
-	header {
-		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
-		X-Frame-Options DENY
-		X-Content-Type-Options nosniff
-		Referrer-Policy strict-origin-when-cross-origin
-	}
-	@health {
-		path /health /ready /live
-	}
-	handle @health {
-		rewrite * /health
-	}
+dcmigestor.co, www.dcmigestor.co {
+    encode zstd gzip
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Frame-Options DENY
+        X-Content-Type-Options nosniff
+        Referrer-Policy strict-origin-when-cross-origin
+    }
 
-	handle {
-		reverse_proxy api:3000 {
-			health_uri /health
-			fail_duration 10s
-			max_fails 3
-		}
-	}
+    @health {
+        path /health /ready /live
+    }
+    handle @health {
+        rewrite * /health
+    }
 
-	log {
-		output stdout
-		format console
-	}
+    handle {
+        reverse_proxy api:3000 {
+            health_uri /health
+            fail_duration 10s
+            max_fails 3
+        }
+    }
+
+    log {
+        output stdout
+        format console
+    }
 }
