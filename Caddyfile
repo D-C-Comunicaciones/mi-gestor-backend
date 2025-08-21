@@ -1,5 +1,10 @@
-dcmigestor.co, www.dcmigestor.co {
+api.dcmigestor.co, www.api.dcmigestor.co {
+    redir https://api.dcmigestor.co{uri}
+}
+
+dcmigestor.co {
     encode zstd gzip
+
     header {
         Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
         X-Frame-Options DENY
@@ -7,16 +12,9 @@ dcmigestor.co, www.dcmigestor.co {
         Referrer-Policy strict-origin-when-cross-origin
     }
 
-    @health {
-        path /health /ready /live
-    }
-    handle @health {
-        rewrite * /health
-    }
-
     handle {
         reverse_proxy api:3000 {
-            health_uri /health
+            health_uri /v1
             fail_duration 10s
             max_fails 3
         }
