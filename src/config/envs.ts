@@ -44,16 +44,13 @@ const envVarsSchema = joi.object({
     APP_DESCRIPTION: joi.string().default('E-DUCATIVE'),
 
     // APP ENVIRONMENT
-    APP_ENVIRONMENT: joi.string().default('development'),
+    APP_ENVIRONMENT: joi.string().valid('development', 'production', 'test').default('development'),
 
     // DATABASE
     DATABASE_URL: joi.string().uri().required(),
 
     // SERVER
     APP_PORT: joi.number().required(),
-
-    // ENVIRONMENT
-    NODE_ENV: joi.string().valid('development', 'production', 'test').default('development'),
 
     // JWT - ✅ Corregir validaciones
     JWT_SECRET: joi.string().required(),
