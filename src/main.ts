@@ -12,17 +12,24 @@ import { DecimalInterceptor, ResponseInterceptor } from '@common/interceptors';
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
-  app.use(cookieParser()); 
+  app.use(cookieParser());
 
   app.enableCors({
-    origin: ['*'],
+    origin: (origin, callback) => {
+      const allowedOrigins = ['http://localhost:3000', 'http://localhost:5173'];
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error('Method Not allowed by CORS - Jean Correa'));
+      }
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
     allowedHeaders: ['Content-Type', 'Authorization'],
   });
 
   app.setGlobalPrefix('v1');
-  
+
   // Configuración de Swagger
   if (envs.environment !== 'production') {
     const config = new DocumentBuilder()
@@ -44,7 +51,7 @@ async function bootstrap() {
     new ResponseInterceptor(),
     new ClassSerializerInterceptor(app.get(Reflector)),
   );
-  
+
   // Filtro global para errores
   app.useGlobalFilters(new AllExceptionsFilter());
 
@@ -56,9 +63,8 @@ async function bootstrap() {
       forbidNonWhitelisted: true,
     }),
   );
-
   app.setViewEngine('hbs');
-  
+
   if (envs.environment === 'production') {
     // En producción siempre apunta a dist/views porque copiaste las vistas allí
     app.setBaseViewsDir(join(__dirname, '..', 'views'));
@@ -66,7 +72,6 @@ async function bootstrap() {
     // En desarrollo usa src/views
     app.setBaseViewsDir(join(__dirname, '..', 'views'));
   }
-
   await app.listen(envs.port, () => {
     logger.log(`🚀 ${envs.appName} is running in ${envs.environment} mode`);
     logger.log(`version: ${envs.appVersion}`);
