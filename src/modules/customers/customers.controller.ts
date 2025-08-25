@@ -5,8 +5,10 @@ import { plainToInstance } from 'class-transformer';
 import { Response } from 'express';
 import { Permissions } from '@auth/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '@modules/auth/guards';
-import { CustomerListResponse, CustomerResponse } from './interfaces';
+import { CustomerDetailResponse, CustomerListResponse, CustomerResponse } from './interfaces';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiOkResponse, ApiCreatedResponse, ApiNotFoundResponse, ApiUnauthorizedResponse, ApiForbiddenResponse, ApiUnprocessableEntityResponse, ApiInternalServerErrorResponse, ApiBadRequestResponse, ApiParam, ApiQuery, ApiBody, ApiExtraModels, getSchemaPath } from '@nestjs/swagger';
+import { ResponseLoanDto } from '@modules/loans/dto';
+import { UserResponseDto } from '@modules/users/dto';
 
 @ApiTags('Customers')
 @ApiBearerAuth()
@@ -53,32 +55,34 @@ export class CustomersController {
     @ApiUnauthorizedResponse({ description: 'No autenticado' })
     @ApiForbiddenResponse({ description: 'Sin permiso view.customers' })
     @ApiInternalServerErrorResponse({ description: 'Error interno' })
-    async findAll(
-        @Query() paginationDto: CustomerPaginationDto,
-        @Res({ passthrough: true }) res: Response,
-    ): Promise<CustomerListResponse> {
-        const { rawCustomers, meta } = await this.customersService.findAll(paginationDto);
-        const arr = Array.isArray(rawCustomers) ? rawCustomers : [rawCustomers];
+@Get()
+  async findAll(
+    @Query() paginationDto: CustomerPaginationDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<CustomerListResponse> {
+    const { customers, meta } = await this.customersService.findAll(paginationDto);
 
-        if (arr.length === 0) {
-            res.status(404);
-            return {
-                customMessage: 'No existen registros',
-                customers: [],
-                meta,
-            };
-        }
-
-        const customers = plainToInstance(ResponseCustomerDto, arr, {
-            excludeExtraneousValues: true,
-        });
-
-        return {
-            customMessage: 'Clientes obtenidos correctamente',
-            customers,
-            meta,
-        };
+    if (customers.length === 0) {
+      res.status(404);
+      return {
+        customMessage: 'No existen registros',
+        customers: [],
+        meta,
+      };
     }
+
+    // Asegúrate de que ResponseCustomerDto tenga la propiedad email
+    const customersResponse = plainToInstance(ResponseCustomerDto, customers, {
+      excludeExtraneousValues: true,
+      enableImplicitConversion: true,
+    });
+
+    return {
+      customMessage: 'Clientes obtenidos correctamente',
+      customers: customersResponse,
+      meta,
+    };
+  }
 
     @Get(':id')
     @Permissions('view.customers')
@@ -101,17 +105,28 @@ export class CustomersController {
     @ApiInternalServerErrorResponse({ description: 'Error interno' })
     async findOne(
         @Param('id', ParseIntPipe) id: number,
-    ): Promise<CustomerResponse> {
-        const raw = await this.customersService.findOne(id);
-        const customer = plainToInstance(ResponseCustomerDto, raw, {
+    ): Promise<CustomerDetailResponse> {
+        const { customer, loans, user } = await this.customersService.findOne(id);
+
+        const responseCustomer = plainToInstance(ResponseCustomerDto, customer, {
             excludeExtraneousValues: true,
         });
+
+        const responseLoans = plainToInstance(ResponseLoanDto, loans, {
+            excludeExtraneousValues: true,
+        });
+
+        const responseUser = user
+            ? plainToInstance(UserResponseDto, user, { excludeExtraneousValues: true })
+            : null;
+
         return {
             customMessage: 'Cliente obtenido correctamente',
-            customer,
+            customer: responseCustomer,
+            loans: responseLoans,
+            user: responseUser,
         };
     }
-
     @Post()
     @Permissions('create.customers')
     @ApiOperation({ summary: 'Crear cliente', description: 'Crea un cliente y su usuario.' })

@@ -311,6 +311,19 @@ model MoratoryInterest {
   installment Installment @relation(fields: [installmentId], references: [id])
 }
 
+model GracePeriod {
+  id     Int    @id @default(autoincrement())
+  name   String // Ej: "15 días", "1 mes", "3 meses"
+  days   Int    // Número de días del período de gracia
+  isActive Boolean @default(true)
+
+  loans Loan[] // Relación con los préstamos que usan este período
+
+  @@index([days])
+  @@map("grace_periods")
+}
+
+
 /// -------------------------------------
 /// CRÉDITOS, CUOTAS, PAGOS Y REFINANCIACIONES
 /// -------------------------------------
@@ -330,6 +343,7 @@ model Loan {
   paymentFrequencyId Int // Frecuencia de pago (diario, semanal, mensual)
   loanTypeId         Int // Tipo de crédito (1 = Cuota fija, 2 = Solo intereses)
   loanStatusId       Int // Estado del crédito
+  gracePeriodId      Int? // FK → tabla GracePeriod (plazo de gracia)
 
   // Relaciones
   interestRate     InterestRate     @relation(fields: [interestRateId], references: [id])
@@ -337,12 +351,12 @@ model Loan {
   loanType         LoanType         @relation(fields: [loanTypeId], references: [id])
   loanStatus       LoanStatus       @relation(fields: [loanStatusId], references: [id])
   paymentFrequency PaymentFrequency @relation(fields: [paymentFrequencyId], references: [id])
-  term             Term             @relation(fields: [termId], references: [id])
+  term             Term?             @relation(fields: [termId], references: [id])
+  gracePeriod      GracePeriod?     @relation(fields: [gracePeriodId], references: [id])
 
   // Fechas clave
   startDate   DateTime  @db.Date // Fecha de inicio
   nextDueDate DateTime? @db.Date // Próxima fecha esperada de pago
-  gracePeriod Int?      // 👈 Plazo de gracia en meses (aplica loanTypeId = 2)
 
   // Flags
   isActive Boolean @default(true)

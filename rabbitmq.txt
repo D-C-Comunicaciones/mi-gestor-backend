@@ -1,1 +1,14 @@
 rabbitmqctl enable_feature_flag all
+
+#install delay plugin
+
+1. update & install curl
+apt-get update && apt-get install -y curl
+
+2. download plugin using curl
+curl -L -o /plugins/rabbitmq_delayed_message_exchange.ez https://github.com/rabbitmq/rabbitmq-delayed-message-exchange/releases/download/v3.13.0/rabbitmq_delayed_message_exchange-3.13.0.ez
+
+3. enable plugin
+rabbitmq-plugins enable rabbitmq_delayed_message_exchange
+
+4. reset container

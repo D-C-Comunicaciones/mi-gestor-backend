@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@infraestructure/prisma/prisma.service';
 import { ChangesService } from '@modules/changes/changes.service';
@@ -16,73 +16,122 @@ export class LoansService {
     private readonly prisma: PrismaService,
     private readonly changesService: ChangesService,
     private readonly installmentsService: InstallmentsService,
-    private readonly rabbitmqService: RabbitMqService
+    private readonly rabbitmqService: RabbitMqService,
   ) { }
+
+  private readonly logger = new Logger(LoansService.name);
 
   // ---------- CREATE ----------
   async create(dto: CreateLoanDto) {
     await this.ensureRefs(dto);
 
-    const { loan, firstInstallment } = await this.prisma.$transaction(async tx => {
-      // 1️⃣ Determinar term
-      let termValue: number;
-      if (dto.termId) {
-        const term = await tx.term.findUnique({ where: { id: dto.termId } });
-        if (!term) throw new BadRequestException(`Término con ID ${dto.termId} no encontrado`);
-        termValue = term.value;
-      } else {
-        termValue = dto.loanTypeId === 1 ? 12 : dto.gracePeriod ?? 6;
-        await tx.term.create({ data: { value: termValue } });
-      }
+    const { loan, firstInstallment, remainingInstallments, gracePeriodMonths } =
+      await this.prisma.$transaction(async tx => {
+        // 1️⃣ Obtener loanType
+        const loanType = await tx.loanType.findUnique({
+          where: { id: dto.loanTypeId },
+          select: { id: true, name: true }
+        });
+        if (!loanType) throw new BadRequestException(`Tipo de crédito no encontrado`);
 
-      // 2️⃣ Crear préstamo
-      const loan = await tx.loan.create({
-        data: {
-          customerId: dto.customerId,
-          loanAmount: dto.loanAmount,
-          remainingBalance: dto.remainingBalance ?? dto.loanAmount,
-          interestRateId: dto.interestRateId,
-          penaltyRateId: dto.penaltyRateId ?? null,
-          paymentAmount: 0,
-          termId: dto.termId ?? undefined,
-          paymentFrequencyId: dto.paymentFrequencyId,
-          loanTypeId: dto.loanTypeId,
-          loanStatusId: 1, // al día
-          startDate: new Date(),
-          nextDueDate: null,
-          gracePeriod: dto.gracePeriod ?? null,
-          isActive: true,
-        },
-        include: {
-          interestRate: true,
-          paymentFrequency: true,
-          penaltyRate: true,
-          term: true,
-          customer: true,
-          loanType: true,
-          loanStatus: true,
-          installments: true,
+        // 2️⃣ Validar frecuencia según tipo de crédito
+        const freq = await tx.paymentFrequency.findUnique({
+          where: { id: dto.paymentFrequencyId }
+        });
+        if (!freq) throw new BadRequestException(`Frecuencia no encontrada`);
+
+        if (loanType.name === 'fixed_fees') {
+          if (freq.name.toUpperCase().includes('MENSUAL') || freq.name.toUpperCase().includes('MONTHLY')) {
+            throw new BadRequestException('Crédito tipo fixed_fees no puede tener frecuencia mensual');
+          }
+        } else if (loanType.name === 'only_interests') {
+          if (!freq.name.toUpperCase().includes('MENSUAL') && !freq.name.toUpperCase().includes('MONTHLY')) {
+            throw new BadRequestException('Crédito tipo only_interests debe tener frecuencia mensual');
+          }
         }
+
+        // 3️⃣ Determinar cuotas (term) o periodo de gracia
+        let termValue: number | null = null;
+        let termId: number | null = null;
+        let gracePeriodId: number | null = null;
+        let gracePeriod: number | null = null;
+
+        if (loanType.name === 'fixed_fees') {
+          if (dto.termId) {
+            const term = await tx.term.findUnique({ where: { id: dto.termId } });
+            if (!term) throw new BadRequestException(`Término con ID ${dto.termId} no encontrado`);
+            termId = term.id;
+            termValue = term.value;
+          } else {
+            termValue = 12; // default 12 meses
+            const newTerm = await tx.term.create({ data: { value: termValue } });
+            termId = newTerm.id;
+          }
+        } else if (loanType.name === 'only_interests') {
+          const days = dto.gracePeriod ?? 180; // default 6 meses (180 días)
+          const gp = await tx.gracePeriod.findFirst({ where: { days } });
+          if (!gp) throw new BadRequestException(`GracePeriod con ${days} días no encontrado en catálogo`);
+          gracePeriodId = gp.id;
+          gracePeriod = gp.days / 30; // lo pasamos a "meses de gracia" para cálculos
+        }
+
+        // 4️⃣ Crear préstamo
+        const loan = await tx.loan.create({
+          data: {
+            customerId: dto.customerId,
+            loanAmount: dto.loanAmount,
+            remainingBalance: dto.remainingBalance ?? dto.loanAmount,
+            interestRateId: dto.interestRateId,
+            penaltyRateId: dto.penaltyRateId ?? null,
+            paymentAmount: 0,
+            termId: termId ?? 0,
+            gracePeriodId: gracePeriodId ?? null,
+            paymentFrequencyId: dto.paymentFrequencyId,
+            loanTypeId: loanType.id,
+            loanStatusId: 1, // al día
+            startDate: new Date(),
+            nextDueDate: null,
+            isActive: true,
+          },
+          include: {
+            interestRate: true,
+            paymentFrequency: true,
+            penaltyRate: true,
+            term: true,
+            customer: true,
+            loanType: true,
+            loanStatus: true,
+            installments: true,
+          }
+        });
+
+        // 5️⃣ Crear primera cuota
+        const firstInstallment = await this.installmentsService.createFirstInstallment(
+          tx,
+          loan,
+          { termValue, gracePeriod }
+        );
+
+        // Actualizar nextDueDate con la fecha de la primera cuota
+        await tx.loan.update({
+          where: { id: loan.id },
+          data: { nextDueDate: firstInstallment.dueDate }
+        });
+
+        // 6️⃣ Determinar "restantes"
+        let remainingInstallments: number | null = null;
+        let gracePeriodMonths: number | null = null;
+
+        if (loanType.name === 'fixed_fees') {
+          remainingInstallments = termValue!;
+        } else if (loanType.name === 'only_interests') {
+          gracePeriodMonths = gracePeriod!;
+        }
+
+        return { loan, firstInstallment, remainingInstallments, gracePeriodMonths };
       });
 
-      // 3️⃣ Crear primera cuota
-      const firstInstallment = await this.installmentsService.createFirstInstallment(
-        tx,
-        loan.id,
-        loan.startDate,
-        termValue,
-      );
-
-      // Actualizar nextDueDate del préstamo con la primera cuota
-      await tx.loan.update({
-        where: { id: loan.id },
-        data: { nextDueDate: firstInstallment.dueDate }
-      });
-
-      return { loan, firstInstallment };
-    });
-
-    // 4️⃣ Calcular delay según periodicidad
+    // 7️⃣ Calcular delay según periodicidad
     const freq = loan.paymentFrequency.name.toUpperCase();
     let delay: number;
 
@@ -94,26 +143,43 @@ export class LoansService {
       delay = 15 * 24 * 60 * 60 * 1000; // 15 días
     } else if (freq.includes('MENSUAL') || freq.includes('MONTHLY')) {
       delay = 30 * 24 * 60 * 60 * 1000; // 30 días (aprox)
+    } else if (freq.includes('MINUTO') || freq.includes('MINUTE')) {
+      delay = 60 * 1000; // ⏱️ 1 minuto
     } else {
-      delay = 30 * 24 * 60 * 60 * 1000; // default mensual
+      delay = 30 * 24 * 60 * 60 * 1000; // fallback mensual
     }
 
-    // 5️⃣ Publicar mensaje inicial a RabbitMQ
+    // 📌 Log más claro: mostrar si es en minutos o días
+    let delayDesc: string;
+    if (delay < 60 * 1000) {
+      delayDesc = `${delay / 1000}s`;
+    } else if (delay < 60 * 60 * 1000) {
+      delayDesc = `${delay / (60 * 1000)}m`;
+    } else {
+      delayDesc = `${delay / (24 * 60 * 60 * 1000)}d`;
+    }
+
+    // 8️⃣ Publicar mensaje inicial a RabbitMQ
     await this.rabbitmqService.publishWithDelay(
       envs.rabbitMq.loanInstallmentsQueue,
-      { loanId: loan.id },
+      {
+        loanId: loan.id,
+        remainingInstallments,
+        gracePeriodMonths,
+      },
       delay
     );
 
-    console.log(`[LoanService] Loan ${loan.id} encolado con delay=${delay / (24 * 60 * 60 * 1000)} días (${freq})`);
+    this.logger.log(
+      `[LoanService] Loan ${loan.id} encolado con delay=${delayDesc} (${freq}) | restantes=${remainingInstallments ?? '∞'}`
+    );
 
-    // 6️⃣ Convertir a formato seguro para frontend
+    // 9️⃣ Convertir a formato seguro para frontend
     const loanPlain = this.convertLoanToPlain(loan);
     const customerFormatted = this.formatCustomer(loan.customer);
 
     return { loan: loanPlain, firstInstallment, customer: customerFormatted };
   }
-
 
   // ---------- FIND ALL ----------
   async findAll(p: LoanPaginationDto) {

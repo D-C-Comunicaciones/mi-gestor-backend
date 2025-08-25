@@ -38,7 +38,7 @@ export class CreateLoanDto {
   @IsOptional()
   @IsInt()
   @IsPositive()
-  termId: number;
+  termId?: number;
 
   @ApiProperty({ description: 'ID de la frecuencia de pago' })
   @IsInt()

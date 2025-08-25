@@ -4,7 +4,10 @@ import { ChangesService } from '@modules/changes/changes.service';
 import { UsersService } from '@modules/users/users.service';
 import { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
-import { CustomerPaginationDto, CreateCustomerDto, UpdateCustomerDto } from './dto';
+import { CustomerPaginationDto, CreateCustomerDto, UpdateCustomerDto, ResponseCustomerDto } from './dto';
+import { CustomerWithRelations } from './interfaces';
+import { UserResponseDto } from '@modules/users/dto';
+import { ResponseLoanDto } from '@modules/loans/dto';
 
 @Injectable()
 export class CustomersService {
@@ -12,7 +15,7 @@ export class CustomersService {
     private readonly prisma: PrismaService,
     private readonly usersService: UsersService,
     private readonly changesService: ChangesService,
-  ) {}
+  ) { }
 
   async findAll(paginationDto: CustomerPaginationDto) {
     const { page = 1, limit = 10, isActive } = paginationDto;
@@ -23,10 +26,9 @@ export class CustomersService {
 
     const totalItems = await this.prisma.customer.count({ where });
 
-    // Si no hay registros devolver inmediatamente (similar a collectors lógica solicitada)
     if (totalItems === 0) {
       return {
-        rawCustomers: [],
+        customers: [], // Cambié rawCustomers a customers para consistencia
         meta: {
           total: 0,
           page: 1,
@@ -48,7 +50,7 @@ export class CustomersService {
       where,
       orderBy: { id: 'asc' },
       include: {
-        user: true,
+        user: true,        // Incluir relación user
         zone: true,
         typeDocumentIdentification: true,
         gender: true,
@@ -57,9 +59,10 @@ export class CustomersService {
 
     const customersWithAudit = await Promise.all(
       rawCustomers.map(async (customer) => {
+        const dto = this.buildCustomerResponse(customer);
         const { create, lastUpdate } = await this.changesService.getChanges('customer', customer.id);
         return {
-          ...customer,
+          ...dto,
           createdAt: create?.timestamp || null,
           updatedAt: lastUpdate?.timestamp || create?.timestamp || null,
         };
@@ -67,7 +70,7 @@ export class CustomersService {
     );
 
     return {
-      rawCustomers: customersWithAudit,
+      customers: customersWithAudit, // Nombre más descriptivo
       meta: {
         total: totalItems,
         page,
@@ -86,17 +89,83 @@ export class CustomersService {
         zone: true,
         typeDocumentIdentification: true,
         gender: true,
+        loans: {
+          where: { isActive: true },
+          include: {
+            interestRate: true,
+            term: true,
+            paymentFrequency: true,
+            loanType: true,
+            loanStatus: true,
+          },
+        },
       },
     });
+
     if (!customer) throw new NotFoundException('Cliente no encontrado');
 
+    // Timestamps del cliente
     const { create, lastUpdate } = await this.changesService.getChanges('customer', id);
 
-    return {
-      ...customer,
-      createdAt: create?.timestamp || null,
-      updatedAt: lastUpdate?.timestamp || create?.timestamp || null,
+    // Construir loans con timestamps
+    const loans: ResponseLoanDto[] = [];
+    for (const loan of customer.loans || []) {
+      const loanChanges = await this.changesService.getChanges('loan', loan.id);
+
+      loans.push({
+        id: loan.id,
+        customerId: loan.customerId,
+        loanAmount: loan.loanAmount.toNumber(),
+        remainingBalance: loan.remainingBalance.toNumber(),
+        interestRateId: loan.interestRateId,
+        interestRateValue: loan.interestRate?.value.toNumber() ?? 0,
+        paymentAmount: loan.paymentAmount?.toNumber() ?? 0,
+        termId: loan.termId,
+        termValue: loan.term?.value ?? 0,
+        paymentFrequencyId: loan.paymentFrequencyId,
+        paymentFrequencyName: loan.paymentFrequency?.name || '',
+        loanTypeId: loan.loanTypeId,
+        loanTypeName: loan.loanType?.name || '',
+        loanStatusId: loan.loanStatusId,
+        loanStatusName: loan.loanStatus?.name || '',
+        startDate: loan.startDate?.toISOString().split('T')[0] || '',
+        nextDueDate: loan.nextDueDate?.toISOString().split('T')[0] || undefined,
+        isActive: loan.isActive,
+        createdAt: loanChanges.create?.timestamp?.toISOString() || '',
+        updatedAt: loanChanges.lastUpdate?.timestamp?.toISOString() || loanChanges.create?.timestamp?.toISOString() || '',
+      });
+    }
+
+    // Construir user crudo
+    const user = customer.user
+      ? {
+        id: customer.user.id,
+        email: customer.user.email,
+        name: customer.user.name,
+      }
+      : null;
+
+    // Construir customer crudo (sin user)
+    const customerObj = {
+      id: customer.id,
+      firstName: customer.firstName,
+      lastName: customer.lastName,
+      typeDocumentIdentificationId: customer.typeDocumentIdentificationId,
+      typeDocumentIdentificationName: customer.typeDocumentIdentification?.name || null,
+      documentNumber: customer.documentNumber,
+      genderId: customer.genderId,
+      genderName: customer.gender?.name || null,
+      birthDate: customer.birthDate,
+      address: customer.address,
+      phone: customer.phone,
+      zoneId: customer.zoneId || 0,
+      zoneName: customer.zone?.name || null,
+      zoneCode: customer.zone?.code || null,
+      createdAt: create?.timestamp?.toISOString() || null,
+      updatedAt: lastUpdate?.timestamp?.toISOString() || create?.timestamp?.toISOString() || null,
     };
+
+    return { customer: customerObj, loans, user };
   }
 
   async create(data: CreateCustomerDto) {
@@ -167,6 +236,7 @@ export class CustomersService {
 
   async update(id: number, data: UpdateCustomerDto) {
     const existing = await this.findOne(id);
+    const userId = existing.user?.id ?? null;
     const changes = this.detectChanges(existing, data);
     if (Object.keys(changes).length === 0) throw new BadRequestException('No se detectaron cambios.');
 
@@ -192,7 +262,7 @@ export class CustomersService {
     }
     if (email) {
       const emailExists = await this.prisma.user.findUnique({ where: { email } });
-      if (emailExists && emailExists.id !== existing.userId)
+      if (emailExists && emailExists.id !== userId)
         throw new BadRequestException('El email ya está registrado.');
     }
 
@@ -227,11 +297,11 @@ export class CustomersService {
 
       if (documentNumber !== undefined) { userUpdate.password = String(documentNumber); updateUser = true; }
       if (firstName !== undefined || lastName !== undefined) {
-        userUpdate.name = `${firstName ?? existing.firstName} ${lastName ?? existing.lastName}`.trim();
+        userUpdate.name = `${firstName ?? existing.customer.firstName} ${lastName ?? existing.customer.lastName}`.trim();
         updateUser = true;
       }
       if (email) { userUpdate.email = email; updateUser = true; }
-      if (updateUser && existing.userId) await this.usersService.update(existing.userId, userUpdate);
+      if (updateUser && userId) await this.usersService.update(userId, userUpdate);
 
       const audit = await this.changesService.getChanges('customer', id);
       const createdAt = audit.create?.timestamp || audit.lastUpdate?.timestamp || null;
@@ -272,5 +342,31 @@ export class CustomersService {
       if (newValue !== oldValue) changes[typedKey] = newValue as any;
     }
     return changes;
+  }
+
+  private buildCustomerResponse(customer: any): ResponseCustomerDto {
+    // Verificar si existe la relación user
+    const userEmail = customer.user ? customer.user.email : null;
+
+    return {
+      id: customer.id,
+      firstName: customer.firstName,
+      lastName: customer.lastName,
+      email: userEmail,
+      typeDocumentIdentificationId: customer.typeDocumentIdentificationId,
+      typeDocumentIdentificationName: customer.typeDocumentIdentification?.name || null,
+      documentNumber: customer.documentNumber,
+      birthDate: customer.birthDate.toISOString().split('T')[0],
+      genderId: customer.genderId,
+      genderName: customer.gender?.name || null,
+      phone: customer.phone,
+      address: customer.address,
+      zoneId: customer.zoneId || null,
+      zoneName: customer.zone?.name || null,
+      zoneCode: customer.zone?.code || null,
+      isActive: customer.isActive,
+      createdAt: customer.createdAt,
+      updatedAt: customer.updatedAt
+    };
   }
 }

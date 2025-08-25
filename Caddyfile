@@ -1,8 +1,8 @@
-api.dcmigestor.co, www.api.dcmigestor.co {
+www.api.dcmigestor.co {
     redir https://api.dcmigestor.co{uri}
 }
 
-dcmigestor.co {
+api.dcmigestor.co {
     encode zstd gzip
 
     header {
@@ -12,12 +12,10 @@ dcmigestor.co {
         Referrer-Policy strict-origin-when-cross-origin
     }
 
-    handle {
-        reverse_proxy api:3000 {
-            health_uri /v1
-            fail_duration 10s
-            max_fails 3
-        }
+    reverse_proxy api:3000 {
+        health_uri /v1
+        fail_duration 10s
+        max_fails 3
     }
 
     log {
