@@ -24,6 +24,11 @@ export class CreateLoanDto {
   @IsInt()
   interestRateId: number;
 
+  @ApiProperty({ description: 'ID de la tasa de interés moratoria (si aplica)', example: 1 })
+  @IsNumber()
+  @IsOptional()
+  penaltyRateId?: number;
+
   @ApiPropertyOptional({ description: 'Cuota fija (si aplica)', example: 120.5 })
   @IsOptional()
   @Transform(({ value }) => (value != null ? parseFloat(value) : value))
@@ -51,4 +56,8 @@ export class CreateLoanDto {
   @IsOptional()
   @IsDateString()
   nextDueDate?: string | null;
+
+  @IsNumber()
+  @IsOptional()
+  gracePeriod?: number;
 }

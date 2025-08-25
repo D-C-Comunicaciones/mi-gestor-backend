@@ -140,14 +140,14 @@ export class LoansController {
   @ApiForbiddenResponse()
   @Post()
   async create(@Body() dto: CreateLoanDto) {
-    const { loan, installments } = await this.loansService.create(dto);
+    const { loan, firstInstallment} = await this.loansService.create(dto);
 
     // Los Decimal ya están convertidos a números en el servicio
     const response = plainToInstance(
       ResponseLoanDto,
       {
         ...loan,
-        installments,
+        firstInstallment,
       },
       { excludeExtraneousValues: true },
     );

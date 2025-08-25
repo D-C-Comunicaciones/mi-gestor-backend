@@ -1,0 +1,1 @@
+rabbitmqctl enable_feature_flag all

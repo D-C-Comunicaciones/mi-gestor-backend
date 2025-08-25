@@ -17,5 +17,5 @@ export class CreateInstallmentDto {
   @IsOptional() // 👈 Hacer opcional
   @IsInt()
   @IsPositive()
-  count?: number; // 👈 Agregar count
+  count: number; // 👈 Agregar count
 }

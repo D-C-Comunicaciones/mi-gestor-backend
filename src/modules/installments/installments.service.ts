@@ -1,141 +1,171 @@
-// installments.service.ts
-import { Injectable, BadRequestException } from '@nestjs/common';
-import { PrismaService } from '@infraestructure/prisma/prisma.service';
-import { addDays, addWeeks, addMonths } from 'date-fns';
-import { Prisma, PrismaClient } from '@prisma/client';
-import { CreateInstallmentDto } from './dto';
+import { PrismaService } from "@infraestructure/prisma/prisma.service";
+import { BadRequestException, Injectable } from "@nestjs/common";
+import { Prisma } from "@prisma/client";
+import { Decimal } from "@prisma/client/runtime/library";
+import { addDays, addMonths, addWeeks } from "date-fns";
 
 @Injectable()
 export class InstallmentsService {
   constructor(private readonly prisma: PrismaService) { }
 
-  async create(dto: CreateInstallmentDto, db?: Prisma.TransactionClient | PrismaClient) {
-    const prismaClient = db ?? this.prisma;
-
-    // Traer el préstamo con sus relaciones
-    const loan = await prismaClient.loan.findUnique({
-      where: { id: dto.loanId },
-      include: { 
-        interestRate: true, 
-        loanType: true, 
-        paymentFrequency: true,
-        term: true
-      },
+  /** Crear primera cuota para un préstamo */
+  async createFirstInstallment(
+    tx: Prisma.TransactionClient,
+    loanId: number,
+    startDate: Date,
+    termValue: number
+  ) {
+    const loan = await tx.loan.findUnique({
+      where: { id: loanId },
+      include: { interestRate: true, paymentFrequency: true },
     });
-    if (!loan) throw new BadRequestException('Loan no encontrado');
 
-    // Validar existencia de PaymentFrequency
-    const freq = await prismaClient.paymentFrequency.findUnique({
-      where: { id: dto.paymentFrequencyId },
-    });
-    if (!freq) throw new BadRequestException('PaymentFrequency no encontrada');
-
-    const incrementer = this.getDateIncrementer(freq.name);
-    
-    // ✅ Usar el count proporcionado O el valor del término
-    const numberOfInstallments = dto.count ?? (loan.term?.value || 0);
-
-    if (numberOfInstallments <= 0) {
-      return []; // No generar cuotas si el count es 0 o negativo
+    if (!loan) {
+      throw new BadRequestException('Loan no encontrado');
     }
 
-    let currentDate = new Date(dto.startDate);
-    let remainingPrincipal = loan.loanAmount;
+    const incrementer = this.getDateIncrementer(loan.paymentFrequency.name);
+    const firstDueDate = incrementer(startDate);
 
-    // Normalizar tasa de interés
-    const interestRate = loan.interestRate.value.greaterThan(1)
-      ? loan.interestRate.value.div(100)
-      : loan.interestRate.value;
+    const installment = await this.calculateAndCreateInstallment(
+      loan,
+      1,
+      firstDueDate,
+      termValue,
+      tx // 👈 pasar también la transacción para mantener consistencia
+    );
 
-    const data: Prisma.InstallmentCreateManyInput[] = [];
+    return installment;
+  }
 
-    for (let i = 1; i <= numberOfInstallments; i++) {
-      // ✅ La PRIMERA cuota también se incrementa según la frecuencia
-      if (i === 1) {
-        currentDate = incrementer(currentDate);
-      } else {
-        currentDate = incrementer(currentDate);
-      }
+  /** Crear siguiente cuota para un préstamo, según última cuota */
+  async createNextInstallment(loanId: number) {
+    const loan = await this.prisma.loan.findUnique({
+      where: { id: loanId },
+      include: { installments: true, interestRate: true, paymentFrequency: true }
+    });
+    if (!loan) throw new BadRequestException('Loan no encontrado');
+    if (!loan.installments || loan.installments.length === 0) throw new BadRequestException('No hay cuotas previas');
 
-      // Interés sobre saldo pendiente
-      const interestAmount = remainingPrincipal
-        .mul(interestRate)
-        .toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
+    const lastInstallment = loan.installments.reduce((a, b) => (a.sequence > b.sequence ? a : b));
+    const nextSequence = lastInstallment.sequence + 1;
+    const incrementer = this.getDateIncrementer(loan.paymentFrequency.name);
+    const nextDueDate = incrementer(lastInstallment.dueDate);
 
-      // Capital de la cuota
-      let capitalAmount = remainingPrincipal
-        .div(numberOfInstallments - i + 1)
-        .toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
+    const installment = await this.calculateAndCreateInstallment(
+      loan,
+      nextSequence,
+      nextDueDate,
+      loan.installments.length + 1 // o termValue si lo manejas
+    );
 
-      // Ajustar última cuota
-      if (i === numberOfInstallments) {
-        capitalAmount = remainingPrincipal.toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
-      }
+    // Actualizar nextDueDate en el préstamo
+    await this.prisma.loan.update({
+      where: { id: loanId },
+      data: { nextDueDate }
+    });
 
-      // Total cuota = capital + interés
-      const totalAmount = capitalAmount
-        .add(interestAmount)
-        .toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
+    return installment;
+  }
 
-      // Actualizar saldo pendiente
-      remainingPrincipal = remainingPrincipal
-        .sub(capitalAmount)
-        .toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
+  private async calculateAndCreateInstallment(
+    loan: any,
+    sequence: number,
+    dueDate: Date,
+    termValue: number,
+    tx?: Prisma.TransactionClient // opcional
+  ) {
+    let capitalAmount = 0;
+    let interestAmount = 0;
+    let totalAmount = 0;
 
-      data.push({
+    // Siempre garantizamos que installments sea un array
+    const installments = loan.installments ?? [];
+
+    if (loan.loanTypeId === 1) {
+      // Amortización estándar: capital sobre el saldo pendiente
+
+      // Convertir loanAmount a Decimal si no lo es ya
+      const initialLoanAmount = loan.loanAmount instanceof Prisma.Decimal
+        ? loan.loanAmount
+        : new Prisma.Decimal(loan.loanAmount);
+
+      // Reducir sumando capitalAmount de cuotas previas (también en Decimal)
+      const remainingBalance = installments.reduce(
+        (sum: Prisma.Decimal, i: any) => {
+          const capital = i.capitalAmount instanceof Prisma.Decimal
+            ? i.capitalAmount
+            : new Prisma.Decimal(i.capitalAmount);
+          return sum.sub(capital);
+        },
+        initialLoanAmount
+      );
+
+      capitalAmount = remainingBalance.div(termValue - (sequence - 1)).toNumber();
+
+      // Convertir interestRate.value a Decimal si no lo es ya
+      const interestRateValue = loan.interestRate.value instanceof Prisma.Decimal
+        ? loan.interestRate.value
+        : new Prisma.Decimal(loan.interestRate.value);
+
+      const interestRateNormalized = interestRateValue.greaterThan(1)
+        ? interestRateValue.div(100)
+        : interestRateValue;
+
+      interestAmount = remainingBalance.mul(interestRateNormalized).toNumber();
+
+      totalAmount = capitalAmount + interestAmount;
+
+    } else if (loan.loanTypeId === 2) {
+      // Solo intereses
+
+      const loanAmountDecimal = loan.loanAmount instanceof Prisma.Decimal
+        ? loan.loanAmount
+        : new Prisma.Decimal(loan.loanAmount);
+
+      const interestRateValue = loan.interestRate.value instanceof Prisma.Decimal
+        ? loan.interestRate.value
+        : new Prisma.Decimal(loan.interestRate.value);
+
+      const interestRateNormalized = interestRateValue.greaterThan(1)
+        ? interestRateValue.div(100)
+        : interestRateValue;
+
+      interestAmount = loanAmountDecimal.mul(interestRateNormalized).toNumber();
+
+      capitalAmount =
+        installments.length < (loan.gracePeriod ?? 0)
+          ? 0
+          : loanAmountDecimal.toNumber();
+
+      totalAmount = capitalAmount + interestAmount;
+    }
+
+    // Si me pasan tx uso tx, si no uso this.prisma
+    const client = tx ?? this.prisma;
+
+    return client.installment.create({
+      data: {
         loanId: loan.id,
-        sequence: i,
-        dueDate: currentDate,
+        sequence,
+        dueDate,
         capitalAmount,
         interestAmount,
         totalAmount,
-        paidAmount: new Prisma.Decimal(0),
+        paidAmount: 0,
         isPaid: false,
         isActive: true,
         paidAt: null,
-      });
-    }
-
-    if (data.length > 0) {
-      await prismaClient.installment.createMany({ data });
-    }
-
-    return data;
+      },
+    });
   }
 
-  /** Obtiene el incrementador de fecha según la frecuencia */
   private getDateIncrementer(frequencyName: string): (date: Date) => Date {
     const freq = frequencyName.toUpperCase();
-    
-    if (freq.includes('DIARIA') || freq.includes('DAILY')) {
-      return (date) => addDays(date, 1);
-    }
-    if (freq.includes('SEMANAL') || freq.includes('WEEKLY')) {
-      return (date) => addWeeks(date, 1);
-    }
-    if (freq.includes('QUINCENAL') || freq.includes('BIWEEKLY')) {
-      return (date) => addDays(date, 15);
-    }
-    if (freq.includes('MENSUAL') || freq.includes('MONTHLY')) {
-      return (date) => addMonths(date, 1);
-    }
-    
+    if (freq.includes('DIARIA') || freq.includes('DAILY')) return (date) => addDays(date, 1);
+    if (freq.includes('SEMANAL') || freq.includes('WEEKLY')) return (date) => addWeeks(date, 1);
+    if (freq.includes('QUINCENAL') || freq.includes('BIWEEKLY')) return (date) => addDays(date, 15);
+    if (freq.includes('MENSUAL') || freq.includes('MONTHLY')) return (date) => addMonths(date, 1);
     return (date) => addMonths(date, 1);
-  }
-
-  /** Calcula número de cuotas según tipo de préstamo y frecuencia (backup) */
-  private calculateInstallments(
-    principal: number,
-    loanTypeId: number,
-    interestRate: number,
-    frequency: string
-  ): number {
-    if (loanTypeId !== 1) return 0;
-    const u = frequency.toUpperCase();
-    if (u.includes('DAILY')) return 30;
-    if (u.includes('WEEK')) return 12;
-    if (u.includes('BIWEEK')) return 12;
-    if (u.includes('MONTH')) return 12;
-    return 12;
   }
 }
