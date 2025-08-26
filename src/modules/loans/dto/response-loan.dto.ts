@@ -1,5 +1,5 @@
 import { Expose, Transform, Type } from 'class-transformer';
-import { format } from 'date-fns';
+import { format, differenceInDays } from 'date-fns';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ResponseInstallmentDto } from '@modules/installments/dto';
 import { ResponseCustomerDto } from '@modules/customers/dto';
@@ -18,12 +18,12 @@ export class ResponseLoanDto {
   interestRateValue: number;
   
   @ApiProperty({ example: 0 }) @Expose() paymentAmount: number;
-  @ApiProperty({ example: 1 }) @Expose() termId: number;
+  @ApiProperty({ example: 1 }) @Expose() termId: number | null;
   
   @ApiProperty({ example: 6 })
   @Expose()
   @Transform(({ obj }) => obj.term?.value)
-  termValue: number;
+  termValue: number | null;
   
   @ApiProperty({ example: 3 }) @Expose() paymentFrequencyId: number;
   
@@ -55,6 +55,30 @@ export class ResponseLoanDto {
   @Expose()
   @Transform(({ value }) => value ? format(new Date(value), 'yyyy-MM-dd') : null)
   nextDueDate?: string;
+
+  // 🔹 Nuevos campos para periodo de gracia
+  @ApiPropertyOptional({ example: 2, nullable: true })
+  @Expose() gracePeriodId?: number | null;
+
+  @ApiPropertyOptional({ example: 3, description: 'Meses de gracia', nullable: true })
+  @Expose() gracePeriodMonths?: number | null;
+
+  @ApiPropertyOptional({ example: '2025-08-04', nullable: true })
+  @Expose()
+  @Transform(({ value }) => value ? format(new Date(value), 'yyyy-MM-dd') : null)
+  graceEndDate?: string | null;
+
+  // 🔹 Campo calculado dinámicamente
+  @ApiPropertyOptional({ example: 15, description: 'Días restantes de gracia', nullable: true })
+  @Expose()
+  @Transform(({ obj }) => {
+    if (!obj.graceEndDate) return null;
+    const today = new Date();
+    const endDate = new Date(obj.graceEndDate);
+    const daysLeft = differenceInDays(endDate, today);
+    return daysLeft >= 0 ? daysLeft : 0; // si ya venció, devolvemos 0
+  })
+  graceDaysLeft?: number | null;
   
   @ApiProperty({ example: true }) @Expose() isActive: boolean;
   
@@ -67,14 +91,9 @@ export class ResponseLoanDto {
   @Expose()
   @Transform(({ value }) => value ? format(new Date(value), 'yyyy-MM-dd HH:mm:ss') : null)
   updatedAt: string;
-  
-  @ApiPropertyOptional({ type: ResponseCustomerDto })
-  @Expose()
-  @Type(() => ResponseCustomerDto)
-  customer?: ResponseCustomerDto;
-  
-  @ApiPropertyOptional({ isArray: true, type: () => ResponseInstallmentDto })
-  @Expose()
-  @Type(() => ResponseInstallmentDto)
-  installments?: ResponseInstallmentDto[];
+    
+  // @ApiPropertyOptional({ isArray: true, type: () => ResponseInstallmentDto })
+  // @Expose()
+  // @Type(() => ResponseInstallmentDto)
+  // installments?: ResponseInstallmentDto[];
 }

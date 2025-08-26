@@ -292,18 +292,19 @@ model Term {
 }
 
 model PenaltyRate {
-  id       Int      @id @default(autoincrement())
-  name     String   // Ejemplo: "Interés moratorio legal máximo"
-  value    Decimal  @db.Decimal(5, 4) // Ejemplo: 0.05 = 5% mensual o anual según config
-  isActive Boolean  @default(true)
+  id       Int     @id @default(autoincrement())
+  name     String // Ejemplo: "Interés moratorio legal máximo"
+  value    Decimal @db.Decimal(5, 4) // Ejemplo: 0.05 = 5% mensual o anual según config
+  isActive Boolean @default(true)
 
   loans Loan[] // 👈 Relación con créditos
+
   @@map("penalty_rates")
 }
 
 model MoratoryInterest {
-  id            Int          @id @default(autoincrement())
-  installmentId Int          @unique
+  id            Int   @id @default(autoincrement())
+  installmentId Int   @unique
   daysLate      Int
   amount        Float
 
@@ -314,9 +315,9 @@ model MoratoryInterest {
 }
 
 model GracePeriod {
-  id     Int    @id @default(autoincrement())
-  name   String // Ej: "15 días", "1 mes", "3 meses"
-  days   Int    // Número de días del período de gracia
+  id       Int     @id @default(autoincrement())
+  name     String // Ej: "15 días", "1 mes", "3 meses"
+  days     Int // Número de días del período de gracia
   isActive Boolean @default(true)
 
   loans Loan[] // Relación con los préstamos que usan este período
@@ -324,7 +325,6 @@ model GracePeriod {
   @@index([days])
   @@map("grace_periods")
 }
-
 
 /// -------------------------------------
 /// CRÉDITOS, CUOTAS, PAGOS Y REFINANCIACIONES
@@ -335,17 +335,19 @@ model Loan {
   customerId Int
   customer   Customer @relation(fields: [customerId], references: [id])
 
-  loanAmount       Decimal  @db.Decimal(10, 0) // Monto prestado original
-  remainingBalance Decimal  @db.Decimal(10, 0) // Saldo actual (disminuye con abonos a capital)
+  loanAmount       Decimal @db.Decimal(10, 0) // Monto prestado original
+  remainingBalance Decimal @db.Decimal(10, 0) // Saldo actual (disminuye con abonos a capital)
   interestRateId   Int // FK → tabla InterestRate (interés del préstamo)
   penaltyRateId    Int? // FK → tabla PenaltyRate (tasa de interés moratorio)
 
-  paymentAmount      Decimal? @db.Decimal(10, 0) // Valor de cuota fija (si aplica)
-  termId             Int
-  paymentFrequencyId Int // Frecuencia de pago (diario, semanal, mensual)
-  loanTypeId         Int // Tipo de crédito (1 = Cuota fija, 2 = Solo intereses)
-  loanStatusId       Int // Estado del crédito
-  gracePeriodId      Int? // FK → tabla GracePeriod (plazo de gracia)
+  paymentAmount          Decimal?  @db.Decimal(10, 0) // Valor de cuota fija (si aplica)
+  termId                 Int? // FK → tabla Term (Número de cuotas del préstamo)
+  paymentFrequencyId     Int // Frecuencia de pago (diario, semanal, mensual)
+  loanTypeId             Int // Tipo de crédito (1 = Cuota fija, 2 = Solo intereses)
+  loanStatusId           Int // Estado del crédito
+  gracePeriodId          Int? // FK → tabla GracePeriod (plazo de gracia)
+  graceEndDate           DateTime? @db.Date // fecha de finalización de periodo de gracia.
+  requiresCapitalPayment Boolean   @default(false) // ⬅️ después del período de gracia se activa(Aplica solo para préstamos mensuales de linea de crédito 2).
 
   // Relaciones
   interestRate     InterestRate     @relation(fields: [interestRateId], references: [id])
@@ -353,7 +355,7 @@ model Loan {
   loanType         LoanType         @relation(fields: [loanTypeId], references: [id])
   loanStatus       LoanStatus       @relation(fields: [loanStatusId], references: [id])
   paymentFrequency PaymentFrequency @relation(fields: [paymentFrequencyId], references: [id])
-  term             Term?             @relation(fields: [termId], references: [id])
+  term             Term?            @relation(fields: [termId], references: [id])
   gracePeriod      GracePeriod?     @relation(fields: [gracePeriodId], references: [id])
 
   // Fechas clave
@@ -365,7 +367,7 @@ model Loan {
 
   // Relaciones hijas
   installments         Installment[] // Cronograma de cuotas generadas
-  payments             Payment[]     // Pagos realizados
+  payments             Payment[] // Pagos realizados
   refinancingsOriginal Refinancing[] @relation("OriginalLoan")
   refinancingsNew      Refinancing[] @relation("NewLoan")
 
@@ -388,7 +390,7 @@ model Installment {
   loanId         Int // FK al crédito
   loan           Loan      @relation(fields: [loanId], references: [id])
   sequence       Int // Número de cuota en el cronograma (1..N)
-  dueDate        DateTime  @db.Date// Fecha de vencimiento de esta cuota
+  dueDate        DateTime  @db.Date // Fecha de vencimiento de esta cuota
   capitalAmount  Decimal   @db.Decimal(10, 0) // Porción de capital esperada
   interestAmount Decimal   @db.Decimal(10, 0) // Porción de interés esperada
   totalAmount    Decimal   @db.Decimal(10, 0) // capitalAmount + interestAmount (valor esperado)
@@ -397,7 +399,7 @@ model Installment {
   isActive       Boolean   @default(true) // Activación de la cuota (soft delete)
   paidAt         DateTime? // Fecha en la que se completó el pago total de la cuota
 
-  payments Payment[] // Pagos aplicados a esta cuota (vínculo para trazabilidad)
+  payments          Payment[] // Pagos aplicados a esta cuota (vínculo para trazabilidad)
   moratoryInterests MoratoryInterest[]
 
   @@index([loanId])

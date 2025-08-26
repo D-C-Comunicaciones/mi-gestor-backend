@@ -15,8 +15,9 @@ export class ResponseCustomerDto {
   @Expose()
   lastName: string;
 
+  // ⚡ Si realmente necesitas email en el contrato, déjalo; si no, elimínalo
   @ApiProperty({ example: 'cliente1@migestor.com', description: 'Email del usuario' })
-  @Expose() // <-- Asegúrate de incluir @Expose() para que class-transformer lo incluya
+  @Expose()
   email: string;
 
   @ApiProperty({ example: 1, description: 'ID tipo de documento' })
@@ -25,6 +26,7 @@ export class ResponseCustomerDto {
 
   @ApiProperty({ example: 'Cédula de Ciudadanía', description: 'Nombre del tipo de documento' })
   @Expose()
+  @Transform(({ obj }) => obj.typeDocumentIdentification?.name)
   typeDocumentIdentificationName: string;
 
   @ApiProperty({ example: 1122233344, description: 'Número de documento' })
@@ -41,6 +43,7 @@ export class ResponseCustomerDto {
 
   @ApiProperty({ example: 'Femenino', description: 'Nombre del género' })
   @Expose()
+  @Transform(({ obj }) => obj.gender?.name)
   genderName: string;
 
   @ApiProperty({ example: '+573009998887', description: 'Teléfono contacto' })
@@ -57,10 +60,12 @@ export class ResponseCustomerDto {
 
   @ApiPropertyOptional({ example: 'Norte', description: 'Nombre de la zona' })
   @Expose()
+  @Transform(({ obj }) => obj.zone?.name)
   zoneName?: string;
 
   @ApiPropertyOptional({ example: 'ZN001', description: 'Código de la zona' })
   @Expose()
+  @Transform(({ obj }) => obj.zone?.code)
   zoneCode?: string;
 
   @ApiProperty({ example: true, description: 'Estado activo/inactivo' })
@@ -70,7 +75,6 @@ export class ResponseCustomerDto {
   @ApiProperty({ example: '2025-05-04 10:00:00', description: 'Fecha de creación' })
   @Expose()
   @Transform(({ value }) => value ? format(new Date(value), 'yyyy-MM-dd HH:mm:ss') : null)
-
   createdAt: string;
 
   @ApiProperty({ example: '2025-05-04 10:00:00', description: 'Fecha de última actualización' })

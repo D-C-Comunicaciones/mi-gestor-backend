@@ -135,28 +135,31 @@ export class LoansController {
       },
     },
   })
+  
   @ApiBadRequestResponse({ description: 'Validación / lógica' })
   @ApiUnauthorizedResponse()
   @ApiForbiddenResponse()
   @Post()
   async create(@Body() dto: CreateLoanDto) {
-    const { loan, firstInstallment} = await this.loansService.create(dto);
+    const { loan, firstInstallment, customer} = await this.loansService.create(dto);
 
     // Los Decimal ya están convertidos a números en el servicio
     const response = plainToInstance(
       ResponseLoanDto,
       {
-        ...loan,
-        firstInstallment,
+        ...loan
       },
       { excludeExtraneousValues: true },
     );
 
     return {
       customMessage: 'Préstamo creado correctamente',
-      response,
+      loan: response,
+      customer,
+      firstInstallment
     };
   }
+  
   @Patch(':id')
   @Permissions('update.loans')
   @ApiOperation({ summary: 'Actualizar préstamo', description: 'Actualiza campos cambiados.' })

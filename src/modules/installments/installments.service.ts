@@ -5,7 +5,7 @@ import { addDays, addMonths, addWeeks, addMinutes } from "date-fns";
 
 @Injectable()
 export class InstallmentsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   /** Crear primera cuota de un préstamo */
   async createFirstInstallment(
@@ -23,7 +23,9 @@ export class InstallmentsService {
     switch (loan.loanType.name as "fixed_fees" | "only_interests") {
       case "fixed_fees":
         if (!options.termValue) {
-          throw new BadRequestException("TermValue requerido para crédito fixed_fees");
+          throw new BadRequestException(
+            "TermValue requerido para crédito fixed_fees"
+          );
         }
         installment = await this.calculateAndCreateInstallment(
           loan,
@@ -36,7 +38,9 @@ export class InstallmentsService {
 
       case "only_interests":
         if (!options.gracePeriod) {
-          throw new BadRequestException("GracePeriod requerido para crédito only_interests");
+          throw new BadRequestException(
+            "GracePeriod requerido para crédito only_interests"
+          );
         }
         installment = await this.calculateAndCreateInstallment(
           loan,
@@ -48,7 +52,9 @@ export class InstallmentsService {
         break;
 
       default:
-        throw new BadRequestException(`Tipo de crédito no soportado: ${loan.loanType.name}`);
+        throw new BadRequestException(
+          `Tipo de crédito no soportado: ${loan.loanType.name}`
+        );
     }
 
     return installment;
@@ -85,7 +91,9 @@ export class InstallmentsService {
     switch (loan.loanType.name as "fixed_fees" | "only_interests") {
       case "fixed_fees":
         if (!loan.term?.value) {
-          throw new BadRequestException("El préstamo no tiene término configurado");
+          throw new BadRequestException(
+            "El préstamo no tiene término configurado"
+          );
         }
         installment = await this.calculateAndCreateInstallment(
           loan,
@@ -98,7 +106,9 @@ export class InstallmentsService {
 
       case "only_interests":
         if (!loan.gracePeriod?.days) {
-          throw new BadRequestException("El préstamo no tiene período de gracia configurado");
+          throw new BadRequestException(
+            "El préstamo no tiene período de gracia configurado"
+          );
         }
         installment = await this.calculateAndCreateInstallment(
           loan,
@@ -110,7 +120,9 @@ export class InstallmentsService {
         break;
 
       default:
-        throw new BadRequestException(`Tipo de crédito no soportado: ${loan.loanType.name}`);
+        throw new BadRequestException(
+          `Tipo de crédito no soportado: ${loan.loanType.name}`
+        );
     }
 
     await this.prisma.loan.update({
@@ -130,7 +142,9 @@ export class InstallmentsService {
     tx?: Prisma.TransactionClient
   ) {
     if (!termOrGrace || termOrGrace <= 0) {
-      throw new BadRequestException("El número de cuotas o período de gracia no es válido");
+      throw new BadRequestException(
+        "El número de cuotas o período de gracia no es válido"
+      );
     }
 
     let capitalAmount = 0;
@@ -170,7 +184,9 @@ export class InstallmentsService {
           .div(termOrGrace - (sequence - 1))
           .toNumber();
 
-        interestAmount = remainingBalance.mul(interestRateNormalized).toNumber();
+        interestAmount = remainingBalance
+          .mul(interestRateNormalized)
+          .toNumber();
         totalAmount = capitalAmount + interestAmount;
         break;
       }
@@ -181,28 +197,13 @@ export class InstallmentsService {
             ? loan.loanAmount
             : new Prisma.Decimal(loan.loanAmount);
 
+        // siempre se cobra solo interés sobre el capital original
         interestAmount = loanAmountDecimal
           .mul(interestRateNormalized)
           .toNumber();
 
-        if (sequence <= termOrGrace) {
-          capitalAmount = 0;
-        } else {
-          const remainingBalance = installments.reduce(
-            (sum: Prisma.Decimal, i: any) => {
-              const capital =
-                i.capitalAmount instanceof Prisma.Decimal
-                  ? i.capitalAmount
-                  : new Prisma.Decimal(i.capitalAmount);
-              return sum.sub(capital);
-            },
-            loanAmountDecimal
-          );
-
-          capitalAmount = remainingBalance.div(12).toNumber();
-        }
-
-        totalAmount = capitalAmount + interestAmount;
+        capitalAmount = 0; // nunca se factura capital automáticamente
+        totalAmount = interestAmount;
         break;
       }
     }
@@ -227,11 +228,25 @@ export class InstallmentsService {
   /** ⏱️ Incrementador de fechas según frecuencia */
   private getDateIncrementer(frequencyName: string): (date: Date) => Date {
     const freq = frequencyName.toUpperCase();
-    if (freq.includes("DIARIA") || freq.includes("DAILY")) return (date) => addDays(date, 1);
-    if (freq.includes("SEMANAL") || freq.includes("WEEKLY")) return (date) => addWeeks(date, 1);
-    if (freq.includes("QUINCENAL") || freq.includes("BIWEEKLY")) return (date) => addDays(date, 15);
-    if (freq.includes("MENSUAL") || freq.includes("MONTHLY")) return (date) => addMonths(date, 1);
-    if (freq.includes("MINUTO") || freq.includes("MINUTE")) return (date) => addMinutes(date, 1); // 👈 agregado
-    return (date) => addMonths(date, 1); // fallback mensual
+
+    if (freq.includes("DIARIA") || freq.includes("DAILY")) {
+      return (date) => addDays(date, 1 - 1); // +1 día, pero 1 día antes
+    }
+    if (freq.includes("SEMANAL") || freq.includes("WEEKLY")) {
+      return (date) => addDays(addWeeks(date, 1), -2); // +1 semana, pero 2 días antes
+    }
+    if (freq.includes("QUINCENAL") || freq.includes("BIWEEKLY")) {
+      return (date) => addDays(date, 15 - 2); // +15 días, pero 2 días antes
+    }
+    if (freq.includes("MENSUAL") || freq.includes("MONTHLY") || freq.includes("30")) {
+      return (date) => addDays(addMonths(date, 1), -2); // +1 mes, pero 2 días antes
+    }
+    if (freq.includes("MINUTO") || freq.includes("MINUTE")) {
+      return (date) => addMinutes(date, 1); // sin anticipación aquí
+    }
+
+    // fallback: mensual con 2 días antes
+    return (date) => addDays(addMonths(date, 1), -2);
   }
+
 }
