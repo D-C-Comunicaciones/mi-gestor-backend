@@ -54,7 +54,8 @@ export class LoansService {
         let termValue: number | null = null;
         let termId: number | null = null;
         let gracePeriodId: number | null = null;
-        let gracePeriod: number | null = null;
+        let gracePeriodMonths: number | null = null; // 🔹 declarada solo una vez
+        let remainingInstallments: number | null = null;
 
         if (loanType.name === 'fixed_fees') {
           if (dto.termId) {
@@ -67,12 +68,19 @@ export class LoansService {
             const newTerm = await tx.term.create({ data: { value: termValue } });
             termId = newTerm.id;
           }
+          remainingInstallments = termValue - 1; // restamos la primera cuota
         } else if (loanType.name === 'only_interests') {
-          const days = dto.gracePeriod ?? 180; // default 6 meses (180 días)
-          const gp = await tx.gracePeriod.findFirst({ where: { days } });
-          if (!gp) throw new BadRequestException(`GracePeriod con ${days} días no encontrado en catálogo`);
+          if (!dto.gracePeriodId) {
+            throw new BadRequestException('GracePeriodId requerido para crédito only_interests');
+          }
+
+          const gp = await tx.gracePeriod.findUnique({
+            where: { id: dto.gracePeriodId }
+          });
+          if (!gp) throw new BadRequestException(`GracePeriod con ID ${dto.gracePeriodId} no encontrado`);
+
           gracePeriodId = gp.id;
-          gracePeriod = gp.days / 30; // lo pasamos a "meses de gracia" para cálculos
+          gracePeriodMonths = gp.days / 30; // convertimos días a meses
         }
 
         // 4️⃣ Crear préstamo
@@ -109,7 +117,7 @@ export class LoansService {
         const firstInstallment = await this.installmentsService.createFirstInstallment(
           tx,
           loan,
-          { termValue, gracePeriod }
+          { termValue, gracePeriod: gracePeriodMonths }
         );
 
         // Actualizar nextDueDate con la fecha de la primera cuota
@@ -118,16 +126,6 @@ export class LoansService {
           data: { nextDueDate: firstInstallment.dueDate }
         });
 
-        // 6️⃣ Determinar "restantes"
-        let remainingInstallments: number | null = null;
-        let gracePeriodMonths: number | null = null;
-
-        if (loanType.name === 'fixed_fees') {
-          remainingInstallments = termValue!;
-        } else if (loanType.name === 'only_interests') {
-          gracePeriodMonths = gracePeriod!;
-        }
-
         return { loan, firstInstallment, remainingInstallments, gracePeriodMonths };
       });
 
@@ -135,38 +133,22 @@ export class LoansService {
     const freq = loan.paymentFrequency.name.toUpperCase();
     let delay: number;
 
-    if (freq.includes('DIARIA') || freq.includes('DAILY')) {
-      delay = 24 * 60 * 60 * 1000; // 1 día
-    } else if (freq.includes('SEMANAL') || freq.includes('WEEKLY')) {
-      delay = 7 * 24 * 60 * 60 * 1000; // 7 días
-    } else if (freq.includes('QUINCENAL') || freq.includes('BIWEEKLY')) {
-      delay = 15 * 24 * 60 * 60 * 1000; // 15 días
-    } else if (freq.includes('MENSUAL') || freq.includes('MONTHLY')) {
-      delay = 30 * 24 * 60 * 60 * 1000; // 30 días (aprox)
-    } else if (freq.includes('MINUTO') || freq.includes('MINUTE')) {
-      delay = 60 * 1000; // ⏱️ 1 minuto
-    } else {
-      delay = 30 * 24 * 60 * 60 * 1000; // fallback mensual
-    }
+    if (freq.includes('DIARIA') || freq.includes('DAILY')) delay = 24 * 60 * 60 * 1000;
+    else if (freq.includes('SEMANAL') || freq.includes('WEEKLY')) delay = 7 * 24 * 60 * 60 * 1000;
+    else if (freq.includes('QUINCENAL') || freq.includes('BIWEEKLY')) delay = 15 * 24 * 60 * 60 * 1000;
+    else if (freq.includes('MENSUAL') || freq.includes('MONTHLY')) delay = 30 * 24 * 60 * 60 * 1000;
+    else if (freq.includes('MINUTO') || freq.includes('MINUTE')) delay = 60 * 1000;
+    else delay = 30 * 24 * 60 * 60 * 1000;
 
-    // 📌 Log más claro: mostrar si es en minutos o días
     let delayDesc: string;
-    if (delay < 60 * 1000) {
-      delayDesc = `${delay / 1000}s`;
-    } else if (delay < 60 * 60 * 1000) {
-      delayDesc = `${delay / (60 * 1000)}m`;
-    } else {
-      delayDesc = `${delay / (24 * 60 * 60 * 1000)}d`;
-    }
+    if (delay < 60 * 1000) delayDesc = `${delay / 1000}s`;
+    else if (delay < 60 * 60 * 1000) delayDesc = `${delay / (60 * 1000)}m`;
+    else delayDesc = `${delay / (24 * 60 * 60 * 1000)}d`;
 
     // 8️⃣ Publicar mensaje inicial a RabbitMQ
     await this.rabbitmqService.publishWithDelay(
       envs.rabbitMq.loanInstallmentsQueue,
-      {
-        loanId: loan.id,
-        remainingInstallments,
-        gracePeriodMonths,
-      },
+      { loanId: loan.id, remainingInstallments, gracePeriodMonths },
       delay
     );
 

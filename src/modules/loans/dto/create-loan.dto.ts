@@ -59,5 +59,5 @@ export class CreateLoanDto {
 
   @IsNumber()
   @IsOptional()
-  gracePeriod?: number;
+  gracePeriodId?: number;
 }

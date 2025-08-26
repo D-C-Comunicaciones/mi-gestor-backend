@@ -39,9 +39,7 @@ services:
     restart: unless-stopped
 
   rabbitmq:
-    build:
-      context: .
-      dockerfile: Dockerfile.rabbitmq
+    image: rabbitmq:3.13-management
     container_name: mi-gestor-rabbitmq
     hostname: rabbitmq
     ports:

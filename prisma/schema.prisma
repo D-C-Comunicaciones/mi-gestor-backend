@@ -306,9 +306,11 @@ model MoratoryInterest {
   installmentId Int          @unique
   daysLate      Int
   amount        Float
-  updatedAt     DateTime     @updatedAt
 
   installment Installment @relation(fields: [installmentId], references: [id])
+
+  @@index([installmentId, daysLate, amount])
+  @@map("moratory_interests")
 }
 
 model GracePeriod {
