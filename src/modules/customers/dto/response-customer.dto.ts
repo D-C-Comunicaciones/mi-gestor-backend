@@ -3,82 +3,75 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { format } from 'date-fns';
 
 export class ResponseCustomerDto {
-  @ApiProperty({ example: 1, description: 'ID del cliente' })
-  @Expose()
-  id: number;
+  @ApiProperty() @Expose() id: number;
+  @ApiProperty() @Expose() firstName: string;
+  @ApiProperty() @Expose() lastName: string;
 
-  @ApiProperty({ example: 'Ana', description: 'Nombre del cliente' })
-  @Expose()
-  firstName: string;
+  @ApiPropertyOptional() @Expose() 
+  @Transform(({ obj }) => obj.email || '')
+  email: string | null;
 
-  @ApiProperty({ example: 'García', description: 'Apellido del cliente' })
-  @Expose()
-  lastName: string;
+  @ApiProperty() @Expose() typeDocumentIdentificationId: number;
 
-  // ⚡ Si realmente necesitas email en el contrato, déjalo; si no, elimínalo
-  @ApiProperty({ example: 'cliente1@migestor.com', description: 'Email del usuario' })
+  // Leer la propiedad plana typeDocumentName
+  @ApiPropertyOptional() 
   @Expose()
-  email: string;
-
-  @ApiProperty({ example: 1, description: 'ID tipo de documento' })
-  @Expose()
-  typeDocumentIdentificationId: number;
-
-  @ApiProperty({ example: 'Cédula de Ciudadanía', description: 'Nombre del tipo de documento' })
-  @Expose()
-  @Transform(({ obj }) => obj.typeDocumentIdentification?.name)
+  @Transform(({ obj }) => obj.typeDocumentIdentificationName || '')
   typeDocumentIdentificationName: string;
 
-  @ApiProperty({ example: 1122233344, description: 'Número de documento' })
+  @ApiPropertyOptional() 
   @Expose()
-  documentNumber: number;
+  @Transform(({ obj }) => obj.typeDocumentIdentificationCode || '')
+  typeDocumentIdentificationCode: string;
 
-  @ApiProperty({ example: '1992-09-21', description: 'Fecha de nacimiento' })
+  @ApiProperty() @Expose() documentNumber: number;
+
+  @ApiPropertyOptional()
   @Expose()
+  @Transform(({ value }) => value ? format(new Date(value), 'yyyy-MM-dd') : '')
   birthDate: string;
 
-  @ApiProperty({ example: 1, description: 'ID género' })
-  @Expose()
-  genderId: number;
+  @ApiProperty() @Expose() genderId: number;
 
-  @ApiProperty({ example: 'Femenino', description: 'Nombre del género' })
+  // Leer la propiedad plana genderName
+  @ApiPropertyOptional()
   @Expose()
-  @Transform(({ obj }) => obj.gender?.name)
+  @Transform(({ obj }) => obj.genderName || '')
   genderName: string;
 
-  @ApiProperty({ example: '+573009998887', description: 'Teléfono contacto' })
-  @Expose()
-  phone: string;
+  @ApiProperty() @Expose() phone: string;
+  @ApiProperty() @Expose() address: string;
 
-  @ApiProperty({ example: 'Carrera 7 #12-34', description: 'Dirección' })
-  @Expose()
-  address: string;
+  @ApiPropertyOptional() @Expose() zoneId?: number;
 
-  @ApiPropertyOptional({ example: 2, description: 'ID zona asignada' })
+  // Leer las propiedades planas zoneName y zoneCode
+  @ApiPropertyOptional()
   @Expose()
-  zoneId?: number;
+  @Transform(({ obj }) => obj.zoneName || '')
+  zoneName: string;
 
-  @ApiPropertyOptional({ example: 'Norte', description: 'Nombre de la zona' })
+  @ApiPropertyOptional()
   @Expose()
-  @Transform(({ obj }) => obj.zone?.name)
-  zoneName?: string;
+  @Transform(({ obj }) => obj.zoneCode || '')
+  zoneCode: string;
 
-  @ApiPropertyOptional({ example: 'ZN001', description: 'Código de la zona' })
-  @Expose()
-  @Transform(({ obj }) => obj.zone?.code)
-  zoneCode?: string;
+  @ApiProperty() @Expose() isActive: boolean;
 
-  @ApiProperty({ example: true, description: 'Estado activo/inactivo' })
+  @ApiPropertyOptional()
   @Expose()
-  isActive: boolean;
-
-  @ApiProperty({ example: '2025-05-04 10:00:00', description: 'Fecha de creación' })
-  @Expose()
-  @Transform(({ value }) => value ? format(new Date(value), 'yyyy-MM-dd HH:mm:ss') : null)
+  @Transform(({ value, obj }) => {
+    if (value) return format(new Date(value), 'yyyy-MM-dd HH:mm:ss');
+    if (obj.createdAtTimestamp) return format(new Date(obj.createdAtTimestamp), 'yyyy-MM-dd HH:mm:ss');
+    return '';
+  })
   createdAt: string;
 
-  @ApiProperty({ example: '2025-05-04 10:00:00', description: 'Fecha de última actualización' })
+  @ApiPropertyOptional()
   @Expose()
-  @Transform(({ value }) => value ? format(new Date(value), 'yyyy-MM-dd HH:mm:ss') : null)
+  @Transform(({ value, obj }) => {
+    if (value) return format(new Date(value), 'yyyy-MM-dd HH:mm:ss');
+    if (obj.updatedAtTimestamp) return format(new Date(obj.updatedAtTimestamp), 'yyyy-MM-dd HH:mm:ss');
+    return '';
+  })
   updatedAt: string;
 }

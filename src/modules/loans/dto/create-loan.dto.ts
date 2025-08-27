@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsDateString, IsInt, IsNumber, IsOptional, IsPositive, ValidateIf } from 'class-validator';
+import { IsDateString, IsDecimal, IsInt, IsNumber, IsOptional, IsPositive, Min, ValidateIf } from 'class-validator';
 import { Transform } from 'class-transformer';
 
 export class CreateLoanDto {
@@ -9,16 +9,10 @@ export class CreateLoanDto {
 
   @ApiProperty({ description: 'Monto prestado (capital inicial)', example: 1000.0 })
   @Transform(({ value }) => (value != null ? parseFloat(value) : value))
-  @IsNumber({ maxDecimalPlaces: 2 })
+  @IsNumber({maxDecimalPlaces: 2})
+  @Min(0, { message: 'loanAmount must be greater than or equal to 0' })
   @IsPositive()
   loanAmount: number;
-
-  @ApiPropertyOptional({ description: 'Saldo inicial (normalmente igual a capital)', example: 1000.0 })
-  @Transform(({ value }) => (value != null ? parseFloat(value) : value))
-  @IsOptional()
-  @IsNumber({ maxDecimalPlaces: 2 })
-  @IsPositive()
-  remainingBalance?: number;
 
   @ApiProperty({ description: 'ID de la tasa de interés aplicada' })
   @IsInt()
@@ -28,12 +22,6 @@ export class CreateLoanDto {
   @IsNumber()
   @IsOptional()
   penaltyRateId?: number;
-
-  @ApiPropertyOptional({ description: 'Cuota fija (si aplica)', example: 120.5 })
-  @IsOptional()
-  @Transform(({ value }) => (value != null ? parseFloat(value) : value))
-  @IsNumber({ maxDecimalPlaces: 2 })
-  paymentAmount?: number | null;
 
   @IsOptional()
   @IsInt()

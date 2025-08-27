@@ -6,7 +6,7 @@ import { InstallmentsService } from '@modules/installments/installments.service'
 import { CreateLoanDto } from './dto/create-loan.dto';
 import { UpdateLoanDto } from './dto/update-loan.dto';
 import { LoanPaginationDto } from './dto/loan-pagination.dto';
-import { addDays, addMonths, addWeeks, format } from 'date-fns';
+import { addDays, addMonths, addWeeks, differenceInDays, format } from 'date-fns';
 import { RabbitMqService } from '@infraestructure/rabbitmq/rabbitmq.service';
 import { envs } from '@config/envs';
 
@@ -25,44 +25,30 @@ export class LoansService {
   async create(dto: CreateLoanDto) {
     await this.ensureRefs(dto);
 
-    const {
-      responseLoan,
-      firstInstallment,
-      remainingInstallments,
-      gracePeriodMonths,
-    } = await this.prisma.$transaction(async tx => {
-      // 1️⃣ Obtener loanType
+    const { responseLoan, firstInstallment } = await this.prisma.$transaction(async tx => {
+      // 1️⃣ Validaciones y obtención de referencias
       const loanType = await tx.loanType.findUnique({
         where: { id: dto.loanTypeId },
         select: { id: true, name: true },
       });
-      if (!loanType) throw new BadRequestException(`Tipo de crédito no encontrado`);
+      if (!loanType) throw new BadRequestException('Tipo de crédito no encontrado');
 
-      // 2️⃣ Validar frecuencia según tipo de crédito
       const freq = await tx.paymentFrequency.findUnique({
         where: { id: dto.paymentFrequencyId },
       });
-      if (!freq) throw new BadRequestException(`Frecuencia no encontrada`);
+      if (!freq) throw new BadRequestException('Frecuencia no encontrada');
+
+      // 2️⃣ Validación específica por tipo de crédito
+      let termId: number | undefined,
+          termValue: number | null = null;
+      let gracePeriodId: number | undefined,
+          gracePeriodMonths: number | null = null,
+          graceEndDate: Date | null = null;
 
       if (loanType.name === 'fixed_fees') {
-        if (freq.name.toUpperCase().includes('MENSUAL') || freq.name.toUpperCase().includes('MONTHLY')) {
-          throw new BadRequestException('Crédito tipo fixed_fees no puede tener frecuencia mensual');
+        if (dto.gracePeriodId) {
+          throw new BadRequestException('Periodo de Gracia no debe ser proporcionado para créditos de cuotas fijas');
         }
-      } else if (loanType.name === 'only_interests') {
-        if (!freq.name.toUpperCase().includes('MENSUAL') && !freq.name.toUpperCase().includes('MONTHLY')) {
-          throw new BadRequestException('Crédito tipo only_interests debe tener frecuencia mensual');
-        }
-      }
-
-      // 3️⃣ Determinar term o gracePeriod
-      let termId: number | undefined;
-      let termValue: number | null = null;
-      let gracePeriodId: number | undefined;
-      let gracePeriodMonths: number | null = null;
-      let graceEndDate: Date | null = null;
-      let remainingInstallments: number | null = null;
-
-      if (loanType.name === 'fixed_fees') {
         if (dto.termId) {
           const term = await tx.term.findUnique({ where: { id: dto.termId } });
           if (!term) throw new BadRequestException(`Término con ID ${dto.termId} no encontrado`);
@@ -70,138 +56,147 @@ export class LoansService {
           termValue = term.value;
         } else {
           termValue = 12;
-          const newTerm = await tx.term.create({ data: { value: termValue } });
-          termId = newTerm.id;
+          termId = (await tx.term.create({ data: { value: termValue } })).id;
         }
-        remainingInstallments = termValue - 1;
       } else if (loanType.name === 'only_interests') {
-        if (!dto.gracePeriodId) throw new BadRequestException('GracePeriodId requerido');
+        if (dto.termId) {
+          throw new BadRequestException('# de cuotas no debe ser proporcionado para créditos de solo intereses');
+        }
+        if (!dto.gracePeriodId) {
+          throw new BadRequestException('GracePeriodId requerido para créditos de solo intereses');
+        }
         const gp = await tx.gracePeriod.findUnique({ where: { id: dto.gracePeriodId } });
         if (!gp) throw new BadRequestException(`GracePeriod con ID ${dto.gracePeriodId} no encontrado`);
         gracePeriodId = gp.id;
         gracePeriodMonths = gp.days / 30;
-
-        // calcular fecha de finalización del periodo de gracia
-        const start = new Date();
-        graceEndDate = new Date(start);
-        graceEndDate.setDate(start.getDate() + gp.days);
+        graceEndDate = new Date();
+        graceEndDate.setDate(graceEndDate.getDate() + gp.days);
+      } else {
+        throw new BadRequestException(`Tipo de crédito no soportado: ${loanType.name}`);
       }
 
-      // 4️⃣ Crear préstamo
+      // 3️⃣ Crear préstamo
       const loan = await tx.loan.create({
         data: {
           customerId: dto.customerId,
-          loanAmount: dto.loanAmount,
-          remainingBalance: dto.remainingBalance ?? dto.loanAmount,
+          loanAmount: new Prisma.Decimal(dto.loanAmount ?? 0),
+          remainingBalance: new Prisma.Decimal(dto.loanAmount ?? 0),
           interestRateId: dto.interestRateId,
-          penaltyRateId: dto.penaltyRateId ?? undefined,
-          paymentAmount: 0,
-          ...(termId ? { termId } : {}),
-          ...(gracePeriodId ? { gracePeriodId } : {}),
-          ...(graceEndDate ? { graceEndDate } : {}),
+          penaltyRateId: dto.penaltyRateId,
+          paymentAmount: new Prisma.Decimal(0),
+          termId,
+          gracePeriodId,
+          graceEndDate,
           paymentFrequencyId: dto.paymentFrequencyId,
           loanTypeId: loanType.id,
-          loanStatusId: 1,
+          loanStatusId: dto.loanStatusId,
           startDate: new Date(),
           nextDueDate: null,
           isActive: true,
         },
         include: {
           interestRate: true,
-          paymentFrequency: true,
           penaltyRate: true,
           term: true,
-          customer: true,
+          paymentFrequency: true,
           loanType: true,
           loanStatus: true,
+          customer: {
+            include: {
+              typeDocumentIdentification: true,
+              gender: true,
+              zone: true,
+              user: true 
+            },
+          },
         },
       });
 
-      // 5️⃣ Crear primera cuota
-      const firstInstallment = await this.installmentsService.createFirstInstallment(
-        tx,
-        loan,
-        { termValue, gracePeriod: gracePeriodMonths },
+      // 4️⃣ Crear primera cuota
+      const firstInst = await this.installmentsService.createFirstInstallment(
+        tx, loan, { termValue, gracePeriod: gracePeriodMonths }
       );
 
-      // Actualizar nextDueDate con la fecha real de vencimiento
+      // 5️⃣ Obtener timestamps del firstInstallment
+      let firstInstallmentWithTimestamps = firstInst;
+      if (firstInst?.id) {
+        try {
+          const instChanges = await this.changesService.getChanges('installment', firstInst.id);
+          firstInstallmentWithTimestamps = {
+            ...firstInst,
+            createdAtTimestamp: instChanges.create?.timestamp,
+            updatedAtTimestamp: instChanges.lastUpdate?.timestamp || instChanges.create?.timestamp,
+          };
+        } catch {
+          // fallback
+        }
+      }
+
+      // 6️⃣ Actualizar nextDueDate
       const loanUpdated = await tx.loan.update({
         where: { id: loan.id },
-        data: { nextDueDate: firstInstallment.dueDate },
+        data: { nextDueDate: firstInst.dueDate },
         include: {
           interestRate: true,
-          paymentFrequency: true,
           penaltyRate: true,
           term: true,
-          customer: true,
+          paymentFrequency: true,
           loanType: true,
           loanStatus: true,
+          customer: {
+            include: {
+              typeDocumentIdentification: true,
+              gender: true,
+              zone: true,
+              user: true, 
+            },
+          },
         },
       });
 
-      const responseLoan = {
-        ...loanUpdated,
-        gracePeriodMonths,
-        graceEndDate,
-        remainingInstallments,
+      // 7️⃣ Convertir a plain object
+      const loanPlain = this.convertLoanToPlain(loanUpdated);
+      const loanChanges = await this.changesService.getChanges('loan', loanUpdated.id);
+
+      // 8️⃣ Obtener timestamps del customer
+      let customerWithTimestamps = loanPlain.customer;
+      if (loanPlain.customer?.id) {
+        try {
+          const custChanges = await this.changesService.getChanges('customer', loanPlain.customer.id);
+          customerWithTimestamps = {
+            ...loanPlain.customer,
+            createdAtTimestamp: custChanges.create?.timestamp,
+            updatedAtTimestamp: custChanges.lastUpdate?.timestamp || custChanges.create?.timestamp,
+          };
+        } catch {
+          // fallback
+        }
+      }
+
+      // 9️⃣ Mapear loan y adjuntar customer
+      const mappedLoan = this._mapLoan(loanPlain, loanChanges);
+      mappedLoan.customer = {
+        ...customerWithTimestamps,
+        // reconstruir para el DTO
+        typeDocumentIdentificationName: customerWithTimestamps.typeDocumentIdentification?.name,
+        typeDocumentIdentificationCode: customerWithTimestamps.typeDocumentIdentification?.code,
+        genderName: customerWithTimestamps.gender?.name,
+        zoneName: customerWithTimestamps.zone?.name,
+        zoneCode: customerWithTimestamps.zone?.code ,
+        email: customerWithTimestamps.user.email
       };
 
-      return { responseLoan, firstInstallment, remainingInstallments, gracePeriodMonths };
+      // 🔟 Transformar firstInstallment
+      const plainFirstInst = this.convertLoanToPlain(firstInstallmentWithTimestamps);
+      const mappedFirstInst = plainFirstInst && { ...plainFirstInst };
+
+      return {
+        responseLoan: { ...mappedLoan, firstInstallment: mappedFirstInst },
+        firstInstallment: mappedFirstInst,
+      };
     });
 
-    // 6️⃣ Calcular delay dinámico
-    const freqName = responseLoan.paymentFrequency.name.toUpperCase();
-    let advanceDays = 0;
-
-    if (responseLoan.loanType.name === 'fixed_fees') {
-      if (freqName.includes('DIARIA') || freqName.includes('DAILY')) advanceDays = 1;
-      else if (freqName.includes('SEMANAL') || freqName.includes('WEEKLY')) advanceDays = 2;
-      else if (freqName.includes('QUINCENAL') || freqName.includes('BIWEEKLY')) advanceDays = 2;
-    } else if (responseLoan.loanType.name === 'only_interests') {
-      advanceDays = 2; // siempre mensual
-    }
-
-    const enqueueDate = new Date(firstInstallment.dueDate);
-    enqueueDate.setDate(enqueueDate.getDate() - advanceDays);
-    const delay = enqueueDate.getTime() - Date.now();
-
-    let delayDesc: string;
-    if (delay < 60 * 1000) delayDesc = `${delay / 1000}s`;
-    else if (delay < 60 * 60 * 1000) delayDesc = `${delay / (60 * 1000)}m`;
-    else delayDesc = `${delay / (24 * 60 * 60 * 1000)}d`;
-
-    await this.rabbitmqService.publishWithDelay(
-      envs.rabbitMq.loanInstallmentsQueue,
-      { loanId: responseLoan.id, remainingInstallments, gracePeriodMonths },
-      delay > 0 ? delay : 0,
-    );
-
-    this.logger.log(
-      `[LoanService] Loan ${responseLoan.id} encolado ${advanceDays}d antes | delay=${delayDesc} | dueDate=${firstInstallment.dueDate.toISOString()}`
-    );
-
-    // 7️⃣ Obtener auditoría para enriquecer DTOs
-    const loanChanges = await this.changesService.getChanges('Loan', responseLoan.id);
-    const customerChanges = await this.changesService.getChanges('Customer', responseLoan.customer.id);
-
-    // 8️⃣ Formatear para frontend con timestamps
-    const loanPlain = {
-      ...this.convertLoanToPlain(responseLoan),
-      createdAt: loanChanges.create?.timestamp,
-      updatedAt: loanChanges.lastUpdate?.timestamp ?? null,
-    };
-
-    const customerFormatted = {
-      ...this.formatCustomer(responseLoan.customer),
-      createdAt: customerChanges.create?.timestamp,
-      updatedAt: customerChanges.lastUpdate?.timestamp ?? null,
-    };
-
-    return {
-      loan: loanPlain,
-      firstInstallment,
-      customer: customerFormatted,
-    };
+    return { loan: responseLoan, firstInstallment };
   }
 
   // ---------- FIND ALL ----------
@@ -248,6 +243,7 @@ export class LoansService {
       }
     };
   }
+
   async findOne(id: number, include?: string) {
     const loan = await this.prisma.loan.findUnique({
       where: { id },
@@ -259,11 +255,57 @@ export class LoansService {
     const loanWithTimestamps = await this.appendTimestamps(loan);
     const plainLoan = this.convertLoanToPlain(loanWithTimestamps);
 
-    // ✅ Formatear customer si existe
-    if (plainLoan.customer) {
-      plainLoan.customer = this.formatCustomer(plainLoan.customer);
+    // ✅ Obtener timestamps del customer desde changesService
+    if (plainLoan.customer?.id) {
+      try {
+        const customerChanges = await this.changesService.getChanges('customer', plainLoan.customer.id);
+        plainLoan.customer = {
+          ...plainLoan.customer,
+          // Agregar timestamps para que el DTO los use
+          createdAtTimestamp: customerChanges.create?.timestamp,
+          updatedAtTimestamp: customerChanges.lastUpdate?.timestamp || customerChanges.create?.timestamp
+        };
+      } catch (error) {
+        console.warn('Error obteniendo cambios del customer:', error);
+        // Si falla, mantener el customer original
+      }
     }
-    console.log(plainLoan);
+
+    // ✅ Obtener timestamps de cada installment si existen
+    if (plainLoan.installments && Array.isArray(plainLoan.installments)) {
+      for (let i = 0; i < plainLoan.installments.length; i++) {
+        const installment = plainLoan.installments[i];
+        if (installment?.id) {
+          try {
+            const installmentChanges = await this.changesService.getChanges('installment', installment.id);
+            plainLoan.installments[i] = {
+              ...installment,
+              createdAtTimestamp: installmentChanges.create?.timestamp,
+              updatedAtTimestamp: installmentChanges.lastUpdate?.timestamp || installmentChanges.create?.timestamp
+            };
+          } catch (error) {
+            console.warn(`Error obteniendo cambios del installment ${installment.id}:`, error);
+            // Si falla, mantener el installment original
+          }
+        }
+      }
+    }
+
+    // ✅ Obtener timestamps de firstInstallment si existe
+    if (plainLoan.firstInstallment?.id) {
+      try {
+        const installmentChanges = await this.changesService.getChanges('installment', plainLoan.firstInstallment.id);
+        plainLoan.firstInstallment = {
+          ...plainLoan.firstInstallment,
+          createdAtTimestamp: installmentChanges.create?.timestamp,
+          updatedAtTimestamp: installmentChanges.lastUpdate?.timestamp || installmentChanges.create?.timestamp
+        };
+      } catch (error) {
+        console.warn('Error obteniendo cambios del firstInstallment:', error);
+        // Si falla, mantener el firstInstallment original
+      }
+    }
+
     return plainLoan;
   }
 
@@ -415,41 +457,42 @@ export class LoansService {
   }
 
   private buildInclude(include?: string): Prisma.LoanInclude {
-    const includeRelations: Prisma.LoanInclude = {
-      customer: {
-        include: {
-          typeDocumentIdentification: true,
-          gender: true,
-          zone: true
-        }
-      },
-      interestRate: true,
-      term: true,
-      paymentFrequency: true,
-      loanType: true,
-      loanStatus: true,
-      installments: {
-        orderBy: { sequence: 'asc' } // 👈 Ordenar cuotas por secuencia
+  const includeRelations: Prisma.LoanInclude = {
+    interestRate: true,
+    penaltyRate: true,
+    term: true,
+    paymentFrequency: true,
+    loanType: true,
+    loanStatus: true,
+    customer: {
+      include: {
+        typeDocumentIdentification: true,
+        gender: true,
+        zone: true
       }
-    };
+    },
+    installments: {
+      orderBy: { sequence: 'asc' }
+    }
+  };
 
-    if (include) {
-      const relations = include.split(',');
+  if (include) {
+    const relations = include.split(',');
 
-      // Si se piden específicamente installments o payments
-      if (!relations.includes('installments')) {
-        delete includeRelations.installments;
-      }
-
-      if (!relations.includes('payments')) {
-        delete includeRelations.payments;
-      }
-
-      // Puedes agregar más relaciones condicionales aquí
+    if (!relations.includes('installments')) {
+      delete includeRelations.installments;
     }
 
-    return includeRelations;
+    if (!relations.includes('customer')) {
+      delete includeRelations.customer;
+    }
+
+    // Puedes agregar más relaciones condicionales aquí
   }
+
+  return includeRelations;
+}
+
 
   private async appendTimestamps<T extends { id: number }>(entity: T): Promise<T & { createdAt: Date; updatedAt: Date }> {
     try {
@@ -625,107 +668,82 @@ export class LoansService {
     return (d, s) => addMonths(d, s); // fallback
   }
 
-  private convertLoanToPlain(loan: any): any {
-    // Función helper para convertir Decimal seguro
-    const safeConvertDecimal = (value: any): number | null => {
-      if (value === null || value === undefined) return null;
-      try {
-        if (typeof value === 'object' && value !== null) {
-          if ('toNumber' in value && typeof value.toNumber === 'function') {
-            return value.toNumber();
-          }
-          return Number(value);
-        }
-        return Number(value);
-      } catch (error) {
-        return null;
-      }
-    };
-
-    const termValue =
-      safeConvertDecimal(loan.termValue) ?? // 👈 Primero buscar en nivel principal
-      safeConvertDecimal(loan.term?.value); // 👈 Luego en el objeto term
-
-    return {
-      ...loan,
-      loanAmount: safeConvertDecimal(loan.loanAmount),
-      remainingBalance: safeConvertDecimal(loan.remainingBalance),
-      paymentAmount: safeConvertDecimal(loan.paymentAmount),
-
-      // 👇 termValue siempre disponible
-      termValue: termValue,
-
-      interestRate: loan.interestRate ? {
-        ...loan.interestRate,
-        value: safeConvertDecimal(loan.interestRate.value)
-      } : null,
-
-      term: loan.term ? {
-        ...loan.term,
-        value: termValue
-      } : null,
-
-      paymentFrequency: loan.paymentFrequency,
-      loanType: loan.loanType,
-      loanStatus: loan.loanStatus,
-
-      installments: loan.installments?.map(installment => ({
-        ...installment,
-        capitalAmount: safeConvertDecimal(installment.capitalAmount),
-        interestAmount: safeConvertDecimal(installment.interestAmount),
-        totalAmount: safeConvertDecimal(installment.totalAmount),
-        paidAmount: safeConvertDecimal(installment.paidAmount)
-      }))
-    };
-  }
-
-  private formatCustomer(customer: any): any {
-    if (!customer) return null;
-
-    return {
-      id: customer.id,
-      firstName: customer.firstName,
-      lastName: customer.lastName,
-      email: customer.email ?? null,
-
-      typeDocumentIdentificationId: customer.typeDocumentIdentificationId,
-      typeDocumentIdentificationName: customer.typeDocumentIdentification?.name ?? null,
-
-      documentNumber: customer.documentNumber,
-
-      birthDate: customer.birthDate,
-
-      genderId: customer.genderId,
-      genderName: customer.gender?.name ?? null,
-
-      phone: customer.phone,
-      address: customer.address,
-
-      zoneId: customer.zoneId,
-      zoneName: customer.zone?.name ?? null,
-      zoneCode: customer.zone?.code ?? null,
-
-      isActive: customer.isActive,
-
-      createdAt: customer.createdAt
-        ? customer.createdAt
-        : null,
-      updatedAt: customer.updatedAt
-        ? customer.updatedAt
-        : null,
-    };
-  }
+private convertLoanToPlain(obj: any): any {
+  // SOLUCIÓN NUCLEAR - Convierte TODOS los Decimals a números
+  const jsonString = JSON.stringify(obj, (key, value) => {
+    if (value && typeof value === 'object' && value.constructor && value.constructor.name === 'Decimal') {
+      return value.toNumber(); // Convertir Decimal a número
+    }
+    return value; // Mantener todo lo demás
+  });
   
-  private buildBasicInclude(): Prisma.LoanInclude {
-    // 👇 Solo las relaciones necesarias para la lista básica
-    return {
+  return JSON.parse(jsonString);
+}
+  private buildBasicInclude(include?: string): Prisma.LoanInclude {
+    const includeRelations: Prisma.LoanInclude = {
+      customer: {
+        include: {
+          typeDocumentIdentification: true,
+          gender: true,
+          zone: true
+        }
+      },
       interestRate: true,
       term: true,
       paymentFrequency: true,
       loanType: true,
       loanStatus: true,
+      installments: {
+        orderBy: { sequence: 'asc' }
+      }
     };
+
+    if (include) {
+      const relations = include.split(',');
+
+      if (!relations.includes('installments')) {
+        delete includeRelations.installments;
+      }
+
+      if (!relations.includes('customer')) {
+        delete includeRelations.customer;
+      }
+
+      // Puedes agregar más relaciones condicionales aquí
+    }
+
+    return includeRelations;
   }
 
+  private _mapLoan(loan: any, loanChanges: any) {
+  // Mantener las relaciones completas para que el DTO pueda transformarlas
+  return {
+    ...loan,
+    
+    // Campos calculados del loan
+    interestRateValue: loan.interestRate?.value ?? 0,
+    penaltyRateValue: loan.penaltyRate?.value ?? 0,
+    termValue: loan.term?.value ?? null,
+    paymentFrequencyName: loan.paymentFrequency?.name || '',
+    loanTypeName: loan.loanType?.name || '',
+    loanStatusName: loan.loanStatus?.name || '',
+        
+    // Campos de fechas formateados
+    startDate: loan.startDate ? format(new Date(loan.startDate), 'yyyy-MM-dd') : '',
+    nextDueDate: loan.nextDueDate ? format(new Date(loan.nextDueDate), 'yyyy-MM-dd') : undefined,
+    graceEndDate: loan.graceEndDate ? format(new Date(loan.graceEndDate), 'yyyy-MM-dd') : null,
+    
+    // Campos calculados de grace
+    gracePeriodMonths: loan.gracePeriodMonths ?? 0,
+    graceDaysLeft: loan.graceEndDate ? Math.max(0, differenceInDays(new Date(loan.graceEndDate), new Date())) : null,
+    
+    // Timestamps del loan
+    createdAt: loanChanges.create?.timestamp ? format(new Date(loanChanges.create.timestamp), 'yyyy-MM-dd HH:mm:ss') : 
+              loan.createdAt ? format(new Date(loan.createdAt), 'yyyy-MM-dd HH:mm:ss') : '',
+    updatedAt: loanChanges.lastUpdate?.timestamp ? format(new Date(loanChanges.lastUpdate.timestamp), 'yyyy-MM-dd HH:mm:ss') :
+              loanChanges.create?.timestamp ? format(new Date(loanChanges.create.timestamp), 'yyyy-MM-dd HH:mm:ss') :
+              loan.updatedAt ? format(new Date(loan.updatedAt), 'yyyy-MM-dd HH:mm:ss') : ''
+  };
+}
 }
 

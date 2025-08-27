@@ -275,7 +275,7 @@ model Collector {
 
 model InterestRate {
   id    Int     @id @default(autoincrement()) // PK
-  value Decimal @db.Decimal(6, 4) // Tasa de interés (ej. 0.0500 => 5% anual o según convención)
+  value Decimal @db.Decimal(20, 2) // Tasa de interés (ej. 0.0500 => 5% anual o según convención)
   loan  Loan[]
 
   @@index([value])
@@ -294,7 +294,7 @@ model Term {
 model PenaltyRate {
   id       Int     @id @default(autoincrement())
   name     String // Ejemplo: "Interés moratorio legal máximo"
-  value    Decimal @db.Decimal(5, 4) // Ejemplo: 0.05 = 5% mensual o anual según config
+  value    Decimal @db.Decimal(20, 2) // Ejemplo: 0.05 = 5% mensual o anual según config
   isActive Boolean @default(true)
 
   loans Loan[] // 👈 Relación con créditos
@@ -335,12 +335,12 @@ model Loan {
   customerId Int
   customer   Customer @relation(fields: [customerId], references: [id])
 
-  loanAmount       Decimal @db.Decimal(10, 0) // Monto prestado original
-  remainingBalance Decimal @db.Decimal(10, 0) // Saldo actual (disminuye con abonos a capital)
+  loanAmount       Decimal @db.Decimal(20, 2) // Monto prestado original
+  remainingBalance Decimal @db.Decimal(20, 2) // Saldo actual (disminuye con abonos a capital)
   interestRateId   Int // FK → tabla InterestRate (interés del préstamo)
   penaltyRateId    Int? // FK → tabla PenaltyRate (tasa de interés moratorio)
 
-  paymentAmount          Decimal?  @db.Decimal(10, 0) // Valor de cuota fija (si aplica)
+  paymentAmount          Decimal?  @db.Decimal(20, 2) // Valor de cuota fija (si aplica)
   termId                 Int? // FK → tabla Term (Número de cuotas del préstamo)
   paymentFrequencyId     Int // Frecuencia de pago (diario, semanal, mensual)
   loanTypeId             Int // Tipo de crédito (1 = Cuota fija, 2 = Solo intereses)
@@ -391,10 +391,10 @@ model Installment {
   loan           Loan      @relation(fields: [loanId], references: [id])
   sequence       Int // Número de cuota en el cronograma (1..N)
   dueDate        DateTime  @db.Date // Fecha de vencimiento de esta cuota
-  capitalAmount  Decimal   @db.Decimal(10, 0) // Porción de capital esperada
-  interestAmount Decimal   @db.Decimal(10, 0) // Porción de interés esperada
-  totalAmount    Decimal   @db.Decimal(10, 0) // capitalAmount + interestAmount (valor esperado)
-  paidAmount     Decimal   @default(0) @db.Decimal(10, 0) // Acumulado pagado contra esta cuota
+  capitalAmount  Decimal   @db.Decimal(20, 2) // Porción de capital esperada
+  interestAmount Decimal   @db.Decimal(20, 2) // Porción de interés esperada
+  totalAmount    Decimal   @db.Decimal(20, 2) // capitalAmount + interestAmount (valor esperado)
+  paidAmount     Decimal   @default(0) @db.Decimal(20, 2) // Acumulado pagado contra esta cuota
   isPaid         Boolean   @default(false) // Si la cuota está completamente pagada
   isActive       Boolean   @default(true) // Activación de la cuota (soft delete)
   paidAt         DateTime? // Fecha en la que se completó el pago total de la cuota
@@ -415,7 +415,7 @@ model Payment {
   installmentId Int? // FK opcional a cuota si el pago se aplica a una cuota específica
   installment   Installment? @relation(fields: [installmentId], references: [id])
 
-  amount        Decimal     @db.Decimal(10, 0) // Monto total del registro de pago
+  amount        Decimal     @db.Decimal(20, 2) // Monto total del registro de pago
   paymentTypeId Int
   paymentType   PaymentType @relation(fields: [paymentTypeId], references: [id]) // Tipo (capital, interés, mora...)
 
@@ -425,9 +425,9 @@ model Payment {
   date DateTime @default(now()) // Fecha en que se registró el pago
 
   // DESGLOSE: resultados de la lógica al aplicar el pago
-  appliedToCapital  Decimal @default("0.00") @db.Decimal(10, 0) // Parte aplicada a capital (debe reducir remainingBalance)
-  appliedToInterest Decimal @default("0.00") @db.Decimal(10, 0) // Parte aplicada a intereses (registro para reporting)
-  appliedToLateFee  Decimal @default("0.00") @db.Decimal(10, 0) // Parte aplicada a mora (si procede)
+  appliedToCapital  Decimal @default("0.00") @db.Decimal(20, 2) // Parte aplicada a capital (debe reducir remainingBalance)
+  appliedToInterest Decimal @default("0.00") @db.Decimal(20, 2) // Parte aplicada a intereses (registro para reporting)
+  appliedToLateFee  Decimal @default("0.00") @db.Decimal(20, 2) // Parte aplicada a mora (si procede)
 
   recordedByUserId Int? // Usuario que registró este pago (audit)
   recordedByUser   User? @relation("PaymentsRecordedByUser", fields: [recordedByUserId], references: [id])
@@ -447,12 +447,12 @@ model Refinancing {
   newLoan        Loan? @relation("NewLoan", fields: [newLoanId], references: [id])
 
   // Campos que registran el estado antes y después (útiles para trazabilidad y reporting)
-  oldPrincipal    Decimal  @db.Decimal(10, 0) // Principal antes del refinanciamiento
-  oldRemaining    Decimal  @db.Decimal(10, 0) // Saldo restante antes
-  newPrincipal    Decimal  @db.Decimal(10, 0) // Nuevo principal luego del ajuste
-  newRemaining    Decimal  @db.Decimal(10, 0) // Nuevo saldo luego del ajuste
-  oldInterestRate Decimal  @db.Decimal(6, 4) // Tasa anterior
-  newInterestRate Decimal  @db.Decimal(6, 4) // Tasa nueva
+  oldPrincipal    Decimal  @db.Decimal(20, 2) // Principal antes del refinanciamiento
+  oldRemaining    Decimal  @db.Decimal(20, 2) // Saldo restante antes
+  newPrincipal    Decimal  @db.Decimal(20, 2) // Nuevo principal luego del ajuste
+  newRemaining    Decimal  @db.Decimal(20, 2) // Nuevo saldo luego del ajuste
+  oldInterestRate Decimal  @db.Decimal(20, 2) // Tasa anterior
+  newInterestRate Decimal  @db.Decimal(20, 2) // Tasa nueva
   date            DateTime @default(now()) // Fecha del evento de refinanciación
   notes           String? // Observaciones
 

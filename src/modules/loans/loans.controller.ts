@@ -14,14 +14,13 @@ import {
 import { plainToInstance } from 'class-transformer';
 import { ResponseLoanDto } from './dto';
 import { LoanListResponse, LoanResponse, LoanUpdateResponse, LoanRegenerateInstallmentsResponse } from './interfaces';
-import { DecimalInterceptor } from '@common/interceptors';
+import { PrismaDecimalInterceptor } from '@common/interceptors';
 
 @ApiTags('Loans')
 @ApiBearerAuth()
 @ApiExtraModels(ResponseLoanDto)
 @Controller('loans')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
-@UseInterceptors(DecimalInterceptor)
 export class LoansController {
   constructor(private readonly loansService: LoansService) { }
 
@@ -135,31 +134,29 @@ export class LoansController {
       },
     },
   })
-  
+
   @ApiBadRequestResponse({ description: 'Validación / lógica' })
   @ApiUnauthorizedResponse()
   @ApiForbiddenResponse()
   @Post()
-  async create(@Body() dto: CreateLoanDto) {
-    const { loan, firstInstallment, customer} = await this.loansService.create(dto);
+  @Post()
+  @Permissions('create.loans')
+  async create(@Body() dto: CreateLoanDto): Promise<LoanResponse> {
+    const result = await this.loansService.create(dto);
 
-    // Los Decimal ya están convertidos a números en el servicio
+    // Ahora result ya viene con todos los Decimales convertidos a números
     const response = plainToInstance(
       ResponseLoanDto,
-      {
-        ...loan
-      },
+      result.loan,
       { excludeExtraneousValues: true },
     );
 
     return {
       customMessage: 'Préstamo creado correctamente',
       loan: response,
-      customer,
-      firstInstallment
     };
   }
-  
+
   @Patch(':id')
   @Permissions('update.loans')
   @ApiOperation({ summary: 'Actualizar préstamo', description: 'Actualiza campos cambiados.' })
