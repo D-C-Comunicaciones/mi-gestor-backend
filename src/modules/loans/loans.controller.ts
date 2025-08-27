@@ -215,35 +215,4 @@ export class LoansController {
       loan,
     };
   }
-
-  @Post(':id/regenerate-installments')
-  @Permissions('update.loans')
-  @ApiOperation({ summary: 'Regenerar cuotas', description: 'Elimina y recrea todas las cuotas.' })
-  @ApiParam({ name: 'id', type: Number, example: 1 })
-  @ApiOkResponse({
-    description: 'Cuotas regeneradas',
-    schema: {
-      example: {
-        message: 'Cuotas regeneradas correctamente',
-        code: 200,
-        status: 'success',
-        data: { generated: 12 },
-      },
-    },
-  })
-  @ApiBadRequestResponse({ description: 'Validación / frecuencia' })
-  @ApiNotFoundResponse()
-  @ApiUnauthorizedResponse()
-  @ApiForbiddenResponse()
-  async regenerateInstallments(
-    @Param('id', ParseIntPipe) id: number,
-    @Body('count', ParseIntPipe) count: number,
-    @Body('paymentAmount') paymentAmount: number,
-  ): Promise<LoanRegenerateInstallmentsResponse> {
-    const result = await this.loansService.regenerateInstallments(id, count, paymentAmount);
-    return {
-      customMessage: 'Cuotas regeneradas correctamente',
-      ...result, // { generated }
-    };
-  }
 }

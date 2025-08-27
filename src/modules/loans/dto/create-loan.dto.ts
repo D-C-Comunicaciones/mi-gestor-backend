@@ -36,10 +36,6 @@ export class CreateLoanDto {
   @IsInt()
   loanTypeId: number;
 
-  @ApiProperty({ description: 'ID del estado del préstamo (ACTIVO, CANCELADO, etc.)' })
-  @IsInt()
-  loanStatusId: number;
-
   @ApiPropertyOptional({ description: 'Próxima fecha de pago', example: '2025-09-19T00:00:00.000Z' })
   @IsOptional()
   @IsDateString()

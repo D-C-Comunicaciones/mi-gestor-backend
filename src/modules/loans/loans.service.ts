@@ -8,7 +8,6 @@ import { UpdateLoanDto } from './dto/update-loan.dto';
 import { LoanPaginationDto } from './dto/loan-pagination.dto';
 import { addDays, addMonths, addWeeks, differenceInDays, format } from 'date-fns';
 import { RabbitMqService } from '@infraestructure/rabbitmq/rabbitmq.service';
-import { envs } from '@config/envs';
 
 @Injectable()
 export class LoansService {
@@ -40,10 +39,10 @@ export class LoansService {
 
       // 2️⃣ Validación específica por tipo de crédito
       let termId: number | undefined,
-          termValue: number | null = null;
+        termValue: number | null = null;
       let gracePeriodId: number | undefined,
-          gracePeriodMonths: number | null = null,
-          graceEndDate: Date | null = null;
+        gracePeriodMonths: number | null = null,
+        graceEndDate: Date | null = null;
 
       if (loanType.name === 'fixed_fees') {
         if (dto.gracePeriodId) {
@@ -89,7 +88,7 @@ export class LoansService {
           graceEndDate,
           paymentFrequencyId: dto.paymentFrequencyId,
           loanTypeId: loanType.id,
-          loanStatusId: dto.loanStatusId,
+          loanStatusId: 1, // ACTIVO
           startDate: new Date(),
           nextDueDate: null,
           isActive: true,
@@ -106,7 +105,7 @@ export class LoansService {
               typeDocumentIdentification: true,
               gender: true,
               zone: true,
-              user: true 
+              user: true
             },
           },
         },
@@ -148,7 +147,7 @@ export class LoansService {
               typeDocumentIdentification: true,
               gender: true,
               zone: true,
-              user: true, 
+              user: true,
             },
           },
         },
@@ -182,7 +181,7 @@ export class LoansService {
         typeDocumentIdentificationCode: customerWithTimestamps.typeDocumentIdentification?.code,
         genderName: customerWithTimestamps.gender?.name,
         zoneName: customerWithTimestamps.zone?.name,
-        zoneCode: customerWithTimestamps.zone?.code ,
+        zoneCode: customerWithTimestamps.zone?.code,
         email: customerWithTimestamps.user.email
       };
 
@@ -200,113 +199,166 @@ export class LoansService {
   }
 
   // ---------- FIND ALL ----------
-  async findAll(p: LoanPaginationDto) {
-    const page = p.page ?? 1;
-    const limit = p.limit ?? 10;
-    const where: Prisma.LoanWhereInput = p.isActive !== undefined ? { isActive: p.isActive } : {};
+async findAll(p: LoanPaginationDto) {
+  const page = p.page ?? 1;
+  const limit = p.limit ?? 10;
+  const where: Prisma.LoanWhereInput = p.isActive !== undefined
+    ? { isActive: p.isActive }
+    : {};
 
-    const total = await this.prisma.loan.count({ where });
-    if (total === 0) return { loans: [], meta: { total: 0, page: 1, lastPage: 0, limit, hasNextPage: false } };
-
-    const lastPage = Math.ceil(total / limit) || 1;
-    if (page > lastPage) throw new BadRequestException(`La página #${page} no existe`);
-
-    // 👇 Usar include básico (sin customer ni installments)
-    const include = this.buildBasicInclude();
-
-    const items = await this.prisma.loan.findMany({
-      where,
-      include,
-      skip: (page - 1) * limit,
-      take: limit,
-      orderBy: { id: 'desc' },
-    });
-
-    // ✅ Convertir todos los loans
-    const loans = await Promise.all(
-      items.map(async (loan) => {
-        const loanWithTimestamps = await this.appendTimestamps(loan);
-        const plainLoan = this.convertLoanToPlain(loanWithTimestamps);
-
-        return plainLoan;
-      })
-    );
-
+  const total = await this.prisma.loan.count({ where });
+  if (total === 0) {
     return {
-      loans,
-      meta: {
-        total,
-        page,
-        lastPage,
-        limit,
-        hasNextPage: page < lastPage
-      }
+      loans: [],
+      meta: { total: 0, page: 1, lastPage: 0, limit, hasNextPage: false },
     };
   }
 
+  const lastPage = Math.ceil(total / limit) || 1;
+  if (page > lastPage) {
+    throw new BadRequestException(`La página #${page} no existe`);
+  }
+
+  const items = await this.prisma.loan.findMany({
+    where,
+    include: {
+      interestRate: true,
+      penaltyRate: true,
+      term: true,
+      paymentFrequency: true,
+      loanType: true,
+      loanStatus: true,
+      installments: { orderBy: { sequence: 'asc' } },
+    },
+    skip: (page - 1) * limit,
+    take: limit,
+    orderBy: { id: 'desc' },
+  });
+
+  const loans = await Promise.all(
+    items.map(async loan => {
+      // timestamps for loan
+      const loanChanges = await this.changesService.getChanges('loan', loan.id);
+
+      const loanPlain = this.convertLoanToPlain({
+        ...loan,
+        createdAtTimestamp: loanChanges.create?.timestamp,
+        updatedAtTimestamp: loanChanges.lastUpdate?.timestamp ?? loanChanges.create?.timestamp,
+      });
+
+      // installments timestamps
+      for (const inst of loanPlain.installments) {
+        const ch = await this.changesService.getChanges('installment', inst.id);
+        (inst as any).createdAtTimestamp = ch.create?.timestamp;
+        (inst as any).updatedAtTimestamp = ch.lastUpdate?.timestamp ?? ch.create?.timestamp;
+      }
+
+      // map loan
+      const mappedLoan = this._mapLoan(loanPlain, loanChanges);
+
+      return mappedLoan;
+    })
+  );
+
+  return {
+    loans,
+    meta: {
+      total,
+      page,
+      lastPage,
+      limit,
+      hasNextPage: page < lastPage,
+    },
+  };
+}
+
   async findOne(id: number, include?: string) {
+    // 1️⃣ Obtener préstamo con relaciones necesarias
     const loan = await this.prisma.loan.findUnique({
       where: { id },
-      include: this.buildInclude(include)
+      include: {
+        interestRate: true,
+        penaltyRate: true,
+        term: true,
+        paymentFrequency: true,
+        loanType: true,
+        loanStatus: true,
+        customer: {
+          include: {
+            typeDocumentIdentification: true,
+            gender: true,
+            zone: true,
+            user: true,            // Incluir user para email
+          },
+        },
+        installments: { orderBy: { sequence: 'asc' } },
+      },
     });
-
     if (!loan) throw new NotFoundException('Préstamo no encontrado');
 
-    const loanWithTimestamps = await this.appendTimestamps(loan);
-    const plainLoan = this.convertLoanToPlain(loanWithTimestamps);
+    // 2️⃣ Obtener timestamps del préstamo
+    const loanChanges = await this.changesService.getChanges('loan', id);
 
-    // ✅ Obtener timestamps del customer desde changesService
-    if (plainLoan.customer?.id) {
-      try {
-        const customerChanges = await this.changesService.getChanges('customer', plainLoan.customer.id);
-        plainLoan.customer = {
-          ...plainLoan.customer,
-          // Agregar timestamps para que el DTO los use
-          createdAtTimestamp: customerChanges.create?.timestamp,
-          updatedAtTimestamp: customerChanges.lastUpdate?.timestamp || customerChanges.create?.timestamp
-        };
-      } catch (error) {
-        console.warn('Error obteniendo cambios del customer:', error);
-        // Si falla, mantener el customer original
+    // 3️⃣ Convertir a objeto plano y adjuntar timestamps
+    const loanPlain = this.convertLoanToPlain({
+      ...loan,
+      createdAtTimestamp: loanChanges.create?.timestamp,
+      updatedAtTimestamp: loanChanges.lastUpdate?.timestamp ?? loanChanges.create?.timestamp,
+    });
+
+    // 4️⃣ Procesar timestamps de customer
+    const custRaw = loanPlain.customer;
+    const custChanges = await this.changesService.getChanges('customer', custRaw.id);
+    (custRaw as any).createdAtTimestamp = custChanges.create?.timestamp;
+    (custRaw as any).updatedAtTimestamp = custChanges.lastUpdate?.timestamp ?? custChanges.create?.timestamp;
+
+    // 5️⃣ Procesar timestamps de installments
+    if (Array.isArray(loanPlain.installments)) {
+      for (const inst of loanPlain.installments) {
+        const ch = await this.changesService.getChanges('installment', inst.id);
+        (inst as any).createdAtTimestamp = ch.create?.timestamp;
+        (inst as any).updatedAtTimestamp = ch.lastUpdate?.timestamp ?? ch.create?.timestamp;
       }
     }
 
-    // ✅ Obtener timestamps de cada installment si existen
-    if (plainLoan.installments && Array.isArray(plainLoan.installments)) {
-      for (let i = 0; i < plainLoan.installments.length; i++) {
-        const installment = plainLoan.installments[i];
-        if (installment?.id) {
-          try {
-            const installmentChanges = await this.changesService.getChanges('installment', installment.id);
-            plainLoan.installments[i] = {
-              ...installment,
-              createdAtTimestamp: installmentChanges.create?.timestamp,
-              updatedAtTimestamp: installmentChanges.lastUpdate?.timestamp || installmentChanges.create?.timestamp
-            };
-          } catch (error) {
-            console.warn(`Error obteniendo cambios del installment ${installment.id}:`, error);
-            // Si falla, mantener el installment original
-          }
-        }
-      }
+    // 6️⃣ Procesar timestamps de firstInstallment
+    if (loanPlain.firstInstallment?.id) {
+      const ch = await this.changesService.getChanges('installment', loanPlain.firstInstallment.id);
+      (loanPlain.firstInstallment as any).createdAtTimestamp = ch.create?.timestamp;
+      (loanPlain.firstInstallment as any).updatedAtTimestamp = ch.lastUpdate?.timestamp ?? ch.create?.timestamp;
     }
 
-    // ✅ Obtener timestamps de firstInstallment si existe
-    if (plainLoan.firstInstallment?.id) {
-      try {
-        const installmentChanges = await this.changesService.getChanges('installment', plainLoan.firstInstallment.id);
-        plainLoan.firstInstallment = {
-          ...plainLoan.firstInstallment,
-          createdAtTimestamp: installmentChanges.create?.timestamp,
-          updatedAtTimestamp: installmentChanges.lastUpdate?.timestamp || installmentChanges.create?.timestamp
-        };
-      } catch (error) {
-        console.warn('Error obteniendo cambios del firstInstallment:', error);
-        // Si falla, mantener el firstInstallment original
-      }
-    }
+    // 7️⃣ Mapear préstamo a respuesta
+    const mappedLoan = this._mapLoan(loanPlain, loanChanges);
 
-    return plainLoan;
+    // 8️⃣ Reconstruir customer para el DTO
+    const rawCustomer = loan.customer;
+    mappedLoan.customer = {
+      id: custRaw.id,
+      firstName: custRaw.firstName,
+      lastName: custRaw.lastName,
+      email: rawCustomer.user?.email ?? null,
+      typeDocumentIdentificationId: custRaw.typeDocumentIdentificationId,
+      typeDocumentIdentificationName: rawCustomer.typeDocumentIdentification?.name,
+      documentNumber: custRaw.documentNumber,
+      birthDate: custRaw.birthDate,
+      genderId: custRaw.genderId,
+      genderName: rawCustomer.gender?.name,
+      phone: custRaw.phone,
+      address: custRaw.address,
+      zoneId: custRaw.zoneId,
+      zoneName: rawCustomer.zone?.name,
+      zoneCode: rawCustomer.zone?.code,
+      isActive: custRaw.isActive,
+      createdAtTimestamp: (custRaw as any).createdAtTimestamp,
+      updatedAtTimestamp: (custRaw as any).updatedAtTimestamp,
+    };
+
+    // 9️⃣ Adjuntar cuotas
+    mappedLoan.installments = loanPlain.installments;
+    mappedLoan.firstInstallment = loanPlain.firstInstallment;
+
+    return mappedLoan;
   }
 
   // ---------- UPDATE ----------
@@ -444,55 +496,16 @@ export class LoansService {
 
   // ---------- HELPERS ----------
   private async ensureRefs(dto: CreateLoanDto): Promise<void> {
-    const [customer, freq, type, status] = await Promise.all([
+    const [customer, freq, type] = await Promise.all([
       this.prisma.customer.findUnique({ where: { id: dto.customerId } }),
       this.prisma.paymentFrequency.findUnique({ where: { id: dto.paymentFrequencyId } }),
       this.prisma.loanType.findUnique({ where: { id: dto.loanTypeId } }),
-      this.prisma.loanStatus.findUnique({ where: { id: dto.loanStatusId } }),
+
     ]);
     if (!customer) throw new BadRequestException('Customer no encontrado');
     if (!freq) throw new BadRequestException('PaymentFrequency no encontrada');
     if (!type) throw new BadRequestException('LoanType no encontrada');
-    if (!status) throw new BadRequestException('LoanStatus no encontrada');
   }
-
-  private buildInclude(include?: string): Prisma.LoanInclude {
-  const includeRelations: Prisma.LoanInclude = {
-    interestRate: true,
-    penaltyRate: true,
-    term: true,
-    paymentFrequency: true,
-    loanType: true,
-    loanStatus: true,
-    customer: {
-      include: {
-        typeDocumentIdentification: true,
-        gender: true,
-        zone: true
-      }
-    },
-    installments: {
-      orderBy: { sequence: 'asc' }
-    }
-  };
-
-  if (include) {
-    const relations = include.split(',');
-
-    if (!relations.includes('installments')) {
-      delete includeRelations.installments;
-    }
-
-    if (!relations.includes('customer')) {
-      delete includeRelations.customer;
-    }
-
-    // Puedes agregar más relaciones condicionales aquí
-  }
-
-  return includeRelations;
-}
-
 
   private async appendTimestamps<T extends { id: number }>(entity: T): Promise<T & { createdAt: Date; updatedAt: Date }> {
     try {
@@ -581,82 +594,6 @@ export class LoansService {
   }
 
   /**
-   * Regenera todas las cuotas de un préstamo: elimina las existentes y crea nuevas.
-   */
-  async regenerateInstallments(
-    loanId: number,
-    count: number,
-    paymentAmount: number,
-  ): Promise<{ generated: number }> {
-    const loan = await this.prisma.loan.findUnique({ where: { id: loanId } });
-    if (!loan) throw new NotFoundException('Préstamo no encontrado');
-
-    if (!loan.paymentFrequencyId) {
-      throw new BadRequestException('Falta paymentFrequencyId en el préstamo');
-    }
-
-    // Usamos transacción para eliminar y crear cuotas
-    await this.prisma.$transaction(async (tx) => {
-      // 1️⃣ Eliminar cuotas existentes
-      await tx.installment.deleteMany({ where: { loanId } });
-
-      // 2️⃣ Crear nuevas cuotas
-      await this.createInstallmentsTx(
-        tx,
-        loanId,
-        count,
-        paymentAmount,
-        loan.paymentFrequencyId,
-        loan.startDate,
-      );
-    });
-
-    return { generated: count };
-  }
-
-  /**
-   * Lógica interna para crear cuotas dentro de una transacción
-   */
-  private async createInstallmentsTx(
-    tx: Prisma.TransactionClient,
-    loanId: number,
-    count: number,
-    paymentAmount: number,
-    paymentFrequencyId: number,
-    startDate: Date,
-  ): Promise<void> {
-    const freq = await tx.paymentFrequency.findUnique({ where: { id: paymentFrequencyId } });
-    if (!freq) throw new BadRequestException('PaymentFrequency no encontrada');
-
-    const increment = this.getIncrementer(freq.name);
-    const data: Prisma.InstallmentCreateManyInput[] = [];
-    let currentDate = startDate;
-
-    for (let i = 1; i <= count; i++) {
-      currentDate = increment(currentDate, i === 1 ? 0 : 1);
-
-      // Por ejemplo, distribuimos 20% de interés y 80% de capital
-      const interestPortion = paymentAmount * 0.2;
-      const capitalAmount = paymentAmount - interestPortion;
-
-      data.push({
-        loanId,
-        sequence: i,
-        dueDate: currentDate,
-        capitalAmount: new Prisma.Decimal(capitalAmount.toFixed(2)),
-        interestAmount: new Prisma.Decimal(interestPortion.toFixed(2)),
-        totalAmount: new Prisma.Decimal(paymentAmount.toFixed(2)),
-        paidAmount: new Prisma.Decimal(0),
-        isPaid: false,
-        isActive: true,
-        paidAt: null,
-      });
-    }
-
-    await tx.installment.createMany({ data });
-  }
-
-  /**
    * Retorna función para incrementar fechas según la frecuencia
    */
   private getIncrementer(freqName: string): (d: Date, step: number) => Date {
@@ -668,17 +605,17 @@ export class LoansService {
     return (d, s) => addMonths(d, s); // fallback
   }
 
-private convertLoanToPlain(obj: any): any {
-  // SOLUCIÓN NUCLEAR - Convierte TODOS los Decimals a números
-  const jsonString = JSON.stringify(obj, (key, value) => {
-    if (value && typeof value === 'object' && value.constructor && value.constructor.name === 'Decimal') {
-      return value.toNumber(); // Convertir Decimal a número
-    }
-    return value; // Mantener todo lo demás
-  });
-  
-  return JSON.parse(jsonString);
-}
+  private convertLoanToPlain(obj: any): any {
+    // SOLUCIÓN NUCLEAR - Convierte TODOS los Decimals a números
+    const jsonString = JSON.stringify(obj, (key, value) => {
+      if (value && typeof value === 'object' && value.constructor && value.constructor.name === 'Decimal') {
+        return value.toNumber(); // Convertir Decimal a número
+      }
+      return value; // Mantener todo lo demás
+    });
+
+    return JSON.parse(jsonString);
+  }
   private buildBasicInclude(include?: string): Prisma.LoanInclude {
     const includeRelations: Prisma.LoanInclude = {
       customer: {
@@ -716,34 +653,34 @@ private convertLoanToPlain(obj: any): any {
   }
 
   private _mapLoan(loan: any, loanChanges: any) {
-  // Mantener las relaciones completas para que el DTO pueda transformarlas
-  return {
-    ...loan,
-    
-    // Campos calculados del loan
-    interestRateValue: loan.interestRate?.value ?? 0,
-    penaltyRateValue: loan.penaltyRate?.value ?? 0,
-    termValue: loan.term?.value ?? null,
-    paymentFrequencyName: loan.paymentFrequency?.name || '',
-    loanTypeName: loan.loanType?.name || '',
-    loanStatusName: loan.loanStatus?.name || '',
-        
-    // Campos de fechas formateados
-    startDate: loan.startDate ? format(new Date(loan.startDate), 'yyyy-MM-dd') : '',
-    nextDueDate: loan.nextDueDate ? format(new Date(loan.nextDueDate), 'yyyy-MM-dd') : undefined,
-    graceEndDate: loan.graceEndDate ? format(new Date(loan.graceEndDate), 'yyyy-MM-dd') : null,
-    
-    // Campos calculados de grace
-    gracePeriodMonths: loan.gracePeriodMonths ?? 0,
-    graceDaysLeft: loan.graceEndDate ? Math.max(0, differenceInDays(new Date(loan.graceEndDate), new Date())) : null,
-    
-    // Timestamps del loan
-    createdAt: loanChanges.create?.timestamp ? format(new Date(loanChanges.create.timestamp), 'yyyy-MM-dd HH:mm:ss') : 
-              loan.createdAt ? format(new Date(loan.createdAt), 'yyyy-MM-dd HH:mm:ss') : '',
-    updatedAt: loanChanges.lastUpdate?.timestamp ? format(new Date(loanChanges.lastUpdate.timestamp), 'yyyy-MM-dd HH:mm:ss') :
-              loanChanges.create?.timestamp ? format(new Date(loanChanges.create.timestamp), 'yyyy-MM-dd HH:mm:ss') :
-              loan.updatedAt ? format(new Date(loan.updatedAt), 'yyyy-MM-dd HH:mm:ss') : ''
-  };
-}
+    // Mantener las relaciones completas para que el DTO pueda transformarlas
+    return {
+      ...loan,
+
+      // Campos calculados del loan
+      interestRateValue: loan.interestRate?.value ?? 0,
+      penaltyRateValue: loan.penaltyRate?.value ?? 0,
+      termValue: loan.term?.value ?? null,
+      paymentFrequencyName: loan.paymentFrequency?.name || '',
+      loanTypeName: loan.loanType?.name || '',
+      loanStatusName: loan.loanStatus?.name || '',
+
+      // Campos de fechas formateados
+      startDate: loan.startDate ? format(new Date(loan.startDate), 'yyyy-MM-dd') : '',
+      nextDueDate: loan.nextDueDate ? format(new Date(loan.nextDueDate), 'yyyy-MM-dd') : undefined,
+      graceEndDate: loan.graceEndDate ? format(new Date(loan.graceEndDate), 'yyyy-MM-dd') : null,
+
+      // Campos calculados de grace
+      gracePeriodMonths: loan.gracePeriodMonths ?? 0,
+      graceDaysLeft: loan.graceEndDate ? Math.max(0, differenceInDays(new Date(loan.graceEndDate), new Date())) : null,
+
+      // Timestamps del loan
+      createdAt: loanChanges.create?.timestamp ? format(new Date(loanChanges.create.timestamp), 'yyyy-MM-dd HH:mm:ss') :
+        loan.createdAt ? format(new Date(loan.createdAt), 'yyyy-MM-dd HH:mm:ss') : '',
+      updatedAt: loanChanges.lastUpdate?.timestamp ? format(new Date(loanChanges.lastUpdate.timestamp), 'yyyy-MM-dd HH:mm:ss') :
+        loanChanges.create?.timestamp ? format(new Date(loanChanges.create.timestamp), 'yyyy-MM-dd HH:mm:ss') :
+          loan.updatedAt ? format(new Date(loan.updatedAt), 'yyyy-MM-dd HH:mm:ss') : ''
+    };
+  }
 }
 
