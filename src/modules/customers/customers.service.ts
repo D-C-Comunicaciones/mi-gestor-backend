@@ -119,7 +119,6 @@ export class CustomersService {
         remainingBalance: loan.remainingBalance.toNumber(),
         interestRateId: loan.interestRateId,
         interestRateValue: loan.interestRate?.value.toNumber() ?? 0,
-        paymentAmount: loan.paymentAmount?.toNumber() ?? 0,
         termId: loan.termId,
         termValue: loan.term?.value ?? 0,
         paymentFrequencyId: loan.paymentFrequencyId,

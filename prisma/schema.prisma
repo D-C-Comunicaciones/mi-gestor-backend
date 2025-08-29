@@ -109,19 +109,20 @@ model PaymentType {
 /// -------------------------------------
 
 model User {
-  id          Int          @id @default(autoincrement()) // PK: id del usuario del sistema
-  email       String       @unique // Email único para login
-  password    String // Contraseña hasheada
-  name        String // Nombre del usuario (para auditoría)
-  roleId      Int? // FK opcional a Role (control de acceso)
+  id          Int          @id @default(autoincrement())
+  email       String       @unique
+  password    String
+  name        String
+  roleId      Int?
   role        Role?        @relation(fields: [roleId], references: [id])
-  loginAudits LoginAudit[] // Historial de accesos
-  customer    Customer?    @relation // Si el usuario también es un cliente del sistema
-  collector   Collector?   @relation // Si el usuario también es cobrador
-  isActive    Boolean      @default(true) // Usuario activo/inactivo
+  loginAudits LoginAudit[]
+  customer    Customer?
+  collector   Collector?
+  isActive    Boolean      @default(true)
 
   // Relación para pagos registrados por este usuario (audit)
   paymentsRecorded Payment[] @relation("PaymentsRecordedByUser")
+  discountsCreated Discount[] @relation("DiscountsCreatedByUser")
 
   @@index([email])
   @@index([roleId])
@@ -235,6 +236,9 @@ model Customer {
 
   loans Loan[] // Créditos asociados a este customer
 
+  positiveBalances PositiveBalance[] // Saldos a favor del cliente
+  advances Advance[] // Abonos del cliente
+
   @@index([firstName])
   @@index([lastName])
   @@index([zoneId])
@@ -265,6 +269,7 @@ model Collector {
   zone     Zone?     @relation(fields: [zoneId], references: [id])
   user     User?     @relation(fields: [userId], references: [id])
   payments Payment[] @relation("PaymentsCollectedByCollector") // Pagos que recoge este cobrador
+  advances Advance[] @relation("AdvancesCollectedByCollector") // Abonos recolectados
 
   @@index([firstName])
   @@index([lastName])
@@ -309,6 +314,7 @@ model MoratoryInterest {
   amount        Float
 
   installment Installment @relation(fields: [installmentId], references: [id])
+  discounts Discount[] @relation("MoratoryDiscounts")
 
   @@index([installmentId, daysLate, amount])
   @@map("moratory_interests")
@@ -340,7 +346,6 @@ model Loan {
   interestRateId   Int // FK → tabla InterestRate (interés del préstamo)
   penaltyRateId    Int? // FK → tabla PenaltyRate (tasa de interés moratorio)
 
-  paymentAmount          Decimal?  @db.Decimal(20, 2) // Valor de cuota fija (si aplica)
   termId                 Int? // FK → tabla Term (Número de cuotas del préstamo)
   paymentFrequencyId     Int // Frecuencia de pago (diario, semanal, mensual)
   loanTypeId             Int // Tipo de crédito (1 = Cuota fija, 2 = Solo intereses)
@@ -371,6 +376,10 @@ model Loan {
   refinancingsOriginal Refinancing[] @relation("OriginalLoan")
   refinancingsNew      Refinancing[] @relation("NewLoan")
 
+  positiveBalances PositiveBalance[] @relation("PositiveBalances")
+  advances Advance[] // Abonos al préstamo
+  discounts Discount[] @relation("LoanDiscounts") // Descuentos al préstamo
+
   @@index([customerId])
   @@index([paymentFrequencyId])
   @@index([loanTypeId])
@@ -399,8 +408,9 @@ model Installment {
   isActive       Boolean   @default(true) // Activación de la cuota (soft delete)
   paidAt         DateTime? // Fecha en la que se completó el pago total de la cuota
 
-  payments          Payment[] // Pagos aplicados a esta cuota (vínculo para trazabilidad)
-  moratoryInterests MoratoryInterest[]
+  paymentAllocations        PaymentAllocation[] // Relación N:M con pagos
+  moratoryInterests  MoratoryInterest[]
+  discounts          Discount[] @relation("InstallmentDiscounts") // Descuentos a la cuota
 
   @@index([loanId])
   @@index([dueDate])
@@ -412,8 +422,6 @@ model Payment {
   id            Int          @id @default(autoincrement()) // PK pago
   loanId        Int // FK al crédito afectado
   loan          Loan         @relation(fields: [loanId], references: [id])
-  installmentId Int? // FK opcional a cuota si el pago se aplica a una cuota específica
-  installment   Installment? @relation(fields: [installmentId], references: [id])
 
   amount        Decimal     @db.Decimal(20, 2) // Monto total del registro de pago
   paymentTypeId Int
@@ -424,19 +432,39 @@ model Payment {
 
   date DateTime @default(now()) // Fecha en que se registró el pago
 
-  // DESGLOSE: resultados de la lógica al aplicar el pago
-  appliedToCapital  Decimal @default("0.00") @db.Decimal(20, 2) // Parte aplicada a capital (debe reducir remainingBalance)
-  appliedToInterest Decimal @default("0.00") @db.Decimal(20, 2) // Parte aplicada a intereses (registro para reporting)
-  appliedToLateFee  Decimal @default("0.00") @db.Decimal(20, 2) // Parte aplicada a mora (si procede)
+  // DESGLOSE: resultados de la lógica al aplicar el pago (resumen global)
+  appliedToCapital  Decimal @default("0.00") @db.Decimal(20, 2)
+  appliedToInterest Decimal @default("0.00") @db.Decimal(20, 2)
+  appliedToLateFee  Decimal @default("0.00") @db.Decimal(20, 2)
 
   recordedByUserId Int? // Usuario que registró este pago (audit)
   recordedByUser   User? @relation("PaymentsRecordedByUser", fields: [recordedByUserId], references: [id])
 
+  allocations PaymentAllocation[] // Relación N:M con cuotas
+
   @@index([loanId])
-  @@index([installmentId])
   @@index([paymentTypeId])
   @@index([collectorId])
   @@map("payments")
+}
+
+model PaymentAllocation {
+  id            Int          @id @default(autoincrement())
+  paymentId     Int
+  payment       Payment      @relation(fields: [paymentId], references: [id])
+
+  installmentId Int
+  installment   Installment  @relation(fields: [installmentId], references: [id])
+
+  appliedToCapital  Decimal @default(0) @db.Decimal(20, 2)
+  appliedToInterest Decimal @default(0) @db.Decimal(20, 2)
+  appliedToLateFee  Decimal @default(0) @db.Decimal(20, 2)
+
+  createdAt DateTime @default(now())
+
+  @@index([paymentId])
+  @@index([installmentId])
+  @@map("payment_allocations")
 }
 
 model Refinancing {
@@ -460,4 +488,99 @@ model Refinancing {
   @@index([newLoanId])
   @@index([date])
   @@map("refinancings")
+}
+
+model PositiveBalance {
+  id         Int     @id @default(autoincrement()) // PK saldo a favor
+  customerId Int // FK al cliente
+  customer   Customer @relation(fields: [customerId], references: [id])
+  loanId     Int? // FK opcional al préstamo (para trazabilidad)
+  loan       Loan? @relation("PositiveBalances", fields: [loanId], references: [id])
+  
+  amount     Decimal @db.Decimal(20, 2) // Monto del saldo a favor
+  source     String // Origen: "overpayment", "prepayment", etc.
+  isUsed     Boolean @default(false) // Si ya se utilizó este saldo
+  usedAmount Decimal @default(0) @db.Decimal(20, 2) // Monto ya utilizado
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@index([customerId])
+  @@index([loanId])
+  @@index([isUsed])
+  @@map("positive_balances")
+}
+
+model Advance {
+  id         Int     @id @default(autoincrement()) // PK abono
+  customerId Int // FK al cliente
+  customer   Customer @relation(fields: [customerId], references: [id])
+  loanId     Int // FK al préstamo
+  loan       Loan @relation(fields: [loanId], references: [id])
+  
+  amount     Decimal @db.Decimal(20, 2) // Monto del abono
+  appliedAmount Decimal @default(0) @db.Decimal(20, 2) // Monto ya aplicado del abono
+  remainingAmount Decimal @db.Decimal(20, 2) // Monto pendiente por aplicar
+  
+  collectorId Int? // Cobrador que registró el abono
+  collector   Collector? @relation("AdvancesCollectedByCollector", fields: [collectorId], references: [id])
+  
+  notes      String? // Notas del abono
+  isActive   Boolean @default(true)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@index([customerId])
+  @@index([loanId])
+  @@index([collectorId])
+  @@index([isActive])
+  @@map("advances")
+}
+
+model Discount {
+  id             Int       @id @default(autoincrement())
+  discountTypeId Int
+  loanId         Int?
+  installmentId  Int?
+  moratoryId     Int?
+
+  loan           Loan?              @relation("LoanDiscounts", fields: [loanId], references: [id])
+  installment    Installment?       @relation("InstallmentDiscounts", fields: [installmentId], references: [id])
+  moratory       MoratoryInterest?  @relation("MoratoryDiscounts", fields: [moratoryId], references: [id])
+
+  description    String?
+  amount         Decimal?   @db.Decimal(20, 2)
+  percentageId   Int?
+
+  createdAt      DateTime @default(now())
+  createdBy      Int?
+  createdByUser  User? @relation("DiscountsCreatedByUser", fields: [createdBy], references: [id])
+  discountType   DiscountType @relation(fields: [discountTypeId], references: [id])
+  percentageValue PercentageDiscount? @relation(fields: [percentageId], references: [id])
+  isActive       Boolean @default(true)
+
+  @@index([loanId])
+  @@index([installmentId])
+  @@index([moratoryId])
+  @@map("discounts")
+}
+
+model DiscountType {
+  id    Int    @id @default(autoincrement())
+  name  String @unique
+  description String?
+  discounts Discount[]
+
+  @@map("discount_types")
+}
+
+model PercentageDiscount {
+  id             Int       @id @default(autoincrement())
+  name           String    @unique
+  value          Float     @unique
+  discounts      Discount[]
+
+  @@map("percentage_discounts")
+  @@index([id, value, name])
 }

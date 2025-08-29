@@ -9,6 +9,7 @@ import { CustomersModule } from '@modules/customers/customers.module';
 import { LoansModule } from '@modules/loans/loans.module';
 import { InstallmentsModule } from './modules/installments/installments.module';
 import { WorkersModule } from '@infraestructure/rabbitmq/workers/loan/workers.module';
+import { DiscountsModule } from '@modules/discounts/discounts.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { WorkersModule } from '@infraestructure/rabbitmq/workers/loan/workers.mo
     LoansModule,
     InstallmentsModule,
     WorkersModule,
+    DiscountsModule
   ],
   controllers: [AppController],
   providers: [AppService],

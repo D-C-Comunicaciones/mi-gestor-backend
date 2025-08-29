@@ -82,7 +82,6 @@ export class LoansService {
           remainingBalance: new Prisma.Decimal(dto.loanAmount ?? 0),
           interestRateId: dto.interestRateId,
           penaltyRateId: dto.penaltyRateId,
-          paymentAmount: new Prisma.Decimal(0),
           termId,
           gracePeriodId,
           graceEndDate,
@@ -392,16 +391,6 @@ async findAll(p: LoanPaginationDto) {
       });
     }
 
-    if (detected.paymentAmount !== undefined) {
-      data.paymentAmount = detected.paymentAmount === null ?
-        null : new Prisma.Decimal(detected.paymentAmount);
-      changes.push({
-        field: 'paymentAmount',
-        old: existing.paymentAmount?.toNumber?.(),
-        new: detected.paymentAmount
-      });
-    }
-
     if (detected.nextDueDate !== undefined) {
       data.nextDueDate = detected.nextDueDate === null ?
         null : new Date(detected.nextDueDate);
@@ -546,10 +535,6 @@ async findAll(p: LoanPaginationDto) {
     // Campos escalares
     if (compareDecimal(existing.remainingBalance, dto.remainingBalance)) {
       changes.remainingBalance = dto.remainingBalance;
-    }
-
-    if (compareDecimal(existing.paymentAmount, dto.paymentAmount)) {
-      changes.paymentAmount = dto.paymentAmount;
     }
 
     // Fechas - comparar como strings ISO para evitar problemas de timezone

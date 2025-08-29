@@ -55,34 +55,34 @@ export class CustomersController {
     @ApiUnauthorizedResponse({ description: 'No autenticado' })
     @ApiForbiddenResponse({ description: 'Sin permiso view.customers' })
     @ApiInternalServerErrorResponse({ description: 'Error interno' })
-@Get()
-  async findAll(
-    @Query() paginationDto: CustomerPaginationDto,
-    @Res({ passthrough: true }) res: Response,
-  ): Promise<CustomerListResponse> {
-    const { customers, meta } = await this.customersService.findAll(paginationDto);
+    @Get()
+    async findAll(
+        @Query() paginationDto: CustomerPaginationDto,
+        @Res({ passthrough: true }) res: Response,
+    ): Promise<CustomerListResponse> {
+        const { customers, meta } = await this.customersService.findAll(paginationDto);
 
-    if (customers.length === 0) {
-      res.status(404);
-      return {
-        customMessage: 'No existen registros',
-        customers: [],
-        meta,
-      };
+        if (customers.length === 0) {
+            res.status(404);
+            return {
+                customMessage: 'No existen registros',
+                customers: [],
+                meta,
+            };
+        }
+
+        // Asegúrate de que ResponseCustomerDto tenga la propiedad email
+        const customersResponse = plainToInstance(ResponseCustomerDto, customers, {
+            excludeExtraneousValues: true,
+            enableImplicitConversion: true,
+        });
+
+        return {
+            customMessage: 'Clientes obtenidos correctamente',
+            customers: customersResponse,
+            meta,
+        };
     }
-
-    // Asegúrate de que ResponseCustomerDto tenga la propiedad email
-    const customersResponse = plainToInstance(ResponseCustomerDto, customers, {
-      excludeExtraneousValues: true,
-      enableImplicitConversion: true,
-    });
-
-    return {
-      customMessage: 'Clientes obtenidos correctamente',
-      customers: customersResponse,
-      meta,
-    };
-  }
 
     @Get(':id')
     @Permissions('view.customers')

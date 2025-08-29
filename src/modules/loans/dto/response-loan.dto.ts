@@ -15,7 +15,6 @@ export class ResponseLoanDto {
   @Expose()
   interestRateValue: number; // ← Ya viene calculado desde _mapLoan
 
-  @ApiProperty({ example: 0 }) @Expose() paymentAmount: number;
   @ApiProperty({ example: 1 }) @Expose() termId: number | null;
 
   @ApiProperty({ example: 6 })

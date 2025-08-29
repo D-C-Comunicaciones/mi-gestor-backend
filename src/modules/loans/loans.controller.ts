@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query, Res, UseGuards, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query, Res, UseGuards } from '@nestjs/common';
 import { LoansService } from './loans.service';
 import { CreateLoanDto, UpdateLoanDto } from './dto';
 import { LoanPaginationDto } from './dto/loan-pagination.dto';
@@ -13,8 +13,7 @@ import {
 } from '@nestjs/swagger';
 import { plainToInstance } from 'class-transformer';
 import { ResponseLoanDto } from './dto';
-import { LoanListResponse, LoanResponse, LoanUpdateResponse, LoanRegenerateInstallmentsResponse } from './interfaces';
-import { PrismaDecimalInterceptor } from '@common/interceptors';
+import { LoanListResponse, LoanResponse, LoanUpdateResponse } from './interfaces';
 
 @ApiTags('Loans')
 @ApiBearerAuth()
