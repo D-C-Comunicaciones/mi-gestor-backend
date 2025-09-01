@@ -1,14 +1,15 @@
-import { Controller, Get, Post, Patch, Param, Body, ParseIntPipe, Query, Res, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Param, Body, ParseIntPipe, Query, Res, UseGuards, UseInterceptors, UploadedFile, HttpStatus } from '@nestjs/common';
 import { CustomersService } from './customers.service';
 import { CustomerPaginationDto, CreateCustomerDto, UpdateCustomerDto, ResponseCustomerDto } from './dto';
 import { plainToInstance } from 'class-transformer';
 import { Response } from 'express';
 import { Permissions } from '@auth/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '@modules/auth/guards';
-import { CustomerDetailResponse, CustomerListResponse, CustomerResponse } from './interfaces';
+import { BulkError, CustomerDetailResponse, CustomerListResponse, CustomerResponse, CustomersBulkResponse } from './interfaces';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiOkResponse, ApiCreatedResponse, ApiNotFoundResponse, ApiUnauthorizedResponse, ApiForbiddenResponse, ApiUnprocessableEntityResponse, ApiInternalServerErrorResponse, ApiBadRequestResponse, ApiParam, ApiQuery, ApiBody, ApiExtraModels, getSchemaPath } from '@nestjs/swagger';
 import { ResponseLoanDto } from '@modules/loans/dto';
 import { UserResponseDto } from '@modules/users/dto';
+import { FileInterceptor } from '@nestjs/platform-express';
 
 @ApiTags('Customers')
 @ApiBearerAuth()
@@ -153,6 +154,70 @@ export class CustomersController {
         const raw = await this.customersService.create(dto);
         const customer = plainToInstance(ResponseCustomerDto, raw, { excludeExtraneousValues: true });
         return { customMessage: 'Cliente creado correctamente', customer };
+    }
+
+    @Post('bulk')
+    @UseInterceptors(FileInterceptor('file'))
+    async createMany(
+        @UploadedFile() file: Express.Multer.File,
+        @Res() res: Response
+    ): Promise<void> {
+        const raw = await this.customersService.createMany(file); // { results, errors }
+
+        const customers = plainToInstance(ResponseCustomerDto, raw.results, {
+            excludeExtraneousValues: true,
+        });
+
+        const totalCreated = customers.length;
+        const totalErrors = raw.errors?.length ?? 0;
+
+        // 📌 Caso 1: No se creó ningún cliente
+        if (totalCreated === 0) {
+            res.status(HttpStatus.BAD_REQUEST).json({
+                message: 'No se pudo crear ningún cliente',
+                code: 400,
+                status: 'error',
+                data: {
+                    firstCreated: null,
+                    lastCreated: null,
+                    totalCreated,
+                    totalErrors,
+                    errors: raw.errors,
+                },
+            });
+            return;
+        }
+
+        // 📌 Caso 2: Se crearon algunos, pero hubo errores
+        if (totalCreated > 0 && totalErrors > 0) {
+            res.status(HttpStatus.MULTI_STATUS).json({
+                message: 'Algunos clientes fueron creados, otros fallaron',
+                code: 207,
+                status: 'partial_success',
+                data: {
+                    firstCreated: customers[0],
+                    lastCreated: customers[customers.length - 1],
+                    totalCreated,
+                    totalErrors,
+                    errors: raw.errors,
+                },
+            });
+            return;
+        }
+
+        // 📌 Caso 3: Todo salió bien
+        res.status(HttpStatus.CREATED).json({
+            message: 'Clientes creados correctamente',
+            code: 201,
+            status: 'success',
+            data: {
+                firstCreated: customers[0],
+                lastCreated: customers[customers.length - 1],
+                totalCreated,
+                totalErrors: 0,
+                errors: [],
+            },
+        });
     }
 
     @Patch(':id')
