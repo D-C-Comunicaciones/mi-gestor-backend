@@ -309,14 +309,14 @@ model PenaltyRate {
 
 model MoratoryInterest {
   id            Int   @id @default(autoincrement())
-  installmentId Int   @unique
+  loanId Int   @unique
   daysLate      Int
   amount        Float
 
-  installment Installment @relation(fields: [installmentId], references: [id])
+  loan Loan @relation(fields: [loanId], references: [id])
   discounts Discount[] @relation("MoratoryDiscounts")
 
-  @@index([installmentId, daysLate, amount])
+  @@index([loanId, daysLate, amount])
   @@map("moratory_interests")
 }
 
@@ -375,6 +375,7 @@ model Loan {
   payments             Payment[] // Pagos realizados
   refinancingsOriginal Refinancing[] @relation("OriginalLoan")
   refinancingsNew      Refinancing[] @relation("NewLoan")
+  moratoryInterests   MoratoryInterest[]
 
   positiveBalances PositiveBalance[] @relation("PositiveBalances")
   advances Advance[] // Abonos al préstamo
@@ -395,27 +396,39 @@ model Loan {
 /// TABLA DE CUOTAS (INSTALLMENTS)
 /// -------------------------------------
 model Installment {
-  id             Int       @id @default(autoincrement()) // PK cuota (installment)
-  loanId         Int // FK al crédito
+  id             Int       @id @default(autoincrement())
+  loanId         Int
   loan           Loan      @relation(fields: [loanId], references: [id])
-  sequence       Int // Número de cuota en el cronograma (1..N)
-  dueDate        DateTime  @db.Date // Fecha de vencimiento de esta cuota
-  capitalAmount  Decimal   @db.Decimal(20, 2) // Porción de capital esperada
-  interestAmount Decimal   @db.Decimal(20, 2) // Porción de interés esperada
-  totalAmount    Decimal   @db.Decimal(20, 2) // capitalAmount + interestAmount (valor esperado)
-  paidAmount     Decimal   @default(0) @db.Decimal(20, 2) // Acumulado pagado contra esta cuota
-  isPaid         Boolean   @default(false) // Si la cuota está completamente pagada
-  isActive       Boolean   @default(true) // Activación de la cuota (soft delete)
-  paidAt         DateTime? // Fecha en la que se completó el pago total de la cuota
+  sequence       Int
+  dueDate        DateTime  @db.Date
+  capitalAmount  Decimal   @db.Decimal(20, 2)
+  interestAmount Decimal   @db.Decimal(20, 2)
+  totalAmount    Decimal   @db.Decimal(20, 2)
+  paidAmount     Decimal   @default(0) @db.Decimal(20, 2)
+  isPaid         Boolean   @default(false)
+  isActive       Boolean   @default(true)
+  paidAt         DateTime?
 
-  paymentAllocations        PaymentAllocation[] // Relación N:M con pagos
-  moratoryInterests  MoratoryInterest[]
-  discounts          Discount[] @relation("InstallmentDiscounts") // Descuentos a la cuota
+  statusId       Int       @default(1) // FK a la tabla de estados de cuota
+  status         StatusInstallment @relation(fields: [statusId], references: [id])
+
+  paymentAllocations  PaymentAllocation[]
+  discounts           Discount[] @relation("InstallmentDiscounts")
 
   @@index([loanId])
   @@index([dueDate])
   @@index([isPaid])
   @@map("installments")
+}
+
+model StatusInstallment {
+  id Int @id @default(autoincrement())
+  name String @unique
+  description String?
+  Installments Installment[]
+
+  @@index([name, description])
+  @@map("installment_statuses")
 }
 
 model Payment {

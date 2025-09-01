@@ -18,6 +18,8 @@ export class ResponseInstallmentDto {
   @ApiProperty({ example: 0 }) @Expose() paidAmount: number;
   @ApiProperty({ example: false }) @Expose() isPaid: boolean;
   @ApiProperty({ example: true }) @Expose() isActive: boolean;
+  @ApiProperty({ example: true }) @Expose() statusId: number;
+  @ApiProperty({ example: true }) @Expose() statusName: string;
 
   @ApiPropertyOptional({ example: null, nullable: true })
   @Expose()

@@ -198,78 +198,78 @@ export class LoansService {
   }
 
   // ---------- FIND ALL ----------
-async findAll(p: LoanPaginationDto) {
-  const page = p.page ?? 1;
-  const limit = p.limit ?? 10;
-  const where: Prisma.LoanWhereInput = p.isActive !== undefined
-    ? { isActive: p.isActive }
-    : {};
+  async findAll(p: LoanPaginationDto) {
+    const page = p.page ?? 1;
+    const limit = p.limit ?? 10;
+    const where: Prisma.LoanWhereInput = p.isActive !== undefined
+      ? { isActive: p.isActive }
+      : {};
 
-  const total = await this.prisma.loan.count({ where });
-  if (total === 0) {
+    const total = await this.prisma.loan.count({ where });
+    if (total === 0) {
+      return {
+        loans: [],
+        meta: { total: 0, page: 1, lastPage: 0, limit, hasNextPage: false },
+      };
+    }
+
+    const lastPage = Math.ceil(total / limit) || 1;
+    if (page > lastPage) {
+      throw new BadRequestException(`La página #${page} no existe`);
+    }
+
+    const items = await this.prisma.loan.findMany({
+      where,
+      include: {
+        interestRate: true,
+        penaltyRate: true,
+        term: true,
+        paymentFrequency: true,
+        loanType: true,
+        loanStatus: true,
+        installments: { orderBy: { sequence: 'asc' } },
+      },
+      skip: (page - 1) * limit,
+      take: limit,
+      orderBy: { id: 'desc' },
+    });
+
+    const loans = await Promise.all(
+      items.map(async loan => {
+        // timestamps for loan
+        const loanChanges = await this.changesService.getChanges('loan', loan.id);
+
+        const loanPlain = this.convertLoanToPlain({
+          ...loan,
+          createdAtTimestamp: loanChanges.create?.timestamp,
+          updatedAtTimestamp: loanChanges.lastUpdate?.timestamp ?? loanChanges.create?.timestamp,
+        });
+
+        // installments timestamps
+        for (const inst of loanPlain.installments) {
+          const ch = await this.changesService.getChanges('installment', inst.id);
+          (inst as any).createdAtTimestamp = ch.create?.timestamp;
+          (inst as any).updatedAtTimestamp = ch.lastUpdate?.timestamp ?? ch.create?.timestamp;
+        }
+
+        // map loan
+        const mappedLoan = this._mapLoan(loanPlain, loanChanges);
+
+        return mappedLoan;
+      })
+    );
+
     return {
-      loans: [],
-      meta: { total: 0, page: 1, lastPage: 0, limit, hasNextPage: false },
+      loans,
+      meta: {
+        total,
+        page,
+        lastPage,
+        limit,
+        hasNextPage: page < lastPage,
+      },
     };
   }
-
-  const lastPage = Math.ceil(total / limit) || 1;
-  if (page > lastPage) {
-    throw new BadRequestException(`La página #${page} no existe`);
-  }
-
-  const items = await this.prisma.loan.findMany({
-    where,
-    include: {
-      interestRate: true,
-      penaltyRate: true,
-      term: true,
-      paymentFrequency: true,
-      loanType: true,
-      loanStatus: true,
-      installments: { orderBy: { sequence: 'asc' } },
-    },
-    skip: (page - 1) * limit,
-    take: limit,
-    orderBy: { id: 'desc' },
-  });
-
-  const loans = await Promise.all(
-    items.map(async loan => {
-      // timestamps for loan
-      const loanChanges = await this.changesService.getChanges('loan', loan.id);
-
-      const loanPlain = this.convertLoanToPlain({
-        ...loan,
-        createdAtTimestamp: loanChanges.create?.timestamp,
-        updatedAtTimestamp: loanChanges.lastUpdate?.timestamp ?? loanChanges.create?.timestamp,
-      });
-
-      // installments timestamps
-      for (const inst of loanPlain.installments) {
-        const ch = await this.changesService.getChanges('installment', inst.id);
-        (inst as any).createdAtTimestamp = ch.create?.timestamp;
-        (inst as any).updatedAtTimestamp = ch.lastUpdate?.timestamp ?? ch.create?.timestamp;
-      }
-
-      // map loan
-      const mappedLoan = this._mapLoan(loanPlain, loanChanges);
-
-      return mappedLoan;
-    })
-  );
-
-  return {
-    loans,
-    meta: {
-      total,
-      page,
-      lastPage,
-      limit,
-      hasNextPage: page < lastPage,
-    },
-  };
-}
 
   async findOne(id: number, include?: string) {
     // 1️⃣ Obtener préstamo con relaciones necesarias
@@ -578,18 +578,6 @@ async findAll(p: LoanPaginationDto) {
     return changes;
   }
 
-  /**
-   * Retorna función para incrementar fechas según la frecuencia
-   */
-  private getIncrementer(freqName: string): (d: Date, step: number) => Date {
-    const name = freqName.toUpperCase();
-    if (name.includes('DAILY')) return (d, s) => addDays(d, s);
-    if (name.includes('WEEK')) return (d, s) => addWeeks(d, s);
-    if (name.includes('BIWEEK')) return (d, s) => addWeeks(d, s * 2);
-    if (name.includes('MONTH')) return (d, s) => addMonths(d, s);
-    return (d, s) => addMonths(d, s); // fallback
-  }
-
   private convertLoanToPlain(obj: any): any {
     // SOLUCIÓN NUCLEAR - Convierte TODOS los Decimals a números
     const jsonString = JSON.stringify(obj, (key, value) => {
@@ -600,41 +588,6 @@ async findAll(p: LoanPaginationDto) {
     });
 
     return JSON.parse(jsonString);
-  }
-  private buildBasicInclude(include?: string): Prisma.LoanInclude {
-    const includeRelations: Prisma.LoanInclude = {
-      customer: {
-        include: {
-          typeDocumentIdentification: true,
-          gender: true,
-          zone: true
-        }
-      },
-      interestRate: true,
-      term: true,
-      paymentFrequency: true,
-      loanType: true,
-      loanStatus: true,
-      installments: {
-        orderBy: { sequence: 'asc' }
-      }
-    };
-
-    if (include) {
-      const relations = include.split(',');
-
-      if (!relations.includes('installments')) {
-        delete includeRelations.installments;
-      }
-
-      if (!relations.includes('customer')) {
-        delete includeRelations.customer;
-      }
-
-      // Puedes agregar más relaciones condicionales aquí
-    }
-
-    return includeRelations;
   }
 
   private _mapLoan(loan: any, loanChanges: any) {
