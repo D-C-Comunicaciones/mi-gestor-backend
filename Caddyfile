@@ -2,6 +2,7 @@ www.api.dcmigestor.co {
     redir https://api.dcmigestor.co{uri}
 }
 
+# API NestJS
 api.dcmigestor.co {
     encode zstd gzip
 
@@ -14,6 +15,28 @@ api.dcmigestor.co {
 
     reverse_proxy api:3000 {
         health_uri /v1
+        fail_duration 10s
+        max_fails 3
+    }
+
+    log {
+        output stdout
+        format console
+    }
+}
+
+# Frontend Next.js
+app.dcmigestor.co {
+    encode zstd gzip
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Frame-Options DENY
+        X-Content-Type-Options nosniff
+        Referrer-Policy strict-origin-when-cross-origin
+    }
+
+    reverse_proxy frontend:3000 {
         fail_duration 10s
         max_fails 3
     }
