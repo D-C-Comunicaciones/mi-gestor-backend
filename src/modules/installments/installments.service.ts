@@ -3,7 +3,7 @@ import { PrismaService } from "@infraestructure/prisma/prisma.service";
 import { RabbitMqService } from "@infraestructure/rabbitmq/rabbitmq.service";
 import { BadRequestException, Injectable, Logger } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { addDays, addMonths, addWeeks, addMinutes } from "date-fns";
+import { addDays, addMonths, addWeeks, addMinutes, addSeconds } from "date-fns";
 
 @Injectable()
 export class InstallmentsService {
@@ -25,13 +25,18 @@ export class InstallmentsService {
     const incrementer = this.getDateIncrementer(loan.paymentFrequency.name);
     const firstDueDate = incrementer(new Date(loan.startDate));
 
+    this.logger.log(`📌 Calculando primera cuota para loanId=${loan.id}, dueDate=${firstDueDate.toISOString()}`);
+
     let installment;
     let remainingInstallments: number | null = null;
 
     switch (loan.loanType.name as "fixed_fees" | "only_interests") {
       case "fixed_fees":
-        if (!options.termValue) throw new BadRequestException("TermValue requerido para crédito fixed_fees");
-        remainingInstallments = options.termValue;
+        if (!options.termValue)
+          throw new BadRequestException("TermValue requerido para crédito fixed_fees");
+
+        remainingInstallments = options.termValue - 1;
+
         installment = await this.calculateAndCreateInstallment(
           loan,
           1,
@@ -42,8 +47,10 @@ export class InstallmentsService {
         break;
 
       case "only_interests":
-        if (!options.gracePeriod) throw new BadRequestException("GracePeriod requerido para crédito only_interests");
-        remainingInstallments = null; // indefinido
+        if (!options.gracePeriod)
+          throw new BadRequestException("GracePeriod requerido para crédito only_interests");
+        remainingInstallments = null;
+
         installment = await this.calculateAndCreateInstallment(
           loan,
           1,
@@ -57,22 +64,32 @@ export class InstallmentsService {
         throw new BadRequestException(`Tipo de crédito no soportado: ${loan.loanType.name}`);
     }
 
-    // 🔹 Publicar mensaje inicial en RabbitMQ para la cuota
-    const delay = this.calculateNextDelay(loan.paymentFrequency.name);
+    // 🔹 Programar la creación de la siguiente cuota
+    const nextDueDate = incrementer(firstDueDate);
+    let createNextDate = this.calculateCreateNextDate(nextDueDate, loan.paymentFrequency.name);
+
+    // Garantizar que createNextDate esté en el futuro
+    if (createNextDate <= new Date()) {
+      createNextDate = new Date(Date.now() + 50); // mínimo 50ms
+    }
+
+    const delay = createNextDate.getTime() - Date.now();
+
+    this.logger.log(`📨 Próxima cuota de loanId=${loan.id} programada para creación: ${createNextDate.toISOString()}, dueDate real: ${nextDueDate.toISOString()}, delay=${delay}ms`);
+
     await this.rabbitMqService.publishWithDelay(
       envs.rabbitMq.loanInstallmentsQueue,
       { loanId: loan.id, remainingInstallments },
       delay
     );
-    this.logger.log(`📨 Primer mensaje enviado a la cola de cuotas para loanId=${loan.id}, delay=${delay}ms`);
 
-    // 🔹 Publicar mensaje inicial para el monitoreo de interés moratorio con 1 minuto de delay
+    // 🔹 Publicar mensaje inicial para monitoreo de interés moratorio con 1 min de delay
     await this.rabbitMqService.publishWithDelay(
       envs.rabbitMq.loanOverdueQueue,
       { loanId: loan.id },
-      60 * 1000 // 1 minuto
+      60 * 1000
     );
-    this.logger.log(`⏱️ Primer mensaje enviado a la cola de interés moratorio para loanId=${loan.id}, delay=1min`);
+    this.logger.log(`⏱️ Primer mensaje de interés moratorio enviado para loanId=${loan.id}, delay=1min`);
 
     return installment;
   }
@@ -92,18 +109,24 @@ export class InstallmentsService {
     });
 
     if (!loan) throw new BadRequestException("Loan no encontrado");
-    if (!loan.installments || loan.installments.length === 0) throw new BadRequestException("No hay cuotas previas");
+    if (!loan.installments || loan.installments.length === 0) {
+      this.logger.warn(`⚠️ Loan ${loanId} no tiene cuotas previas`);
+      return;
+    }
 
     const lastInstallment = loan.installments.reduce((a, b) => a.sequence > b.sequence ? a : b);
     const nextSequence = lastInstallment.sequence + 1;
     const incrementer = this.getDateIncrementer(loan.paymentFrequency.name);
     const nextDueDate = incrementer(new Date(lastInstallment.dueDate));
 
+    this.logger.log(`📌 Calculando siguiente cuota para loanId=${loan.id}, nextSequence=${nextSequence}, nextDueDate=${nextDueDate.toISOString()}`);
+
     let installment: any;
 
     switch (loan.loanType.name as "fixed_fees" | "only_interests") {
       case "fixed_fees":
         if (!loan.term?.value) throw new BadRequestException("El préstamo no tiene término configurado");
+
         installment = await this.calculateAndCreateInstallment(
           loan,
           nextSequence,
@@ -113,11 +136,20 @@ export class InstallmentsService {
         );
         break;
 
-      // Caso only_interests
       case "only_interests":
         if (!loan.gracePeriod?.days) throw new BadRequestException("El préstamo no tiene período de gracia configurado");
 
-        // Crear la siguiente cuota
+        const paidCapital = loan.installments.reduce(
+          (sum: Prisma.Decimal, inst: any) => sum.add(new Prisma.Decimal(inst.capitalAmount || 0)),
+          new Prisma.Decimal(0)
+        );
+        const remainingBalance = new Prisma.Decimal(loan.loanAmount).minus(paidCapital).toNumber();
+
+        if (remainingBalance <= 0) {
+          this.logger.log(`✅ Saldo pendiente 0 para loanId=${loan.id}, no se generará siguiente cuota`);
+          return;
+        }
+
         installment = await this.calculateAndCreateInstallment(
           loan,
           nextSequence,
@@ -126,18 +158,13 @@ export class InstallmentsService {
           this.prisma
         );
 
-        // 🔹 Determinar si el período de gracia terminó
         const firstInstallmentDate = new Date(loan.installments[0].dueDate);
-        const graceEndDate = new Date(firstInstallmentDate);
-        graceEndDate.setDate(graceEndDate.getDate() + loan.gracePeriod.days);
+        const graceEndDate = addDays(firstInstallmentDate, loan.gracePeriod.days);
+        const requiresCapitalPayment = nextDueDate > graceEndDate;
 
-        // Si la fecha de la próxima cuota ya está después del final del período de gracia
-        const requiresCapitalPayment = new Date(nextDueDate) > graceEndDate;
-
-        // 🔹 Actualizar el préstamo
         await this.prisma.loan.update({
           where: { id: loanId },
-          data: { requiresCapitalPayment }, // <--- Aquí se aplica true si terminó el período de gracia
+          data: { requiresCapitalPayment },
         });
         break;
 
@@ -145,10 +172,24 @@ export class InstallmentsService {
         throw new BadRequestException(`Tipo de crédito no soportado: ${loan.loanType.name}`);
     }
 
+    // 🔹 Actualizar nextDueDate en el préstamo
     await this.prisma.loan.update({
       where: { id: loanId },
       data: { nextDueDate },
     });
+
+    // 🔹 Programar siguiente cuota
+    let createNextDate = this.calculateCreateNextDate(nextDueDate, loan.paymentFrequency.name);
+    if (createNextDate <= new Date()) createNextDate = new Date(Date.now() + 50);
+    const delay = createNextDate.getTime() - Date.now();
+
+    await this.rabbitMqService.publishWithDelay(
+      envs.rabbitMq.loanInstallmentsQueue,
+      { loanId: loan.id },
+      delay
+    );
+
+    this.logger.log(`📨 Próxima cuota programada para creación: ${createNextDate.toISOString()}, dueDate real: ${nextDueDate.toISOString()}, delay=${delay}ms`);
 
     return installment;
   }
@@ -165,8 +206,7 @@ export class InstallmentsService {
 
     const loanAmountDecimal = new Prisma.Decimal(loan.loanAmount);
     const interestRateValue = new Prisma.Decimal(loan.interestRate.value);
-    const interestRateNormalized = interestRateValue.greaterThan(1) ? interestRateValue.div(100) : interestRateValue;
-
+    const interestRateNormalized = interestRateValue.div(100);
     let capitalAmount = new Prisma.Decimal(0);
     let interestAmount = new Prisma.Decimal(0);
     let totalAmount = new Prisma.Decimal(0);
@@ -175,18 +215,20 @@ export class InstallmentsService {
 
     switch (loan.loanType.name as "fixed_fees" | "only_interests") {
       case "fixed_fees": {
-        const paidCapital = installments.reduce((sum: Prisma.Decimal, installment: any) => {
-          return sum.add(new Prisma.Decimal(installment.capitalAmount || 0));
+        const paidCapital = installments.reduce((sum: Prisma.Decimal, inst: any) => {
+          return sum.add(new Prisma.Decimal(inst.capitalAmount || 0));
         }, new Prisma.Decimal(0));
 
         const remainingBalance = loanAmountDecimal.minus(paidCapital);
         const remainingInstallments = termOrGrace - (sequence - 1);
-        if (remainingInstallments <= 0) throw new BadRequestException("No hay más cuotas por calcular");
+        if (remainingInstallments <= 0) {
+          this.logger.warn(`Crédito ${loan.id}: no hay más cuotas por calcular (remainingInstallments=${remainingInstallments})`);
+          return;
+        }
 
         const monthlyRate = interestRateNormalized;
         const temp = monthlyRate.plus(1).pow(remainingInstallments);
         const factor = monthlyRate.times(temp).div(temp.minus(1));
-
         const fixedPayment = remainingBalance.times(factor);
 
         interestAmount = remainingBalance.times(monthlyRate);
@@ -230,45 +272,54 @@ export class InstallmentsService {
       include: { status: true },
     });
 
+    this.logger.log(`✅ Cuota creada: loanId=${loan.id}, sequence=${sequence}, dueDate=${dueDate.toISOString()}, totalAmount=${totalAmount.toNumber()}`);
     return installment;
   }
 
   /** ⏱️ Incrementador de fechas según frecuencia */
   private getDateIncrementer(frequencyName: string): (date: Date) => Date {
     const freq = frequencyName.toUpperCase();
+
     if (freq.includes("DAILY")) return (date) => addDays(date, 1);
     if (freq.includes("WEEKLY")) return (date) => addWeeks(date, 1);
     if (freq.includes("BIWEEKLY")) return (date) => addDays(date, 15);
     if (freq.includes("MONTHLY")) return (date) => addMonths(date, 1);
-    if (freq.includes("MINUTE")) return (date) => addMinutes(date, 1);
-    return (date) => addMonths(date, 1); // fallback
+
+    // ✅ Ajuste: MINUTE = cada 60 segundos exactos
+    if (freq.includes("MINUTE")) return (date) => addSeconds(date, 60);
+
+    // fallback → mensual
+    return (date) => addMonths(date, 1);
   }
 
-  /** Calcula delay para RabbitMQ */
-  private calculateNextDelay(paymentFrequency: string): number {
-    const freq = paymentFrequency.toUpperCase();
-    const delays: Record<string, number> = {
-      'MINUTO': 60 * 1000,
-      'MINUTE': 60 * 1000,
-      'HORA': 60 * 60 * 1000,
-      'HOURLY': 60 * 60 * 1000,
-      'DIARIA': 24 * 60 * 60 * 1000,
-      'DAILY': 24 * 60 * 60 * 1000,
-      'SEMANAL': 7 * 24 * 60 * 60 * 1000,
-      'WEEKLY': 7 * 24 * 60 * 60 * 1000,
-      'QUINCENAL': 15 * 24 * 60 * 60 * 1000,
-      'BIWEEKLY': 15 * 24 * 60 * 60 * 1000,
-      'MENSUAL': 30 * 24 * 60 * 60 * 1000,
-      'MONTHLY': 30 * 24 * 60 * 60 * 1000,
-      'ANUAL': 365 * 24 * 60 * 60 * 1000,
-      'YEARLY': 365 * 24 * 60 * 60 * 1000,
-    };
+  /** Calcula fecha de creación anticipada según frecuencia */
+  private calculateCreateNextDate(nextDueDate: Date, frequencyName: string): Date {
+    const freq = frequencyName.toUpperCase();
+    const createDate = new Date(nextDueDate);
+    const now = new Date();
 
-    for (const key in delays) {
-      if (freq.includes(key)) return delays[key];
+    if (freq.includes("MINUTE")) {
+      // ✅ Crear exactamente 30s antes del próximo dueDate
+      createDate.setSeconds(createDate.getSeconds() - 30);
+
+      // Si esa fecha ya pasó, moverla al siguiente ciclo de 1 minuto
+      if (createDate <= now) {
+        // sumo un minuto desde ahora y luego resto 30s
+        const futureDueDate = addSeconds(now, 60);
+        createDate.setTime(futureDueDate.getTime() - 30 * 1000);
+      }
+    } else if (freq.includes("DAILY")) {
+      createDate.setDate(createDate.getDate() - 1);
+    } else {
+      createDate.setDate(createDate.getDate() - 2);
     }
 
-    this.logger.warn(`⚠️ Frecuencia desconocida "${paymentFrequency}", usando fallback 10s`);
-    return 10 * 1000;
+    this.logger.log(
+      `⏱️ Fecha para crear siguiente cuota (createDate) calculada: ${createDate.toISOString()} para frequency=${frequencyName}`
+    );
+    return createDate;
+  }
+  public getNextCreateDate(nextDueDate: Date, frequencyName: string): Date {
+    return this.calculateCreateNextDate(nextDueDate, frequencyName);
   }
 }

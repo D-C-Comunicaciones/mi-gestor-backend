@@ -110,9 +110,9 @@ export class CollectionsService {
 
         if (daysLate > 0 && appliedToLateFee > 0) {
           await tx.moratoryInterest.upsert({
-            where: { loanId: loan.id },
+            where: { installmentId: installment.id },
             update: { daysLate, amount: appliedToLateFee },
-            create: { loanId: loan.id, daysLate, amount: appliedToLateFee },
+            create: { installmentId: installment.id, daysLate, amount: appliedToLateFee },
           });
         }
 

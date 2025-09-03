@@ -6,7 +6,7 @@ import { envs } from '@config/envs';
 export class RabbitMqService implements OnModuleInit, OnModuleDestroy {
   private connection: amqp.Connection;
   private publishChannel: amqp.ConfirmChannel;
-  private consumeChannel: amqp.Channel;
+  private consumeChannels: Map<string, amqp.Channel> = new Map();
 
   private isConnecting = false;
   private connectionPromise: Promise<void> | null = null;
@@ -16,13 +16,16 @@ export class RabbitMqService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(RabbitMqService.name);
 
   async onModuleInit() {
-    this.connectWithRetry().catch(err => this.logger.error('Error inicializando RabbitMQ:', err));
+    await this.connectWithRetry().catch(err =>
+      this.logger.error('Error inicializando RabbitMQ:', err),
+    );
   }
 
   async onModuleDestroy() {
     await this.disconnect();
   }
 
+  /** --- 🔗 Conexión y Reconexión --- */
   private async connectWithRetry(): Promise<void> {
     if (this.isConnecting && this.connectionPromise) return this.connectionPromise;
 
@@ -58,21 +61,16 @@ export class RabbitMqService implements OnModuleInit, OnModuleDestroy {
 
     this.connection = await amqp.connect(envs.rabbitMq.url || 'amqp://localhost:5672');
 
-    // Canal para publicar
+    // ✅ Canal único para publicación
     this.publishChannel = await this.connection.createConfirmChannel();
     this.publishChannel.on('error', err => this.logger.error('❌ Publish channel error:', err));
     this.publishChannel.on('close', () => this.logger.warn('🔌 Publish channel cerrado'));
 
-    // Canal para consumir
-    this.consumeChannel = await this.connection.createChannel();
-    this.consumeChannel.on('error', err => this.logger.error('❌ Consume channel error:', err));
-    this.consumeChannel.on('close', () => this.logger.warn('🔌 Consume channel cerrado'));
-
-    // Manejar eventos de conexión
     this.connection.on('error', err => {
       this.logger.error('❌ Error de conexión RabbitMQ:', err);
       this.handleConnectionError();
     });
+
     this.connection.on('close', () => {
       this.logger.warn('🔌 Conexión RabbitMQ cerrada, reconectando...');
       this.handleConnectionError();
@@ -83,28 +81,38 @@ export class RabbitMqService implements OnModuleInit, OnModuleDestroy {
 
   private handleConnectionError() {
     this.publishChannel = null;
-    this.consumeChannel = null;
     this.connection = null;
+    this.consumeChannels.clear();
     this.isConnecting = false;
     this.connectionPromise = null;
 
     setTimeout(() => {
-      this.connectWithRetry().catch(err => this.logger.error('Error reconectando automáticamente:', err));
+      this.connectWithRetry().catch(err =>
+        this.logger.error('Error reconectando automáticamente:', err),
+      );
     }, 5000);
   }
 
   private async disconnect(): Promise<void> {
     try {
+      // Cerramos todos los canales de consumo
+      for (const [queue, channel] of this.consumeChannels.entries()) {
+        await channel.close().catch(err =>
+          this.logger.warn(`⚠️ Error cerrando canal de consumo (${queue}):`, err),
+        );
+      }
+      this.consumeChannels.clear();
+
       if (this.publishChannel) {
-        await this.publishChannel.close().catch(err => this.logger.warn('⚠️ Error cerrando publish channel:', err));
+        await this.publishChannel.close().catch(err =>
+          this.logger.warn('⚠️ Error cerrando publish channel:', err),
+        );
         this.publishChannel = null;
       }
-      if (this.consumeChannel) {
-        await this.consumeChannel.close().catch(err => this.logger.warn('⚠️ Error cerrando consume channel:', err));
-        this.consumeChannel = null;
-      }
       if (this.connection) {
-        await this.connection.close().catch(err => this.logger.warn('⚠️ Error cerrando conexión:', err));
+        await this.connection.close().catch(err =>
+          this.logger.warn('⚠️ Error cerrando conexión:', err),
+        );
         this.connection = null;
       }
     } finally {
@@ -114,22 +122,32 @@ export class RabbitMqService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async ensureConnection(): Promise<void> {
-    if (this.connection && this.publishChannel && this.consumeChannel) return;
+    if (this.connection && this.publishChannel) return;
     if (this.isConnecting && this.connectionPromise) await this.connectionPromise;
     else await this.connectWithRetry();
   }
 
+  async waitForConnection(): Promise<void> {
+    await this.ensureConnection();
+  }
+
+  /** --- 📨 Publicar Mensajes --- */
   async assertQueue(queueName: string): Promise<void> {
     await this.ensureConnection();
-    await this.consumeChannel.assertQueue(queueName, { durable: true });
+    await this.publishChannel.assertQueue(queueName, { durable: true });
     this.logger.log(`✅ Cola ${queueName} asegurada`);
   }
 
-  async sendToQueue(queueName: string, message: any, options?: any): Promise<void> {
+  async sendToQueue(queueName: string, message: any, options?: amqp.Options.Publish): Promise<void> {
     await this.ensureConnection();
     await this.publishChannel.assertQueue(queueName, { durable: true });
-    this.publishChannel.sendToQueue(queueName, Buffer.from(JSON.stringify(message)), { persistent: true, ...options });
-    this.logger.log(`✅ Mensaje enviado a cola: ${queueName}`);
+
+    this.publishChannel.sendToQueue(queueName, Buffer.from(JSON.stringify(message)), {
+      persistent: true,
+      ...options,
+    });
+
+    this.logger.debug(`📤 Mensaje enviado a cola: ${queueName}`);
   }
 
   async publishWithDelay(queue: string, message: any, delay: number): Promise<void> {
@@ -149,29 +167,59 @@ export class RabbitMqService implements OnModuleInit, OnModuleDestroy {
       persistent: true,
     });
 
-    this.logger.log(`✅ Mensaje con delay de ${delay}ms publicado en cola: ${queue}`);
+    this.logger.debug(`⏳ Mensaje con delay de ${delay}ms publicado en cola: ${queue}`);
   }
 
-  async consume(queueName: string, callback: (msg: amqp.ConsumeMessage) => void): Promise<void> {
+  /** --- 📥 Consumir Mensajes (canal dedicado por cola) --- */
+  async consume(
+    queueName: string,
+    callback: (msg: amqp.ConsumeMessage, ack: () => void, nack: (requeue?: boolean) => void) => void,
+    prefetch = 10
+  ): Promise<void> {
     await this.ensureConnection();
-    await this.consumeChannel.assertQueue(queueName, { durable: true });
 
-    this.consumeChannel.consume(queueName, (msg) => {
-      if (msg) {
-        callback(msg);
-        this.consumeChannel.ack(msg); // siempre en canal de consumo
+    if (this.consumeChannels.has(queueName)) {
+      this.logger.warn(`⚠️ Ya existe un consumidor para la cola: ${queueName}`);
+      return;
+    }
+
+    const channel = await this.connection.createChannel();
+    channel.prefetch(prefetch);
+    await channel.assertQueue(queueName, { durable: true });
+
+    channel.consume(queueName, (msg) => {
+      if (!msg) return;
+
+      const ack = () => {
+        try {
+          channel.ack(msg);
+        } catch (err) {
+          this.logger.error(`⚠️ Error haciendo ack en ${queueName}:`, err);
+        }
+      };
+
+      const nack = (requeue = true) => {
+        try {
+          channel.nack(msg, false, requeue);
+        } catch (err) {
+          this.logger.error(`⚠️ Error haciendo nack en ${queueName}:`, err);
+        }
+      };
+
+      try {
+        callback(msg, ack, nack);
+      } catch (err) {
+        this.logger.error(`❌ Error procesando mensaje en ${queueName}:`, err);
+        nack(true);
       }
     });
 
-    this.logger.log(`✅ Consumiendo de cola: ${queueName}`);
-  }
-
-  async waitForConnection(): Promise<void> {
-    await this.ensureConnection();
+    this.consumeChannels.set(queueName, channel);
+    this.logger.log(`✅ Consumidor registrado para cola: ${queueName} en canal dedicado`);
   }
 
   getConnectionStatus(): string {
-    if (this.connection && this.publishChannel && this.consumeChannel) return 'connected';
+    if (this.connection && this.publishChannel) return 'connected';
     if (this.isConnecting) return 'connecting';
     return 'disconnected';
   }

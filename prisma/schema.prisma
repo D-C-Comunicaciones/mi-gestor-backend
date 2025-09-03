@@ -81,9 +81,10 @@ model PaymentFrequency {
 }
 
 model LoanStatus {
-  id       Int     @id @default(autoincrement()) // PK: id del estado del crédito
-  name     String  @unique // Ej: ACTIVO, CANCELADO, REFINANCIADO
-  isActive Boolean @default(true) // Permite mantener catálogo dinámico
+  id          Int     @id @default(autoincrement()) // PK: id del estado del crédito
+  name        String  @unique // Ej: ACTIVO, CANCELADO, REFINANCIADO
+  isActive    Boolean @default(true) // Permite mantener catálogo dinámico
+  description String?
 
   loans Loan[] // Créditos en ese estado
 
@@ -121,7 +122,7 @@ model User {
   isActive    Boolean      @default(true)
 
   // Relación para pagos registrados por este usuario (audit)
-  paymentsRecorded Payment[] @relation("PaymentsRecordedByUser")
+  paymentsRecorded Payment[]  @relation("PaymentsRecordedByUser")
   discountsCreated Discount[] @relation("DiscountsCreatedByUser")
 
   @@index([email])
@@ -237,7 +238,7 @@ model Customer {
   loans Loan[] // Créditos asociados a este customer
 
   positiveBalances PositiveBalance[] // Saldos a favor del cliente
-  advances Advance[] // Abonos del cliente
+  advances         Advance[] // Abonos del cliente
 
   @@index([firstName])
   @@index([lastName])
@@ -280,6 +281,7 @@ model Collector {
 
 model InterestRate {
   id    Int     @id @default(autoincrement()) // PK
+  name  String // Ejemplo: "1%"
   value Decimal @db.Decimal(20, 2) // Tasa de interés (ej. 0.0500 => 5% anual o según convención)
   loan  Loan[]
 
@@ -309,14 +311,14 @@ model PenaltyRate {
 
 model MoratoryInterest {
   id            Int   @id @default(autoincrement())
-  loanId Int   @unique
+  installmentId Int   @unique
   daysLate      Int
   amount        Float
 
-  loan Loan @relation(fields: [loanId], references: [id])
-  discounts Discount[] @relation("MoratoryDiscounts")
+  installment Installment @relation(fields: [installmentId], references: [id])
+  discounts   Discount[]  @relation("MoratoryDiscounts")
 
-  @@index([loanId, daysLate, amount])
+  @@index([installmentId, daysLate, amount])
   @@map("moratory_interests")
 }
 
@@ -375,11 +377,10 @@ model Loan {
   payments             Payment[] // Pagos realizados
   refinancingsOriginal Refinancing[] @relation("OriginalLoan")
   refinancingsNew      Refinancing[] @relation("NewLoan")
-  moratoryInterests   MoratoryInterest[]
 
   positiveBalances PositiveBalance[] @relation("PositiveBalances")
-  advances Advance[] // Abonos al préstamo
-  discounts Discount[] @relation("LoanDiscounts") // Descuentos al préstamo
+  advances         Advance[] // Abonos al préstamo
+  discounts        Discount[]        @relation("LoanDiscounts") // Descuentos al préstamo
 
   @@index([customerId])
   @@index([paymentFrequencyId])
@@ -409,11 +410,12 @@ model Installment {
   isActive       Boolean   @default(true)
   paidAt         DateTime?
 
-  statusId       Int       @default(1) // FK a la tabla de estados de cuota
-  status         StatusInstallment @relation(fields: [statusId], references: [id])
+  statusId Int               @default(1) // FK a la tabla de estados de cuota
+  status   InstallmentStatus @relation(fields: [statusId], references: [id])
 
-  paymentAllocations  PaymentAllocation[]
-  discounts           Discount[] @relation("InstallmentDiscounts")
+  paymentAllocations PaymentAllocation[]
+  discounts          Discount[]          @relation("InstallmentDiscounts")
+  moratoryInterests  MoratoryInterest[]
 
   @@index([loanId])
   @@index([dueDate])
@@ -421,10 +423,10 @@ model Installment {
   @@map("installments")
 }
 
-model StatusInstallment {
-  id Int @id @default(autoincrement())
-  name String @unique
-  description String?
+model InstallmentStatus {
+  id           Int           @id @default(autoincrement())
+  name         String        @unique
+  description  String?
   Installments Installment[]
 
   @@index([name, description])
@@ -432,9 +434,9 @@ model StatusInstallment {
 }
 
 model Payment {
-  id            Int          @id @default(autoincrement()) // PK pago
-  loanId        Int // FK al crédito afectado
-  loan          Loan         @relation(fields: [loanId], references: [id])
+  id     Int  @id @default(autoincrement()) // PK pago
+  loanId Int // FK al crédito afectado
+  loan   Loan @relation(fields: [loanId], references: [id])
 
   amount        Decimal     @db.Decimal(20, 2) // Monto total del registro de pago
   paymentTypeId Int
@@ -462,12 +464,12 @@ model Payment {
 }
 
 model PaymentAllocation {
-  id            Int          @id @default(autoincrement())
-  paymentId     Int
-  payment       Payment      @relation(fields: [paymentId], references: [id])
+  id        Int     @id @default(autoincrement())
+  paymentId Int
+  payment   Payment @relation(fields: [paymentId], references: [id])
 
   installmentId Int
-  installment   Installment  @relation(fields: [installmentId], references: [id])
+  installment   Installment @relation(fields: [installmentId], references: [id])
 
   appliedToCapital  Decimal @default(0) @db.Decimal(20, 2)
   appliedToInterest Decimal @default(0) @db.Decimal(20, 2)
@@ -504,20 +506,20 @@ model Refinancing {
 }
 
 model PositiveBalance {
-  id         Int     @id @default(autoincrement()) // PK saldo a favor
+  id         Int      @id @default(autoincrement()) // PK saldo a favor
   customerId Int // FK al cliente
   customer   Customer @relation(fields: [customerId], references: [id])
   loanId     Int? // FK opcional al préstamo (para trazabilidad)
-  loan       Loan? @relation("PositiveBalances", fields: [loanId], references: [id])
-  
+  loan       Loan?    @relation("PositiveBalances", fields: [loanId], references: [id])
+
   amount     Decimal @db.Decimal(20, 2) // Monto del saldo a favor
   source     String // Origen: "overpayment", "prepayment", etc.
   isUsed     Boolean @default(false) // Si ya se utilizó este saldo
   usedAmount Decimal @default(0) @db.Decimal(20, 2) // Monto ya utilizado
-  
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  
+
   @@index([customerId])
   @@index([loanId])
   @@index([isUsed])
@@ -525,25 +527,25 @@ model PositiveBalance {
 }
 
 model Advance {
-  id         Int     @id @default(autoincrement()) // PK abono
+  id         Int      @id @default(autoincrement()) // PK abono
   customerId Int // FK al cliente
   customer   Customer @relation(fields: [customerId], references: [id])
   loanId     Int // FK al préstamo
-  loan       Loan @relation(fields: [loanId], references: [id])
-  
-  amount     Decimal @db.Decimal(20, 2) // Monto del abono
-  appliedAmount Decimal @default(0) @db.Decimal(20, 2) // Monto ya aplicado del abono
+  loan       Loan     @relation(fields: [loanId], references: [id])
+
+  amount          Decimal @db.Decimal(20, 2) // Monto del abono
+  appliedAmount   Decimal @default(0) @db.Decimal(20, 2) // Monto ya aplicado del abono
   remainingAmount Decimal @db.Decimal(20, 2) // Monto pendiente por aplicar
-  
+
   collectorId Int? // Cobrador que registró el abono
   collector   Collector? @relation("AdvancesCollectedByCollector", fields: [collectorId], references: [id])
-  
-  notes      String? // Notas del abono
-  isActive   Boolean @default(true)
-  
+
+  notes    String? // Notas del abono
+  isActive Boolean @default(true)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  
+
   @@index([customerId])
   @@index([loanId])
   @@index([collectorId])
@@ -552,26 +554,26 @@ model Advance {
 }
 
 model Discount {
-  id             Int       @id @default(autoincrement())
+  id             Int  @id @default(autoincrement())
   discountTypeId Int
   loanId         Int?
   installmentId  Int?
   moratoryId     Int?
 
-  loan           Loan?              @relation("LoanDiscounts", fields: [loanId], references: [id])
-  installment    Installment?       @relation("InstallmentDiscounts", fields: [installmentId], references: [id])
-  moratory       MoratoryInterest?  @relation("MoratoryDiscounts", fields: [moratoryId], references: [id])
+  loan        Loan?             @relation("LoanDiscounts", fields: [loanId], references: [id])
+  installment Installment?      @relation("InstallmentDiscounts", fields: [installmentId], references: [id])
+  moratory    MoratoryInterest? @relation("MoratoryDiscounts", fields: [moratoryId], references: [id])
 
-  description    String?
-  amount         Decimal?   @db.Decimal(20, 2)
-  percentageId   Int?
+  description  String?
+  amount       Decimal? @db.Decimal(20, 2)
+  percentageId Int?
 
-  createdAt      DateTime @default(now())
-  createdBy      Int?
-  createdByUser  User? @relation("DiscountsCreatedByUser", fields: [createdBy], references: [id])
-  discountType   DiscountType @relation(fields: [discountTypeId], references: [id])
+  createdAt       DateTime            @default(now())
+  createdBy       Int?
+  createdByUser   User?               @relation("DiscountsCreatedByUser", fields: [createdBy], references: [id])
+  discountType    DiscountType        @relation(fields: [discountTypeId], references: [id])
   percentageValue PercentageDiscount? @relation(fields: [percentageId], references: [id])
-  isActive       Boolean @default(true)
+  isActive        Boolean             @default(true)
 
   @@index([loanId])
   @@index([installmentId])
@@ -580,20 +582,20 @@ model Discount {
 }
 
 model DiscountType {
-  id    Int    @id @default(autoincrement())
-  name  String @unique
+  id          Int        @id @default(autoincrement())
+  name        String     @unique
   description String?
-  discounts Discount[]
+  discounts   Discount[]
 
   @@map("discount_types")
 }
 
 model PercentageDiscount {
-  id             Int       @id @default(autoincrement())
-  name           String    @unique
-  value          Float     @unique
-  discounts      Discount[]
+  id        Int        @id @default(autoincrement())
+  name      String     @unique
+  value     Float      @unique
+  discounts Discount[]
 
-  @@map("percentage_discounts")
   @@index([id, value, name])
+  @@map("percentage_discounts")
 }

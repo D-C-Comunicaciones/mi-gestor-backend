@@ -47,11 +47,12 @@ async function main() {
 
   await prisma.loanStatus.createMany({
     data: [
-      { name: 'Al día' },
-      { name: 'En Mora' },
-      { name: 'Pagado' },
-      { name: 'Cancelado' },
-      { name: 'Refinanciado' },
+      { name: 'Up to Date', description: 'El préstamo está al día con los pagos.' },
+      { name: 'Overdue', description: 'El préstamo está en mora.' },
+      { name: 'Paid', description: 'El préstamo ha sido pagado en su totalidad.' },
+      { name: 'Cancelled', description: 'El préstamo ha sido cancelado.' },
+      { name: 'Refinanced', description: 'El préstamo ha sido refinanciado.' },
+      { name: 'Outstanding Balance', description: 'El préstamo tiene un saldo pendiente.' },
     ],
   });
 
@@ -64,7 +65,7 @@ async function main() {
     ],
   });
 
-  await prisma.statusInstallment.createMany({
+  await prisma.installmentStatus.createMany({
     data: [
       { name: 'Pending', description: 'Saldo en Cuota pendiente' },
       { name: 'Paid', description: 'Saldo en Cuota pagada' },
@@ -89,7 +90,8 @@ async function main() {
 
   await prisma.interestRate.createMany({
     data: Array.from({ length: 100 }, (_, i) => ({
-      value: (i + 1) / 100,
+      value: i + 1, // Guarda 1, 2, 3 ... 100
+      name: `${i + 1}%`,
     })),
   });
 

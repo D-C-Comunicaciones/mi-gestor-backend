@@ -6,7 +6,7 @@ import { AllExceptionsFilter } from '@common/filters/all-exceptions.filter';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import * as cookieParser from 'cookie-parser';
-import { ResponseInterceptor } from '@common/interceptors';
+import { PrismaDecimalInterceptor, ResponseInterceptor } from '@common/interceptors';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
@@ -66,7 +66,7 @@ async function bootstrap() {
 
   // Interceptor global para respuestas exitosas
   app.useGlobalInterceptors(
-    // new DecimalInterceptor(),
+    new PrismaDecimalInterceptor(),
     new ResponseInterceptor(),
     new ClassSerializerInterceptor(app.get(Reflector)),
   );
