@@ -32,6 +32,12 @@ interface EnvVars {
     APP_IP_GEOLOCATION: string;
 
     FRONTEND_URL: string;
+
+    RABBITMQ_URLS: string;
+    RABBITMQ_LOAN_INSTALLMENTS_QUEUE: string;
+    RABBITMQ_LOAN_OVERDUE_QUEUE: string;
+
+    ALLOWED_ORIGINS: string;
 }
 
 const envVarsSchema = joi.object({
@@ -65,6 +71,12 @@ const envVarsSchema = joi.object({
     APP_REDIS_PASSWORD: joi.string().required().default('redis'),
 
     APP_IP_GEOLOCATION: joi.string().optional(),
+
+    RABBITMQ_URLS: joi.string().required().default('amqp://localhost:5672'),
+    RABBITMQ_LOAN_INSTALLMENTS_QUEUE: joi.string().required().default('loan_installments'),
+    RABBITMQ_LOAN_OVERDUE_QUEUE: joi.string().required().default('loan_overdue'),
+
+    ALLOWED_ORIGINS: joi.string().required().default('http://localhost:3000,http://localhost:5173')
 
 }).unknown(true);
 
@@ -105,9 +117,18 @@ export const envs = {
         host: envVars.APP_REDIS_HOST,
         port: envVars.APP_REDIS_PORT,
         password: envVars.APP_REDIS_PASSWORD,
+        loanInstallmentsQueue: envVars.RABBITMQ_LOAN_INSTALLMENTS_QUEUE
     },
 
     ipGeoLocation: envVars.APP_IP_GEOLOCATION,
 
     frontendUrl: envVars.FRONTEND_URL || 'http://localhost:3000',
+
+    rabbitMq: {
+        url: envVars.RABBITMQ_URLS,
+        loanInstallmentsQueue: envVars.RABBITMQ_LOAN_INSTALLMENTS_QUEUE,
+        loanOverdueQueue: envVars.RABBITMQ_LOAN_OVERDUE_QUEUE
+    },
+
+    allowedOrigins: envVars.ALLOWED_ORIGINS,
 };

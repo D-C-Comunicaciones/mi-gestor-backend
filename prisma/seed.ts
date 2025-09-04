@@ -1,47 +1,12 @@
 import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
-import { Logger } from '@nestjs/common';
 
 const prisma = new PrismaClient();
 
-// Función para limpiar todas las tablas y reiniciar IDs
-async function resetDatabase() {
-  const dbUrl = process.env.DATABASE_URL || '';
-  const isPostgres = dbUrl.startsWith('postgres://') || dbUrl.startsWith('postgresql://');
-  const isMySQL = dbUrl.startsWith('mysql://');
-
-  if (isPostgres) {
-    // Obtener todas las tablas públicas excepto _prisma_migrations
-    const tables: Array<{ tablename: string }> = await prisma.$queryRawUnsafe(
-      `SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename NOT IN ('_prisma_migrations');`
-    );
-
-    if (tables.length > 0) {
-      const tableList = tables.map(t => `"${t.tablename}"`).join(', ');
-      // Truncar y reiniciar identidades en cascada
-      await prisma.$executeRawUnsafe(`TRUNCATE TABLE ${tableList} RESTART IDENTITY CASCADE;`);
-    }
-  } else if (isMySQL) {
-    // Obtener tablas (excepto _prisma_migrations)
-    const tables: Array<{ TABLE_NAME: string }> = await prisma.$queryRawUnsafe(
-      `SELECT TABLE_NAME FROM information_schema.tables WHERE table_schema = DATABASE() AND TABLE_NAME <> '_prisma_migrations';`
-    );
-
-    await prisma.$executeRawUnsafe(`SET FOREIGN_KEY_CHECKS = 0;`);
-    for (const { TABLE_NAME } of tables) {
-      await prisma.$executeRawUnsafe(`TRUNCATE TABLE \`${TABLE_NAME}\`;`);
-    }
-    await prisma.$executeRawUnsafe(`SET FOREIGN_KEY_CHECKS = 1;`);
-  } else {
-    console.warn('resetDatabase: Motor no detectado (PostgreSQL/MySQL). Operación omitida.');
-  }
-}
-
 async function main() {
-  // Limpiar base antes del seed
-  await resetDatabase();
-
-  // Seed Zones
+  // --------------------------
+  // 1️⃣ Seed Catálogos
+  // --------------------------
   await prisma.zone.createMany({
     data: [
       { name: 'Norte', code: 'NRT' },
@@ -49,7 +14,6 @@ async function main() {
     ],
   });
 
-  // Seed TypeDocumentIdentification
   await prisma.typeDocumentIdentification.createMany({
     data: [
       { name: 'Cédula de Ciudadanía', code: 'CC' },
@@ -57,7 +21,6 @@ async function main() {
     ],
   });
 
-  // Seed Genders
   await prisma.gender.createMany({
     data: [
       { name: 'Masculino', code: 'M' },
@@ -65,7 +28,107 @@ async function main() {
     ],
   });
 
-  // Seed Roles
+  await prisma.loanType.createMany({
+    data: [
+      { name: 'fixed_fees' },
+      { name: 'only_interests' },
+    ],
+  });
+
+  await prisma.paymentFrequency.createMany({
+    data: [
+      { name: 'Daily' },
+      { name: 'Weekly' },
+      { name: 'Monthly' },
+      { name: 'Biweekly' },
+      { name: 'Minute' },
+    ],
+  });
+
+  await prisma.loanStatus.createMany({
+    data: [
+      { name: 'Up to Date', description: 'El préstamo está al día con los pagos.' },
+      { name: 'Overdue', description: 'El préstamo está en mora.' },
+      { name: 'Paid', description: 'El préstamo ha sido pagado en su totalidad.' },
+      { name: 'Cancelled', description: 'El préstamo ha sido cancelado.' },
+      { name: 'Refinanced', description: 'El préstamo ha sido refinanciado.' },
+      { name: 'Outstanding Balance', description: 'El préstamo tiene un saldo pendiente.' },
+    ],
+  });
+
+  await prisma.paymentType.createMany({
+    data: [
+      { name: 'Cuota' },
+      { name: 'Interés Préstamo' },
+      { name: 'Abono' },
+      { name: 'Interés Moratorio' },
+    ],
+  });
+
+  await prisma.installmentStatus.createMany({
+    data: [
+      { name: 'Pending', description: 'Saldo en Cuota pendiente' },
+      { name: 'Paid', description: 'Saldo en Cuota pagada' },
+      { name: 'Overdue Paid', description: 'pago de intereses moratorios' },
+      { name: 'Created', description: 'Cuota generada' },
+    ],
+  });
+
+  await prisma.discountType.createMany({
+    data: [
+      { name: 'Moratorios', description: 'Descuento de intereses moratorios' },
+      { name: 'Corrientes', description: 'Descuento de intereses corrientes' },
+    ],
+  });
+
+  await prisma.percentageDiscount.createMany({
+    data: Array.from({ length: 100 }, (_, i) => ({
+      name: `${i + 1}%`,
+      value: i + 1,
+    })),
+  });
+
+  await prisma.interestRate.createMany({
+    data: Array.from({ length: 100 }, (_, i) => ({
+      value: i + 1, // Guarda 1, 2, 3 ... 100
+      name: `${i + 1}%`,
+    })),
+  });
+
+  await prisma.term.createMany({
+    data: Array.from({ length: 100 }, (_, i) => ({
+      value: i + 1,
+    })),
+  });
+
+  await prisma.penaltyRate.createMany({
+    data: [
+      { name: 'Mora legal máxima', value: 0.05 },
+      { name: 'Mora estándar', value: 0.03 },
+    ],
+  });
+
+  await prisma.gracePeriod.createMany({
+    data: [
+      { name: '15 días', days: 15 },
+      { name: '1 mes', days: 30 },
+      { name: '2 meses', days: 60 },
+      { name: '3 meses', days: 90 },
+      { name: '4 meses', days: 120 },
+      { name: '5 meses', days: 150 },
+      { name: '6 meses', days: 180 },
+      { name: '7 meses', days: 210 },
+      { name: '8 meses', days: 240 },
+      { name: '9 meses', days: 270 },
+      { name: '10 meses', days: 300 },
+      { name: '11 meses', days: 330 },
+      { name: '1 año', days: 365 },
+    ],
+  });
+
+  // --------------------------
+  // 2️⃣ Seed Roles y Permisos
+  // --------------------------
   await prisma.role.createMany({
     data: [
       { name: 'admin', description: 'Administrador con todos los permisos' },
@@ -73,133 +136,137 @@ async function main() {
     ],
   });
 
-  // Get role IDs
-  const adminRole = await prisma.role.findUnique({ where: { name: 'admin' } });
-  const collectorRole = await prisma.role.findUnique({ where: { name: 'collector' } });
-
-  // Seed Permissions
   await prisma.permission.createMany({
     data: [
       { name: 'all.permissions', description: 'Permiso total para admin' },
       { name: 'create.payments', description: 'Permiso para crear pagos' },
-      { name: 'create.collectors', description: 'Permiso para crear cobradores' },
-      { name: 'view.collectors', description: 'Permiso para ver cobradores' },
-      { name: 'update.collectors', description: 'Permiso para actualizar cobradores' },
+      { name: 'view.customers', description: 'Ver clientes' },
+      { name: 'update.collectors', description: 'Actualizar cobradores' },
     ],
   });
 
-  // Get permission IDs
+  const adminRole = await prisma.role.findUnique({ where: { name: 'admin' } });
+  const collectorRole = await prisma.role.findUnique({ where: { name: 'collector' } });
   const allPermissions = await prisma.permission.findUnique({ where: { name: 'all.permissions' } });
   const createPayments = await prisma.permission.findUnique({ where: { name: 'create.payments' } });
 
-  // Assign all permissions to admin
   if (adminRole && allPermissions) {
     await prisma.rolePermission.create({
-      data: {
-        roleId: adminRole.id,
-        permissionId: allPermissions.id,
-        isActive: true,
-      },
+      data: { roleId: adminRole.id, permissionId: allPermissions.id, isActive: true },
     });
   }
 
-  // Assign create.payments permission to collector
   if (collectorRole && createPayments) {
     await prisma.rolePermission.create({
-      data: {
-        roleId: collectorRole.id,
-        permissionId: createPayments.id,
-        isActive: true,
-      },
+      data: { roleId: collectorRole.id, permissionId: createPayments.id, isActive: true },
     });
   }
 
-  // Seed Users (passwords hashed)
-  const hashedPasswordAdmin = await bcrypt.hash('password123', 10);
-  const hashedPasswordCollector = await bcrypt.hash('password123', 10);
+  // --------------------------
+  // 3️⃣ Seed Users
+  // --------------------------
+  const hashedAdmin = await bcrypt.hash('password123', 10);
+  const hashedCollector = await bcrypt.hash('password123', 10);
+  const hashedCustomer = await bcrypt.hash('password123', 10);
 
   await prisma.user.createMany({
     data: [
-      { email: 'admin@dcmigestor.co', password: hashedPasswordAdmin, name: 'Admin User', roleId: adminRole?.id },
-      { email: 'collector@dcmigestor.co', password: hashedPasswordCollector, name: 'Collector User', roleId: collectorRole?.id },
+      { name: 'Admin User', email: 'admin@example.com', password: hashedAdmin, roleId: adminRole?.id },
+      { name: 'Collector User', email: 'collector@example.com', password: hashedCollector, roleId: collectorRole?.id },
+      { name: 'Customer User', email: 'customer@example.com', password: hashedCustomer, roleId: collectorRole?.id },
     ],
   });
 
-  // Seed Customers (schema actualizado: firstName, lastName, typeDocumentIdentificationId, birthDate, documentNumber:int)
-  const docTypes = await prisma.typeDocumentIdentification.findMany();
-  const genders = await prisma.gender.findMany();
-  const zones = await prisma.zone.findMany();
+  // --------------------------
+  // 4️⃣ Seed Collectors
+  // --------------------------
+  const zoneNorte = await prisma.zone.findUnique({ where: { code: 'NRT' } });
+  const typeCC = await prisma.typeDocumentIdentification.findUnique({ where: { code: 'CC' } });
+  const genderM = await prisma.gender.findUnique({ where: { code: 'M' } });
+  const genderF = await prisma.gender.findUnique({ where: { code: 'F' } });
+
+  await prisma.collector.createMany({
+    data: [
+      {
+        firstName: 'Carlos',
+        lastName: 'Ramírez',
+        documentNumber: 123456789,
+        birthDate: new Date('1985-01-15'),
+        phone: '3001112222',
+        address: 'Calle 1 #2-3',
+        typeDocumentIdentificationId: typeCC!.id,
+        genderId: genderM!.id,
+        zoneId: zoneNorte!.id,
+      },
+      {
+        firstName: 'Ana',
+        lastName: 'Lopez',
+        documentNumber: 987654321,
+        birthDate: new Date('1990-06-10'),
+        phone: '3003334444',
+        address: 'Carrera 10 #20-30',
+        typeDocumentIdentificationId: typeCC!.id,
+        genderId: genderF!.id,
+        zoneId: zoneNorte!.id,
+      },
+    ],
+  });
+
+  // --------------------------
+  // 5️⃣ Seed Customers
+  // --------------------------
+  const zoneCentro = await prisma.zone.findUnique({ where: { code: 'CTR' } });
 
   await prisma.customer.createMany({
     data: [
       {
         firstName: 'Juan',
         lastName: 'Pérez',
-        phone: '3001234567',
-        address: 'Calle 123 #45-67',
-        typeDocumentIdentificationId: docTypes[0].id,
-        documentNumber: 1234567890,
-        genderId: genders[0].id,
+        documentNumber: 111222333,
         birthDate: new Date('1990-05-15'),
-        zoneId: zones[0].id,
+        phone: '3005556666',
+        address: 'Calle 100 #50-60',
+        typeDocumentIdentificationId: typeCC!.id,
+        genderId: genderM!.id,
+        zoneId: zoneCentro!.id,
       },
       {
         firstName: 'María',
         lastName: 'Gómez',
-        phone: '3009876543',
-        address: 'Carrera 45 #67-89',
-        typeDocumentIdentificationId: docTypes[1].id,
-        documentNumber: 987654321,
-        genderId: genders[1].id,
+        documentNumber: 444555666,
         birthDate: new Date('1992-09-21'),
-        zoneId: zones[1].id,
+        phone: '3007778888',
+        address: 'Carrera 50 #100-110',
+        typeDocumentIdentificationId: typeCC!.id,
+        genderId: genderF!.id,
+        zoneId: zoneCentro!.id,
       },
     ],
   });
 
-  // Seed Credits (loans)
-  const customers = await prisma.customer.findMany();
-  const paymentFreq = await prisma.paymentFrequency.findFirst() || 
-    await prisma.paymentFrequency.create({ data: { name: 'MONTHLY', isActive: true } });
-  const creditType = await prisma.creditType.findFirst() || 
-    await prisma.creditType.create({ data: { name: 'CUOTA_FIJA', isActive: true } });
-  const creditStatus = await prisma.creditStatus.findFirst() || 
-    await prisma.creditStatus.create({ data: { name: 'ACTIVO', isActive: true } });
+  const collectorUser = await prisma.user.findUnique({ where: { email: 'collector@example.com' } });
+  const customerUser = await prisma.user.findUnique({ where: { email: 'customer@example.com' } });
 
-  await prisma.credit.createMany({
-    data: [
-      {
-        customerId: customers[0].id,
-        principal: 1000000.00,
-        remainingBalance: 900000.00,
-        interestRate: 0.05,
-        paymentAmount: 100000.00,
-        term: 10,
-        paymentFrequencyId: paymentFreq.id,
-        creditTypeId: creditType.id,
-        creditStatusId: creditStatus.id,
-        startDate: new Date(),
-        isActive: true,
-      },
-      {
-        customerId: customers[1].id,
-        principal: 2000000.00,
-        remainingBalance: 1800000.00,
-        interestRate: 0.06,
-        paymentAmount: 200000.00,
-        term: 12,
-        paymentFrequencyId: paymentFreq.id,
-        creditTypeId: creditType.id,
-        creditStatusId: creditStatus.id,
-        startDate: new Date(),
-        isActive: true,
-      },
-    ],
-  });
+  // Obtener collectors y customers creados
+  const collectors = await prisma.collector.findMany({ orderBy: { id: 'asc' } });
+  const customers = await prisma.customer.findMany({ orderBy: { id: 'asc' } });
 
-  const logger  = new Logger('prisma/seed.ts');
+  // Asociar users a collectors
+  if (collectorUser && collectors[0]) {
+    await prisma.collector.update({
+      where: { id: collectors[0].id },
+      data: { userId: collectorUser.id },
+    });
+  }
 
-  logger.log('Seed completed!');
+  // Asociar users a customers
+  if (customerUser && customers[0]) {
+    await prisma.customer.update({
+      where: { id: customers[0].id },
+      data: { userId: customerUser.id },
+    });
+  }
+  console.log('✅ Seed completo ejecutado!');
 }
 
 main()

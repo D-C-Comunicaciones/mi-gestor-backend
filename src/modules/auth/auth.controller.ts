@@ -43,7 +43,7 @@ export class AuthController {
     return {
       customMessage: 'Usuario autenticado correctamente',
       sessionId,
-      // access_token: access_token.token ?? access_token, // También en el body para Bearer token
+      access_token,
       user,
       role,
       permissions,

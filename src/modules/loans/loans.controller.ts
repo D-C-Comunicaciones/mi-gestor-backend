@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query, Res, UseGuards, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query, Res, UseGuards } from '@nestjs/common';
 import { LoansService } from './loans.service';
 import { CreateLoanDto, UpdateLoanDto } from './dto';
 import { LoanPaginationDto } from './dto/loan-pagination.dto';
@@ -13,15 +13,13 @@ import {
 } from '@nestjs/swagger';
 import { plainToInstance } from 'class-transformer';
 import { ResponseLoanDto } from './dto';
-import { LoanListResponse, LoanResponse, LoanUpdateResponse, LoanRegenerateInstallmentsResponse } from './interfaces';
-import { DecimalInterceptor } from '@common/interceptors';
+import { LoanListResponse, LoanResponse, LoanUpdateResponse } from './interfaces';
 
 @ApiTags('Loans')
 @ApiBearerAuth()
 @ApiExtraModels(ResponseLoanDto)
 @Controller('loans')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
-@UseInterceptors(DecimalInterceptor)
 export class LoansController {
   constructor(private readonly loansService: LoansService) { }
 
@@ -135,28 +133,29 @@ export class LoansController {
       },
     },
   })
+
   @ApiBadRequestResponse({ description: 'Validación / lógica' })
   @ApiUnauthorizedResponse()
   @ApiForbiddenResponse()
   @Post()
-  async create(@Body() dto: CreateLoanDto) {
-    const { loan, installments } = await this.loansService.create(dto);
+  @Post()
+  @Permissions('create.loans')
+  async create(@Body() dto: CreateLoanDto): Promise<LoanResponse> {
+    const result = await this.loansService.create(dto);
 
-    // Los Decimal ya están convertidos a números en el servicio
+    // Ahora result ya viene con todos los Decimales convertidos a números
     const response = plainToInstance(
       ResponseLoanDto,
-      {
-        ...loan,
-        installments,
-      },
+      result.loan,
       { excludeExtraneousValues: true },
     );
 
     return {
       customMessage: 'Préstamo creado correctamente',
-      response,
+      loan: response,
     };
   }
+
   @Patch(':id')
   @Permissions('update.loans')
   @ApiOperation({ summary: 'Actualizar préstamo', description: 'Actualiza campos cambiados.' })
@@ -213,37 +212,6 @@ export class LoansController {
     return {
       customMessage: 'Préstamo inactivado correctamente',
       loan,
-    };
-  }
-
-  @Post(':id/regenerate-installments')
-  @Permissions('update.loans')
-  @ApiOperation({ summary: 'Regenerar cuotas', description: 'Elimina y recrea todas las cuotas.' })
-  @ApiParam({ name: 'id', type: Number, example: 1 })
-  @ApiOkResponse({
-    description: 'Cuotas regeneradas',
-    schema: {
-      example: {
-        message: 'Cuotas regeneradas correctamente',
-        code: 200,
-        status: 'success',
-        data: { generated: 12 },
-      },
-    },
-  })
-  @ApiBadRequestResponse({ description: 'Validación / frecuencia' })
-  @ApiNotFoundResponse()
-  @ApiUnauthorizedResponse()
-  @ApiForbiddenResponse()
-  async regenerateInstallments(
-    @Param('id', ParseIntPipe) id: number,
-    @Body('count', ParseIntPipe) count: number,
-    @Body('paymentAmount') paymentAmount: number,
-  ): Promise<LoanRegenerateInstallmentsResponse> {
-    const result = await this.loansService.regenerateInstallments(id, count, paymentAmount);
-    return {
-      customMessage: 'Cuotas regeneradas correctamente',
-      ...result, // { generated }
     };
   }
 }

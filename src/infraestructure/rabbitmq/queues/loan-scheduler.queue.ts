@@ -1,0 +1,1 @@
+export const LOAN_SCHEDULER_QUEUE = 'loan_scheduler';

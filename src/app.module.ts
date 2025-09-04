@@ -8,6 +8,8 @@ import { ChangesModule } from './modules/changes/changes.module';
 import { CustomersModule } from '@modules/customers/customers.module';
 import { LoansModule } from '@modules/loans/loans.module';
 import { InstallmentsModule } from './modules/installments/installments.module';
+import { WorkersModule } from '@infraestructure/rabbitmq/workers/loan/workers.module';
+import { DiscountsModule } from '@modules/discounts/discounts.module';
 
 @Module({
   imports: [
@@ -20,9 +22,12 @@ import { InstallmentsModule } from './modules/installments/installments.module';
     CustomersModule,
     ChangesModule,
     LoansModule,
-    InstallmentsModule
+    InstallmentsModule,
+    WorkersModule,
+    DiscountsModule
   ],
   controllers: [AppController],
   providers: [AppService],
 })
+
 export class AppModule { }
