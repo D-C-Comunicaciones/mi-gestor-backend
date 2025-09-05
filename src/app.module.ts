@@ -24,7 +24,7 @@ import { DiscountsModule } from '@modules/discounts/discounts.module';
     LoansModule,
     InstallmentsModule,
     WorkersModule,
-    DiscountsModule
+    DiscountsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -11,10 +11,12 @@ import { PrismaDecimalInterceptor, ResponseInterceptor } from '@common/intercept
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
-  app.use(cookieParser()); 
+  app.use(cookieParser());
+
+  const allowedOrigins = envs.allowedOrigins.split(',');
 
   app.enableCors({
-    origin: ['*'],
+    origin: true, // acepta todos
     credentials: true,
   });
 

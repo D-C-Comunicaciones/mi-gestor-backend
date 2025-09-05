@@ -171,9 +171,9 @@ async function main() {
 
   await prisma.user.createMany({
     data: [
-      { name: 'Admin User', email: 'admin@example.com', password: hashedAdmin, roleId: adminRole?.id },
-      { name: 'Collector User', email: 'collector@example.com', password: hashedCollector, roleId: collectorRole?.id },
-      { name: 'Customer User', email: 'customer@example.com', password: hashedCustomer, roleId: collectorRole?.id },
+      { name: 'Admin User', email: 'admin@dcmigestor.co', password: hashedAdmin, roleId: adminRole?.id },
+      { name: 'Collector User', email: 'collector@dcmigestor.co', password: hashedCollector, roleId: collectorRole?.id },
+      { name: 'Customer User', email: 'customer@dcmigestor.co', password: hashedCustomer, roleId: collectorRole?.id },
     ],
   });
 
@@ -244,8 +244,8 @@ async function main() {
     ],
   });
 
-  const collectorUser = await prisma.user.findUnique({ where: { email: 'collector@example.com' } });
-  const customerUser = await prisma.user.findUnique({ where: { email: 'customer@example.com' } });
+  const collectorUser = await prisma.user.findUnique({ where: { email: 'collector@dcmigestor.co' } });
+  const customerUser = await prisma.user.findUnique({ where: { email: 'customer@dcmigestor.co' } });
 
   // Obtener collectors y customers creados
   const collectors = await prisma.collector.findMany({ orderBy: { id: 'asc' } });
@@ -266,6 +266,28 @@ async function main() {
       data: { userId: customerUser.id },
     });
   }
+
+  await prisma.importHistoryStatus.createMany({
+    data: [
+      {
+        name: 'In Progress',
+        description: 'la importación está en progreso',
+      },
+      {
+        name: 'Pending',
+        description: 'la importación está pendiente',
+      },
+      {
+        name: 'Completed',
+        description: 'la importación se completó con éxito',
+      },
+      {
+        name: 'Failed',
+        description: 'la importación falló',
+      },
+    ]
+  });
+
   console.log('✅ Seed completo ejecutado!');
 }
 

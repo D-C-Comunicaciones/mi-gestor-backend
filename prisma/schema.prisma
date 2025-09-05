@@ -599,3 +599,32 @@ model PercentageDiscount {
   @@index([id, value, name])
   @@map("percentage_discounts")
 }
+
+model ImportHistory {
+  id                 Int      @id @default(autoincrement())
+  modelName          String   // Tipo de entidad importada: 'customers', 'collectors', 'loans', etc.
+  fileName           String
+  fileSize           Int
+  totalRecords       Int      @default(0)
+  successfulRecords  Int      @default(0)
+  errorRecords       Int      @default(0)
+  importHistoryStatusId Int
+  startedAt          DateTime @default(now())
+  completedAt        DateTime?
+  errorMessage       String?
+  errorDetails       String?  // JSON string con detalles de errores
+  importHistoryStatus ImportHistoryStatus @relation(fields: [importHistoryStatusId], references: [id])
+  @@index([modelName, startedAt, completedAt, errorRecords, successfulRecords, errorDetails, importHistoryStatusId])
+  @@map("import_historials")
+}
+
+model ImportHistoryStatus {
+  id          Int       @id @default(autoincrement())
+  name      String    // 'Pending', 'In Progress', 'Completed', 'Failed'
+  description String?
+  importHistories ImportHistory[]
+
+  @@index([name])
+  @@index([description])
+  @@map("import_history_statuses")
+}
