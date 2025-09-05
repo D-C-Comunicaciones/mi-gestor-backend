@@ -286,8 +286,36 @@ export class CustomersService {
       throw new BadRequestException('El archivo está vacío');
     }
 
+    // 1️⃣ Buscar id del estado "In Progress"
+    const inProgressStatus = await this.prisma.importHistoryStatus.findFirst({
+      where: { name: 'In Progress' },
+    });
+
+    if (!inProgressStatus) {
+      throw new Error('No se encontró el estado "In Progress" en importHistoryStatus');
+    }
+
+    // 2️⃣ Crear registro inicial de importación
+    const importHistory = await this.prisma.importHistory.create({
+      data: {
+        modelName: 'customers',
+        fileName: file.originalname,
+        fileSize: file.size,
+        totalRecords: records.length,
+        successfulRecords: 0,
+        errorRecords: 0,
+        importHistoryStatusId: inProgressStatus.id,
+      },
+    });
+
     const results: any[] = [];
-    const errors: { row: number; field?: string; value?: any; message: string; type?: string }[] = [];
+    const errors: {
+      row: number;
+      field?: string;
+      value?: any;
+      message: string;
+      type?: string;
+    }[] = [];
 
     for (let i = 0; i < records.length; i++) {
       const row = records[i];
@@ -318,7 +346,6 @@ export class CustomersService {
       try {
         const created = await this.create(dto);
 
-        // 🔥 Formateamos aquí mismo antes de pushear
         results.push({
           id: created.id,
           firstName: created.firstName,
@@ -357,15 +384,34 @@ export class CustomersService {
       }
     }
 
+    // 3️⃣ Actualizar registro de historial con estado final
+    const finalStatus = await this.prisma.importHistoryStatus.findFirst({
+      where: { name: errors.length > 0 && results.length === 0 ? 'Failed' : 'Completed' },
+    });
+
+    await this.prisma.importHistory.update({
+      where: { id: importHistory.id },
+      data: {
+        successfulRecords: results.length,
+        errorRecords: errors.length,
+        completedAt: new Date(),
+        errorMessage: errors.length > 0 ? `Se encontraron ${errors.length} errores` : null,
+        errorDetails: errors.length > 0 ? JSON.stringify(errors, null, 2) : null,
+        importHistoryStatusId: finalStatus?.id,
+      },
+    });
+
     return {
       results,
-      firstCreated: results[0],        // Primer cliente creado
-      lastCreated: results[results.length - 1], // Último cliente creado
-      totalCreated: results.length,   // Nº de clientes creados correctamente
-      totalErrors: errors.length,     // Nº de errores
-      errors: errors.length > 0 ? errors : undefined, // Solo incluimos si hay errores
+      firstCreated: results[0],
+      lastCreated: results[results.length - 1],
+      totalCreated: results.length,
+      totalErrors: errors.length,
+      errors: errors.length > 0 ? errors : undefined,
+      importHistoryId: importHistory.id, // 🔗 devolver id del historial creado
     };
   }
+
 
   async update(id: number, data: UpdateCustomerDto) {
     const existing = await this.prisma.customer.findUnique({

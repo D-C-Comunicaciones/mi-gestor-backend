@@ -10,6 +10,8 @@ import { LoansModule } from '@modules/loans/loans.module';
 import { InstallmentsModule } from './modules/installments/installments.module';
 import { WorkersModule } from '@infraestructure/rabbitmq/workers/loan/workers.module';
 import { DiscountsModule } from '@modules/discounts/discounts.module';
+import { ImportsModule } from './modules/imports/imports.module';
+import { TemplatesModule } from './modules/templates/templates.module';
 
 @Module({
   imports: [
@@ -25,6 +27,8 @@ import { DiscountsModule } from '@modules/discounts/discounts.module';
     InstallmentsModule,
     WorkersModule,
     DiscountsModule,
+    ImportsModule,
+    TemplatesModule,
   ],
   controllers: [AppController],
   providers: [AppService],

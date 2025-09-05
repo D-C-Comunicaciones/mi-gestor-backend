@@ -285,6 +285,10 @@ async function main() {
         name: 'Failed',
         description: 'la importación falló',
       },
+      {
+        name: 'Incomplete',
+        description: 'la importación fue incompleta',
+      },
     ]
   });
 

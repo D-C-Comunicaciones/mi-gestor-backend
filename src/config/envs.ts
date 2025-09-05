@@ -146,10 +146,3 @@ export const envs = {
         importUrl: envVars.WEBHOOK_IMPORT_URL,
     },
 };
-
-// Agregar log para verificar configuración
-console.log('🔧 Configuración RabbitMQ:', {
-  importQueue: envs.rabbitMq.importQueue,
-  notificationQueue: envs.rabbitMq.notificationQueue,
-  loanOverdueQueue: envs.rabbitMq.loanOverdueQueue,
-});

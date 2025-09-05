@@ -7,9 +7,14 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import * as cookieParser from 'cookie-parser';
 import { PrismaDecimalInterceptor, ResponseInterceptor } from '@common/interceptors';
+import * as express from 'express';
+import { join } from 'path';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
+
+    // Servir carpeta public
+  app.use('/public', express.static(join(process.cwd(), 'public')));
 
   app.use(cookieParser());
 

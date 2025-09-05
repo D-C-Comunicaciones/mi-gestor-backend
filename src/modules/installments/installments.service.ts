@@ -87,7 +87,7 @@ export class InstallmentsService {
     await this.rabbitMqService.publishWithDelay(
       envs.rabbitMq.loanOverdueQueue,
       { loanId: loan.id },
-      60 * 1000
+      24 * 60 * 60 * 1000 // 24 horas en milisegundos
     );
     this.logger.log(`⏱️ Primer mensaje de interés moratorio enviado para loanId=${loan.id}, delay=1min`);
 
