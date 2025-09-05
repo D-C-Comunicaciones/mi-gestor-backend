@@ -30,6 +30,8 @@ ENV NODE_ENV=production
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY prisma ./prisma
+# 👇 Aquí copiamos la carpeta public
+COPY public ./public
 EXPOSE 3000
 # HEALTHCHECK simple (opcional, descomenta si tienes /health)
 # HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD wget -qO- http://localhost:3000/health || exit 1
