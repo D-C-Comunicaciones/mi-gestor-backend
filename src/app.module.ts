@@ -12,6 +12,15 @@ import { WorkersModule } from '@infraestructure/rabbitmq/workers/loan/workers.mo
 import { DiscountsModule } from '@modules/discounts/discounts.module';
 import { ImportsModule } from './modules/imports/imports.module';
 import { TemplatesModule } from './modules/templates/templates.module';
+import { TypeDocumentIdentificationsModule } from '@modules/type-document-identifications/type-document-identifications.module';
+import { GendersModule } from './modules/genders/genders.module';
+import { ZonesModule } from './modules/zones/zones.module';
+import { LoanTypesModule } from './modules/loan-types/loan-types.module';
+import { PaymentFrequenciesModule } from './modules/payment-frequencies/payment-frequencies.module';
+import { TermsModule } from './modules/terms/terms.module';
+import { InterestRatesModule } from './modules/interest-rates/interest-rates.module';
+import { PenaltyRatesModule } from './modules/penalty-rates/penalty-rates.module';
+import { GracePeriodsModule } from './modules/grace-periods/grace-periods.module';
 
 @Module({
   imports: [
@@ -29,6 +38,15 @@ import { TemplatesModule } from './modules/templates/templates.module';
     DiscountsModule,
     ImportsModule,
     TemplatesModule,
+    TypeDocumentIdentificationsModule,
+    GendersModule,
+    ZonesModule,
+    LoanTypesModule,
+    PaymentFrequenciesModule,
+    TermsModule,
+    InterestRatesModule,
+    PenaltyRatesModule,
+    GracePeriodsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

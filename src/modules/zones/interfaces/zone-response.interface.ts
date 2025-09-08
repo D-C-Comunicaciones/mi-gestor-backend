@@ -1,4 +1,6 @@
-export interface ZoneResponse {
-  id: number;
-  name: string;
+import { ResponseZoneDto } from "../dto";
+
+export interface ZoneListResponse {
+  customMessage: string;
+  zones: ResponseZoneDto[];
 }

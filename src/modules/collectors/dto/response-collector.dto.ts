@@ -1,8 +1,8 @@
 import { Expose, Transform, Type } from 'class-transformer';
 import { format } from 'date-fns';
 import { UserResponseDto } from '@modules/users/dto';
-import { ZoneResponseDto } from '@modules/zones/dto';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ResponseZoneDto } from '@modules/zones/dto';
 
 export class ResponseCollectorDto {
   @ApiProperty({ example: 1 }) @Expose() id: number;
@@ -23,7 +23,7 @@ export class ResponseCollectorDto {
   @ApiPropertyOptional({ example: 2 }) @Expose() zoneId?: number | null;
   @ApiPropertyOptional({ example: 5 }) @Expose() userId?: number | null;
 
-  @ApiPropertyOptional({ type: () => ZoneResponseDto }) @Expose() @Type(() => ZoneResponseDto) zone?: ZoneResponseDto | null;
+  @ApiPropertyOptional({ type: () => ResponseZoneDto }) @Expose() @Type(() => ResponseZoneDto) zone?: ResponseZoneDto | null;
   @ApiPropertyOptional({ type: () => UserResponseDto }) @Expose() @Type(() => UserResponseDto) user?: UserResponseDto | null;
 
   @ApiProperty({ example: '2024-01-01 10:00:00' })
