@@ -6,7 +6,7 @@ import { InstallmentsService } from '@modules/installments/installments.service'
 import { CreateLoanDto } from './dto/create-loan.dto';
 import { UpdateLoanDto } from './dto/update-loan.dto';
 import { LoanPaginationDto } from './dto/loan-pagination.dto';
-import { addDays, addMonths, addWeeks, differenceInDays, format } from 'date-fns';
+import { differenceInDays, format } from 'date-fns';
 import { RabbitMqService } from '@infraestructure/rabbitmq/rabbitmq.service';
 
 @Injectable()
@@ -472,6 +472,112 @@ export class LoansService {
     const updated = this.convertLoanToPlain(updatedWithTimestamps);
 
     return { updated, changes };
+  }
+
+  async getLoansByCustomer(customerId: number) {
+    // 1️⃣ Verify that the customer exists
+    const customer = await this.prisma.customer.findUnique({
+      where: { id: customerId },
+      select: { id: true, firstName: true, lastName: true },
+    });
+
+    if (!customer) {
+      throw new NotFoundException(`Customer with id ${customerId} not found`);
+    }
+
+    // 2️⃣ Fetch loans with all related data
+    const loans = await this.prisma.loan.findMany({
+      where: { customerId, isActive: true },
+      include: {
+        interestRate: true,
+        penaltyRate: true,
+        term: true,
+        gracePeriod: true,
+        paymentFrequency: true,
+        loanType: true,
+        loanStatus: true,
+        installments: {
+          where: { isActive: true },
+          orderBy: { sequence: 'asc' },
+          include: {
+            status: true,
+            moratoryInterests: true, // Late interest records
+          },
+        },
+      },
+    });
+
+    return loans.map((loan) => {
+      let totalPrincipalPending = 0;
+      let totalInterestPending = 0;
+      let totalLateFees = 0;
+      let totalDaysLate = 0;
+      let pendingInstallmentsCount = 0;
+      let overdueInstallmentsCount = 0;
+      let paidInstallmentsCount = 0;
+
+      const installments = loan.installments.map((inst) => {
+        const pendingPrincipal = Number(inst.capitalAmount) - Number(inst.paidAmount);
+        const pendingInterest =
+          Number(inst.interestAmount) -
+          Math.min(Number(inst.paidAmount), Number(inst.interestAmount));
+
+        // Late fee and days late from DB
+        const lateFeeRecords = inst.moratoryInterests || [];
+        const lateFee = lateFeeRecords.reduce((acc, m) => acc + Number(m.amount), 0);
+        const daysLate = lateFeeRecords.reduce((acc, m) => acc + (m.daysLate ?? 0), 0);
+
+        // Totals
+        if (!inst.isPaid) {
+          pendingInstallmentsCount++;
+          totalPrincipalPending += pendingPrincipal;
+          totalInterestPending += pendingInterest;
+          totalLateFees += lateFee;
+          totalDaysLate += daysLate;
+          if (inst.status.name.toLowerCase().includes("overdue")) overdueInstallmentsCount++;
+        } else {
+          paidInstallmentsCount++;
+        }
+
+        return {
+          installmentId: inst.id,
+          sequence: inst.sequence,
+          dueDate: inst.dueDate,
+          status: inst.status.name,
+          capitalAmount: Number(inst.capitalAmount),
+          interestAmount: Number(inst.interestAmount),
+          totalAmount: Number(inst.totalAmount),
+          paidAmount: Number(inst.paidAmount),
+          lateFee,
+          daysLate,
+          totalToPay: pendingPrincipal + pendingInterest + lateFee,
+        };
+      });
+
+      return {
+        loanId: loan.id,
+        customer: {
+          name: `${customer.firstName} ${customer.lastName}`,
+        },
+        loanInfo: {
+          status: loan.loanStatus.name,
+          type: loan.loanType.name,
+          startDate: loan.startDate,
+          gracePeriod: loan.gracePeriod?.days ?? null,
+          termValue: loan.term?.value ?? null,
+          paymentFrequency: loan.paymentFrequency.name,
+          paidInstallments: `${paidInstallmentsCount}/${loan.term?.value ?? "∞"}`,
+          overdueInstallments: overdueInstallmentsCount,
+          pendingInstallments: pendingInstallmentsCount,
+        },
+        summary: {
+          remainingBalance: Number(loan.remainingBalance),
+          totalLateFees,
+          totalDaysLate,
+        },
+        installments,
+      };
+    });
   }
 
   // ---------- SOFT DELETE ----------

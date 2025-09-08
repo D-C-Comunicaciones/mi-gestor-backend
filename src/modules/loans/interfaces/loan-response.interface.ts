@@ -1,4 +1,4 @@
-import { ResponseLoanDto } from "../dto";
+import { ResponseLoanDto, ResponseLoanWithInstallmentsDto } from "../dto";
 
 // Respuesta single (findOne, create, delete, softDelete)
 export interface LoanResponse {
@@ -37,4 +37,9 @@ export interface LoanUpdateResponse {
 export interface LoanRegenerateInstallmentsResponse {
     customMessage: string;
     generated: number;
+}
+
+export interface LoanByCustomerResponse {
+    customMessage: string;
+    loanByCustomer: ResponseLoanWithInstallmentsDto[];
 }

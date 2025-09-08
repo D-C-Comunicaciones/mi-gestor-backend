@@ -13,7 +13,8 @@ import {
 } from '@nestjs/swagger';
 import { plainToInstance } from 'class-transformer';
 import { ResponseLoanDto } from './dto';
-import { LoanListResponse, LoanResponse, LoanUpdateResponse } from './interfaces';
+import { LoanByCustomerResponse, LoanListResponse, LoanResponse, LoanUpdateResponse } from './interfaces';
+import { ResponseLoanWithInstallmentsDto } from './dto/response-loan-by-customer.dto';
 
 @ApiTags('Loans')
 @ApiBearerAuth()
@@ -185,6 +186,16 @@ export class LoansController {
       customMessage: 'Préstamo actualizado correctamente',
       loan,
       changes,
+    };
+  }
+
+  @Get('customer/:id')
+  async getLoansByCustomer(@Param('id', ParseIntPipe) id: number): Promise<LoanByCustomerResponse> {
+    const rawLoansByCustomer = await this.loansService.getLoansByCustomer(id);
+    const loanByCustomer = plainToInstance(ResponseLoanWithInstallmentsDto, rawLoansByCustomer, { excludeExtraneousValues: true });
+    return {
+      customMessage: 'Préstamos obtenidos correctamente',
+      loanByCustomer,
     };
   }
 
