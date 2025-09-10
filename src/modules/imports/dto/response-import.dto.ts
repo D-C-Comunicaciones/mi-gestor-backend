@@ -1,9 +1,12 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { Expose } from "class-transformer";
+import { Expose, Transform } from "class-transformer";
+import { format } from "date-fns";
 
 export class ResponseImportDto {
-  @ApiProperty() @Expose() startedAt: string;
-  @ApiPropertyOptional() @Expose() completedAt?: string | null;
+  @ApiProperty({ example: '2025-05-04' })
+    @Expose()
+    @Transform(({ value }) => value ? format(new Date(value), 'yyyy-MM-dd HH:mm:ss') : null)
+    startedAt: Date | null;
 
   @ApiProperty({ example: 'importCustomers.xls' }) @Expose() fileName: string;
   @ApiProperty({ example: 100 }) @Expose() totalRecords: number;

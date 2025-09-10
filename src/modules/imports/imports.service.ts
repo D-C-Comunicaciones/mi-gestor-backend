@@ -56,33 +56,23 @@ export class ImportsService {
     };
   }
 
-async findOne(id: number) {
-  const customerImport = await this.prismaService.importHistory.findUnique({
-    where: { id },
-    include: {
-      importHistoryStatus: true,
-    },
-  });
+  async findOne(id: number) {
+    const customerImport = await this.prismaService.importHistory.findUnique({
+      where: { id },
+      include: {
+        importHistoryStatus: true,
+      },
+    });
 
-  if (!customerImport) {
-    throw new NotFoundException(`No se encontró la importación con id=${id}`);
+    if (!customerImport) {
+      throw new NotFoundException(`No se encontró la importación con id=${id}`);
+    }
+
+    return {
+      ...customerImport,
+      startedAt: customerImport.startedAt ? format(new Date(customerImport.startedAt), 'yyyy-MM-dd HH:mm:ss') :
+              customerImport.startedAt ? format(new Date(customerImport.startedAt) , 'yyyy-MM-dd HH:mm:ss') : '',
+    };
   }
-
-  return {
-    ...customerImport,
-    // ✅ Fechas formateadas
-    startedAt: format(new Date(customerImport.startedAt), 'yyyy-MM-dd HH:mm:ss'),
-    completedAt: customerImport.completedAt
-      ? format(new Date(customerImport.completedAt), 'yyyy-MM-dd HH:mm:ss')
-      : null,
-
-    // ✅ Si errorDetails existe, lo parseamos aquí
-    errorDetails: customerImport.errorDetails
-      ? JSON.parse(customerImport.errorDetails)
-      : null,
-
-    status: customerImport.importHistoryStatus?.name,
-  };
-}
 
 }
