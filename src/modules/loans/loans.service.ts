@@ -475,7 +475,7 @@ export class LoansService {
   }
 
   async getLoansByCustomer(customerId: number) {
-    // 1️⃣ Verify that the customer exists
+    // 1️⃣ Verificar que el cliente existe
     const customer = await this.prisma.customer.findUnique({
       where: { id: customerId },
       select: { id: true, firstName: true, lastName: true },
@@ -485,7 +485,7 @@ export class LoansService {
       throw new NotFoundException(`Customer with id ${customerId} not found`);
     }
 
-    // 2️⃣ Fetch loans with all related data
+    // 2️⃣ Obtener préstamos con SOLO la cuota más reciente
     const loans = await this.prisma.loan.findMany({
       where: { customerId, isActive: true },
       include: {
@@ -498,10 +498,11 @@ export class LoansService {
         loanStatus: true,
         installments: {
           where: { isActive: true },
-          orderBy: { sequence: 'asc' },
+          orderBy: { sequence: 'desc' }, // 🔑 Solo la más reciente
+          take: 1,
           include: {
             status: true,
-            moratoryInterests: true, // Late interest records
+            moratoryInterests: true,
           },
         },
       },
@@ -522,12 +523,10 @@ export class LoansService {
           Number(inst.interestAmount) -
           Math.min(Number(inst.paidAmount), Number(inst.interestAmount));
 
-        // Late fee and days late from DB
         const lateFeeRecords = inst.moratoryInterests || [];
         const lateFee = lateFeeRecords.reduce((acc, m) => acc + Number(m.amount), 0);
         const daysLate = lateFeeRecords.reduce((acc, m) => acc + (m.daysLate ?? 0), 0);
 
-        // Totals
         if (!inst.isPaid) {
           pendingInstallmentsCount++;
           totalPrincipalPending += pendingPrincipal;
@@ -575,7 +574,7 @@ export class LoansService {
           totalLateFees,
           totalDaysLate,
         },
-        installments,
+        installments, // 🔥 Aquí ya solo viene la última cuota
       };
     });
   }
