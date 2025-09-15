@@ -21,6 +21,7 @@ import { TermsModule } from './modules/terms/terms.module';
 import { InterestRatesModule } from './modules/interest-rates/interest-rates.module';
 import { PenaltyRatesModule } from './modules/penalty-rates/penalty-rates.module';
 import { GracePeriodsModule } from './modules/grace-periods/grace-periods.module';
+import { CollectionsModule } from '@modules/collections/collections.module';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { GracePeriodsModule } from './modules/grace-periods/grace-periods.module
     InterestRatesModule,
     PenaltyRatesModule,
     GracePeriodsModule,
+    CollectionsModule
   ],
   controllers: [AppController],
   providers: [AppService],

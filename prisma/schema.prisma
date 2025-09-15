@@ -237,7 +237,6 @@ model Customer {
 
   loans Loan[] // Créditos asociados a este customer
 
-  positiveBalances PositiveBalance[] // Saldos a favor del cliente
   advances         Advance[] // Abonos del cliente
 
   @@index([firstName])
@@ -269,7 +268,6 @@ model Collector {
   // Relaciones
   zone     Zone?     @relation(fields: [zoneId], references: [id])
   user     User?     @relation(fields: [userId], references: [id])
-  payments Payment[] @relation("PaymentsCollectedByCollector") // Pagos que recoge este cobrador
   advances Advance[] @relation("AdvancesCollectedByCollector") // Abonos recolectados
 
   @@index([firstName])
@@ -416,6 +414,7 @@ model Installment {
   paymentAllocations PaymentAllocation[]
   discounts          Discount[]          @relation("InstallmentDiscounts")
   moratoryInterests  MoratoryInterest[]
+  positiveBalanceAllocations PositiveBalanceAllocation[]
 
   @@index([loanId])
   @@index([dueDate])
@@ -434,48 +433,39 @@ model InstallmentStatus {
 }
 
 model Payment {
-  id     Int  @id @default(autoincrement()) // PK pago
-  loanId Int // FK al crédito afectado
-  loan   Loan @relation(fields: [loanId], references: [id])
+  id              Int          @id @default(autoincrement())
+  loanId          Int
+  loan            Loan         @relation(fields: [loanId], references: [id])
 
-  amount        Decimal     @db.Decimal(20, 2) // Monto total del registro de pago
-  paymentTypeId Int
-  paymentType   PaymentType @relation(fields: [paymentTypeId], references: [id]) // Tipo (capital, interés, mora...)
+  amount          Decimal      @db.Decimal(20, 2)
+  paymentTypeId   Int
+  paymentType     PaymentType  @relation(fields: [paymentTypeId], references: [id])
 
-  collectorId Int? // Cobrador que registró o recogió el pago (opcional)
-  collector   Collector? @relation("PaymentsCollectedByCollector", fields: [collectorId], references: [id])
+  date            DateTime     @default(now())
+  recordedByUserId Int
+  recordedByUser   User        @relation("PaymentsRecordedByUser", fields: [recordedByUserId], references: [id])
 
-  date DateTime @default(now()) // Fecha en que se registró el pago
-
-  // DESGLOSE: resultados de la lógica al aplicar el pago (resumen global)
-  appliedToCapital  Decimal @default("0.00") @db.Decimal(20, 2)
-  appliedToInterest Decimal @default("0.00") @db.Decimal(20, 2)
-  appliedToLateFee  Decimal @default("0.00") @db.Decimal(20, 2)
-
-  recordedByUserId Int? // Usuario que registró este pago (audit)
-  recordedByUser   User? @relation("PaymentsRecordedByUser", fields: [recordedByUserId], references: [id])
-
-  allocations PaymentAllocation[] // Relación N:M con cuotas
+  allocations     PaymentAllocation[]
 
   @@index([loanId])
   @@index([paymentTypeId])
-  @@index([collectorId])
+  @@index([recordedByUserId])
   @@map("payments")
 }
 
 model PaymentAllocation {
-  id        Int     @id @default(autoincrement())
-  paymentId Int
-  payment   Payment @relation(fields: [paymentId], references: [id])
+  id                Int         @id @default(autoincrement())
+  paymentId         Int
+  payment           Payment     @relation(fields: [paymentId], references: [id])
 
-  installmentId Int
-  installment   Installment @relation(fields: [installmentId], references: [id])
+  installmentId     Int
+  installment       Installment @relation(fields: [installmentId], references: [id])
 
-  appliedToCapital  Decimal @default(0) @db.Decimal(20, 2)
-  appliedToInterest Decimal @default(0) @db.Decimal(20, 2)
-  appliedToLateFee  Decimal @default(0) @db.Decimal(20, 2)
+  appliedToCapital  Decimal     @default(0) @db.Decimal(20, 2)
+  appliedToInterest Decimal     @default(0) @db.Decimal(20, 2)
+  appliedToLateFee  Decimal     @default(0) @db.Decimal(20, 2)
 
-  createdAt DateTime @default(now())
+  createdAt         DateTime    @default(now())
 
   @@index([paymentId])
   @@index([installmentId])
@@ -507,23 +497,40 @@ model Refinancing {
 
 model PositiveBalance {
   id         Int      @id @default(autoincrement()) // PK saldo a favor
-  customerId Int // FK al cliente
-  customer   Customer @relation(fields: [customerId], references: [id])
-  loanId     Int? // FK opcional al préstamo (para trazabilidad)
-  loan       Loan?    @relation("PositiveBalances", fields: [loanId], references: [id])
+  loanId     Int      // FK al préstamo
+  loan       Loan     @relation("PositiveBalances", fields: [loanId], references: [id])
 
-  amount     Decimal @db.Decimal(20, 2) // Monto del saldo a favor
-  source     String // Origen: "overpayment", "prepayment", etc.
-  isUsed     Boolean @default(false) // Si ya se utilizó este saldo
-  usedAmount Decimal @default(0) @db.Decimal(20, 2) // Monto ya utilizado
+  amount     Decimal  @db.Decimal(20, 2) // Monto del saldo a favor
+  source     String   // Origen: "overpayment", "prepayment", etc.
+  isUsed     Boolean  @default(false)    // Si ya se utilizó este saldo
+  usedAmount Decimal  @default(0) @db.Decimal(20, 2) // Monto ya utilizado
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
-  @@index([customerId])
+  positiveBalanceAllocations PositiveBalanceAllocation[]
+
   @@index([loanId])
   @@index([isUsed])
   @@map("positive_balances")
+}
+
+model PositiveBalanceAllocation {
+  id                Int             @id @default(autoincrement())
+  positiveBalanceId Int
+  positiveBalance   PositiveBalance @relation(fields: [positiveBalanceId], references: [id])
+
+  installmentId     Int
+  installment       Installment     @relation(fields: [installmentId], references: [id])
+
+  appliedToInterest Decimal @db.Decimal(20, 2) // Cuánto del saldo se aplicó a intereses
+  appliedToCapital  Decimal @db.Decimal(20, 2) // Cuánto del saldo se aplicó a capital
+
+  createdAt DateTime @default(now())
+
+  @@index([positiveBalanceId])
+  @@index([installmentId])
+  @@map("positive_balance_allocations")
 }
 
 model Advance {

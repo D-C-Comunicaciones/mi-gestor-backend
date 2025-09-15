@@ -2,8 +2,8 @@ import { envs } from "@config/envs";
 import { PrismaService } from "@infraestructure/prisma/prisma.service";
 import { RabbitMqService } from "@infraestructure/rabbitmq/rabbitmq.service";
 import { BadRequestException, Injectable, Logger } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
-import { addDays, addMonths, addWeeks, addMinutes, addSeconds } from "date-fns";
+import { Prisma, Installment } from "@prisma/client";
+import { addDays, addMonths, addWeeks, addSeconds } from "date-fns";
 
 @Injectable()
 export class InstallmentsService {
@@ -94,7 +94,7 @@ export class InstallmentsService {
     return installment;
   }
 
-  /** Crear siguiente cuota de un préstamo (sin republicar) */
+  /** Crear siguiente cuota de un préstamo */
   async createNextInstallment(loanId: number) {
     const loan = await this.prisma.loan.findUnique({
       where: { id: loanId },
@@ -114,39 +114,50 @@ export class InstallmentsService {
       return;
     }
 
-    const lastInstallment = loan.installments.reduce((a, b) => a.sequence > b.sequence ? a : b);
+    const lastInstallment = loan.installments.reduce((a, b) =>
+      a.sequence > b.sequence ? a : b,
+    );
     const nextSequence = lastInstallment.sequence + 1;
     const incrementer = this.getDateIncrementer(loan.paymentFrequency.name);
     const nextDueDate = incrementer(new Date(lastInstallment.dueDate));
 
-    this.logger.log(`📌 Calculando siguiente cuota para loanId=${loan.id}, nextSequence=${nextSequence}, nextDueDate=${nextDueDate.toISOString()}`);
+    this.logger.log(
+      `📌 Calculando siguiente cuota para loanId=${loan.id}, nextSequence=${nextSequence}, nextDueDate=${nextDueDate.toISOString()}`,
+    );
 
     let installment: any;
 
     switch (loan.loanType.name as "fixed_fees" | "only_interests") {
       case "fixed_fees":
-        if (!loan.term?.value) throw new BadRequestException("El préstamo no tiene término configurado");
+        if (!loan.term?.value)
+          throw new BadRequestException("El préstamo no tiene término configurado");
 
         installment = await this.calculateAndCreateInstallment(
           loan,
           nextSequence,
           nextDueDate,
           loan.term.value,
-          this.prisma
+          this.prisma,
         );
         break;
 
       case "only_interests":
-        if (!loan.gracePeriod?.days) throw new BadRequestException("El préstamo no tiene período de gracia configurado");
+        if (!loan.gracePeriod?.days)
+          throw new BadRequestException("El préstamo no tiene período de gracia configurado");
 
         const paidCapital = loan.installments.reduce(
-          (sum: Prisma.Decimal, inst: any) => sum.add(new Prisma.Decimal(inst.capitalAmount || 0)),
-          new Prisma.Decimal(0)
+          (sum: Prisma.Decimal, inst: any) =>
+            sum.add(new Prisma.Decimal(inst.capitalAmount || 0)),
+          new Prisma.Decimal(0),
         );
-        const remainingBalance = new Prisma.Decimal(loan.loanAmount).minus(paidCapital).toNumber();
+        const remainingBalance = new Prisma.Decimal(loan.loanAmount)
+          .minus(paidCapital)
+          .toNumber();
 
         if (remainingBalance <= 0) {
-          this.logger.log(`✅ Saldo pendiente 0 para loanId=${loan.id}, no se generará siguiente cuota`);
+          this.logger.log(
+            `✅ Saldo pendiente 0 para loanId=${loan.id}, no se generará siguiente cuota`,
+          );
           return;
         }
 
@@ -155,7 +166,7 @@ export class InstallmentsService {
           nextSequence,
           nextDueDate,
           loan.gracePeriod.days / 30,
-          this.prisma
+          this.prisma,
         );
 
         const firstInstallmentDate = new Date(loan.installments[0].dueDate);
@@ -169,8 +180,13 @@ export class InstallmentsService {
         break;
 
       default:
-        throw new BadRequestException(`Tipo de crédito no soportado: ${loan.loanType.name}`);
+        throw new BadRequestException(
+          `Tipo de crédito no soportado: ${loan.loanType.name}`,
+        );
     }
+
+    // 🔹 Aplicar saldo a favor (si existe)
+    installment = await this.applyPositiveBalance(loanId, installment);
 
     // 🔹 Actualizar nextDueDate en el préstamo
     await this.prisma.loan.update({
@@ -178,20 +194,113 @@ export class InstallmentsService {
       data: { nextDueDate },
     });
 
-    // 🔹 Programar siguiente cuota
-    let createNextDate = this.calculateCreateNextDate(nextDueDate, loan.paymentFrequency.name);
-    if (createNextDate <= new Date()) createNextDate = new Date(Date.now() + 50);
-    const delay = createNextDate.getTime() - Date.now();
-
-    await this.rabbitMqService.publishWithDelay(
-      envs.rabbitMq.loanInstallmentsQueue,
-      { loanId: loan.id },
-      delay
+    this.logger.log(
+      `✅ Cuota creada para loanId=${loan.id}, installmentId=${installment.id}, sequence=${installment.sequence}`,
     );
 
-    this.logger.log(`📨 Próxima cuota programada para creación: ${createNextDate.toISOString()}, dueDate real: ${nextDueDate.toISOString()}, delay=${delay}ms`);
-
     return installment;
+  }
+
+  /** Aplicar saldo a favor a la cuota recién creada */
+  private async applyPositiveBalance(
+    loanId: number,
+    installment: Installment,
+    client: Prisma.TransactionClient = this.prisma,
+  ): Promise<Installment> {
+    this.logger.warn(`🔎 Buscando saldo a favor para loan ${loanId}...`);
+
+    const positiveBalance = await client.positiveBalance.findFirst({
+      where: { loanId, isUsed: false },
+    });
+
+    if (!positiveBalance) {
+      this.logger.warn(`ℹ️ Loan ${loanId}: no hay saldo a favor disponible`);
+      return installment;
+    }
+
+    let remainingBalance = new Prisma.Decimal(positiveBalance.amount).minus(
+      positiveBalance.usedAmount,
+    );
+
+    if (remainingBalance.lte(0)) {
+      this.logger.warn(`⚠️ Loan ${loanId}: saldo a favor ya consumido`);
+      return installment;
+    }
+
+    // ---- Aplicar al INTERÉS ----
+    let interestCovered = new Prisma.Decimal(0);
+    const unpaidInterest = new Prisma.Decimal(installment.interestAmount).minus(
+      installment.paidAmount ?? 0, // aquí asumimos que lo no pagado incluye interés
+    );
+
+    if (unpaidInterest.gt(0)) {
+      const appliedToInterest = Prisma.Decimal.min(remainingBalance, unpaidInterest);
+      interestCovered = appliedToInterest;
+      remainingBalance = remainingBalance.minus(appliedToInterest);
+
+      await client.positiveBalanceAllocation.create({
+        data: {
+          installmentId: installment.id,
+          positiveBalanceId: positiveBalance.id,
+          appliedToInterest: appliedToInterest,
+          appliedToCapital: new Prisma.Decimal(0),
+        },
+      });
+    }
+
+    // ---- Aplicar al CAPITAL ----
+    let capitalCovered = new Prisma.Decimal(0);
+    const unpaidCapital = new Prisma.Decimal(installment.capitalAmount).minus(
+      installment.paidAmount ?? 0,
+    );
+
+    if (remainingBalance.gt(0) && unpaidCapital.gt(0)) {
+      const appliedToCapital = Prisma.Decimal.min(remainingBalance, unpaidCapital);
+      capitalCovered = appliedToCapital;
+      remainingBalance = remainingBalance.minus(appliedToCapital);
+
+      await client.positiveBalanceAllocation.create({
+        data: {
+          installmentId: installment.id,
+          positiveBalanceId: positiveBalance.id,
+          appliedToInterest: new Prisma.Decimal(0),
+          appliedToCapital: appliedToCapital,
+        },
+      });
+    }
+
+    // ---- Actualizar cuota ----
+    const totalApplied = interestCovered.plus(capitalCovered);
+    let newPaidAmount = new Prisma.Decimal(installment.paidAmount ?? 0).plus(totalApplied);
+
+    const updatedInstallment = await client.installment.update({
+      where: { id: installment.id },
+      data: {
+        paidAmount: newPaidAmount,
+        isPaid: newPaidAmount.gte(new Prisma.Decimal(installment.totalAmount)),
+        paidAt: newPaidAmount.gte(new Prisma.Decimal(installment.totalAmount))
+          ? new Date()
+          : installment.paidAt,
+      },
+    });
+
+    // ---- Actualizar saldo a favor ----
+    const newUsed = new Prisma.Decimal(positiveBalance.usedAmount).plus(totalApplied);
+    const fullyUsed = newUsed.gte(new Prisma.Decimal(positiveBalance.amount));
+
+    await client.positiveBalance.update({
+      where: { id: positiveBalance.id },
+      data: {
+        usedAmount: newUsed,
+        isUsed: fullyUsed,
+      },
+    });
+
+    this.logger.warn(
+      `✅ Loan ${loanId}: aplicado saldo a favor. Interés cubierto=${interestCovered.toString()}, Capital cubierto=${capitalCovered.toString()}, Queda disponible=${remainingBalance.toString()}`,
+    );
+
+    return updatedInstallment;
   }
 
   /** Cálculo de la cuota según tipo de crédito */

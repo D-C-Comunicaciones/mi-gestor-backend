@@ -1,17 +1,12 @@
-import { IsNumber, IsPositive, IsOptional } from 'class-validator';
+import { IsNumber, IsPositive } from 'class-validator';
 
 export class CreateCollectionDto {
-  @IsNumber()
-  loanId: number;
 
   @IsNumber()
-  customerId: number;
+  installmentId: number; // <-- ID de la cuota que se está pagando
 
   @IsNumber()
   @IsPositive()
   amount: number;
 
-  @IsOptional()
-  @IsNumber()
-  collectorId?: number;
 }
