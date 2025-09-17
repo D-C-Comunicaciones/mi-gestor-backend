@@ -42,6 +42,7 @@ interface EnvVars {
 
     // WEBHOOKS
     WEBHOOK_IMPORT_URL: string;
+
 }
 
 const envVarsSchema = joi.object({

@@ -1,13 +1,10 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@infraestructure/prisma/prisma.service';
 import { ChangesService } from '@modules/changes/changes.service';
 import { InstallmentsService } from '@modules/installments/installments.service';
-import { CreateLoanDto } from './dto/create-loan.dto';
-import { UpdateLoanDto } from './dto/update-loan.dto';
-import { LoanPaginationDto } from './dto/loan-pagination.dto';
+import { CreateLoanDto, UpdateLoanDto, RefinanceLoanDto, LoanPaginationDto } from './dto';
 import { differenceInDays, format } from 'date-fns';
-import { RabbitMqService } from '@infraestructure/rabbitmq/rabbitmq.service';
 
 @Injectable()
 export class LoansService {
@@ -15,10 +12,7 @@ export class LoansService {
     private readonly prisma: PrismaService,
     private readonly changesService: ChangesService,
     private readonly installmentsService: InstallmentsService,
-    private readonly rabbitmqService: RabbitMqService,
   ) { }
-
-  private readonly logger = new Logger(LoansService.name);
 
   // ---------- CREATE ----------
   async create(dto: CreateLoanDto) {
@@ -197,7 +191,107 @@ export class LoansService {
     return { loan: responseLoan, firstInstallment };
   }
 
-  // ---------- FIND ALL ----------
+  // ---------- REFINANCE ----------
+  async refinance(loanId: number, dto: RefinanceLoanDto) {
+    // 1️⃣ Obtener el préstamo existente con todas las relaciones necesarias
+    const existingLoan = await this.prisma.loan.findUnique({
+      where: { id: loanId },
+      include: {
+        interestRate: true,
+        penaltyRate: true,
+        term: true,
+        paymentFrequency: true,
+        loanType: true,
+        loanStatus: true,
+        customer: {
+          include: {
+            typeDocumentIdentification: true,
+            gender: true,
+            zone: true,
+            user: true,
+          },
+        },
+        installments: true,
+      },
+    });
+    if (!existingLoan) {
+      throw new NotFoundException('Préstamo a refinanciar no encontrado');
+    }
+
+    if (!existingLoan.isActive) {
+      throw new BadRequestException('El préstamo ya está inactivo o refinanciado.');
+    }
+
+    const refinancedStatus = await this.prisma.loanStatus.findUnique({
+      where: { name: 'Refinanced' }
+    });
+    if (!refinancedStatus) {
+      throw new NotFoundException('El estado "Refinanced" no fue encontrado. Por favor, asegúrese de que el seed ha sido ejecutado.');
+    }
+
+    // 2️⃣ Lógica para priorizar datos del nuevo DTO o tomar los del préstamo anterior,
+    //    asegurando que el customerId sea siempre el mismo
+    const newLoanDto: CreateLoanDto = {
+      customerId: existingLoan.customerId,
+      loanAmount: dto.loanAmount ?? existingLoan.loanAmount.toNumber(),
+      interestRateId: dto.interestRateId ?? existingLoan.interestRateId,
+      // ✅ Correcciones para el problema de tipos: 'null' vs 'undefined'
+      penaltyRateId: dto.penaltyRateId ?? existingLoan.penaltyRateId ?? undefined,
+      termId: dto.termId ?? existingLoan.termId ?? undefined,
+      paymentFrequencyId: dto.paymentFrequencyId ?? existingLoan.paymentFrequencyId,
+      loanTypeId: dto.loanTypeId ?? existingLoan.loanTypeId,
+      // ✅ Corrección para nextDueDate
+      nextDueDate: dto.nextDueDate ?? existingLoan.nextDueDate?.toISOString() ?? undefined,
+      // ✅ Corrección para gracePeriodId
+      gracePeriodId: dto.gracePeriodId ?? existingLoan.gracePeriodId ?? undefined,
+    };
+
+    // 3️⃣ Transacción para asegurar la atomicidad
+    const { oldLoan, newLoan } = await this.prisma.$transaction(async tx => {
+      // Inactivar y cambiar el estado del préstamo antiguo
+      const inactiveLoan = await tx.loan.update({
+        where: { id: loanId },
+        data: {
+          isActive: false,
+          loanStatusId: refinancedStatus.id,
+        },
+        include: {
+          interestRate: true,
+          penaltyRate: true,
+          term: true,
+          paymentFrequency: true,
+          loanType: true,
+          loanStatus: true,
+          customer: {
+            include: {
+              typeDocumentIdentification: true,
+              gender: true,
+              zone: true,
+              user: true,
+            },
+          },
+          installments: true,
+        },
+      });
+
+      // Crear el nuevo préstamo con los datos priorizados
+      const newLoanResponse = await this.create(newLoanDto);
+
+      return {
+        oldLoan: inactiveLoan,
+        newLoan: newLoanResponse.loan,
+      };
+    });
+
+    // 4️⃣ Mapear y devolver ambos préstamos
+    const oldLoanChanges = await this.changesService.getChanges('loan', oldLoan.id);
+    const newLoanChanges = await this.changesService.getChanges('loan', newLoan.id);
+
+    const oldMapped = this._mapLoan(this.convertLoanToPlain(oldLoan), oldLoanChanges);
+    const newMapped = this._mapLoan(this.convertLoanToPlain(newLoan), newLoanChanges);
+
+    return { oldMapped, newMapped };
+  }  // ---------- FIND ALL ----------
   async findAll(p: LoanPaginationDto) {
     const page = p.page ?? 1;
     const limit = p.limit ?? 10;

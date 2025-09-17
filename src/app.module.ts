@@ -22,6 +22,7 @@ import { InterestRatesModule } from './modules/interest-rates/interest-rates.mod
 import { PenaltyRatesModule } from './modules/penalty-rates/penalty-rates.module';
 import { GracePeriodsModule } from './modules/grace-periods/grace-periods.module';
 import { CollectionsModule } from '@modules/collections/collections.module';
+import { ReportsModule } from './modules/reports/reports.module';
 
 @Module({
   imports: [
@@ -48,7 +49,8 @@ import { CollectionsModule } from '@modules/collections/collections.module';
     InterestRatesModule,
     PenaltyRatesModule,
     GracePeriodsModule,
-    CollectionsModule
+    CollectionsModule,
+    ReportsModule
   ],
   controllers: [AppController],
   providers: [AppService],
