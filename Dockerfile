@@ -48,13 +48,19 @@ FROM node:20-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 
+# Instalar solo librerías runtime necesarias para ejecutar canvas
+RUN apk add --no-cache \
+    cairo \
+    pango \
+    jpeg \
+    giflib
+
 # (Opcional) user no-root:
 # RUN addgroup -S app && adduser -S app -G app
 
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY prisma ./prisma
-# 👇 Aquí copiamos la carpeta public
 COPY public ./public
 
 EXPOSE 3000
