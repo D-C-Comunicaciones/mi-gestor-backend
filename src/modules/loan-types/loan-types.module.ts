@@ -4,28 +4,47 @@ import { LoanTypesController } from './loan-types.controller';
 import { PrismaModule } from '@infraestructure/prisma/prisma.module';
 
 /**
- * Módulo de tipos de crédito
+ * Módulo de tipos de préstamo
  *
- * Este módulo encapsula toda la funcionalidad relacionada con los tipos de crédito:
+ * Este módulo encapsula toda la funcionalidad relacionada con la gestión de tipos de préstamo:
  *
  * Responsabilidades:
- * - Gestión de tipos de crédito (CUOTA_FIJA, INTERES_MENSUAL, LINEA_CREDITO, etc.)
- * - Consulta de tipos activos para formularios de creación de préstamos
- * - Mantenimiento y configuración de nuevos tipos de productos financieros
+ * - Consulta del catálogo de productos de crédito disponibles
+ * - Validación de características y parámetros por tipo de préstamo
+ * - Mantenimiento de la configuración de productos
+ * - Soporte para originación con diferentes modalidades de pago
  *
  * Dependencias:
  * - PrismaModule: Para acceso a la base de datos
  *
  * Exportaciones:
- * - LoanTypesService: Para uso en otros módulos (especialmente el módulo de préstamos)
+ * - LoanTypesService: Para uso en otros módulos (Loans, Origination)
  *
  * Casos de uso principales:
- * 1. Al crear un préstamo, se consultan los tipos disponibles
- * 2. Validación de que el tipo de crédito seleccionado esté activo
- * 3. Configuración de nuevos productos financieros por parte de administradores
+ * 1. Poblar formularios de originación con productos disponibles
+ * 2. Validar parámetros según el tipo de préstamo seleccionado
+ * 3. Configurar características específicas por producto
+ * 4. Determinar rangos de montos y plazos permitidos
+ * 5. Establecer modalidades de pago y características especiales
+ *
+ * Integración with otros módulos:
+ * - LoansModule: Validación de tipos durante originación de créditos
+ * - OriginationModule: Catálogo de productos para solicitudes
+ * - GracePeriodsModule: Solo tipos Monthly permiten períodos de gracia
+ * - InterestRatesModule: Cada tipo tiene su tasa específica
+ * - ProductsModule: Configuración de características comerciales
+ *
+ * Características configurables por tipo:
+ * - Modalidad de pago (Daily, Weekly, Biweekly, Monthly, etc.)
+ * - Rangos de montos mínimos y máximos
+ * - Plazos mínimos y máximos en la unidad de frecuencia
+ * - Tasas de interés específicas por producto
+ * - Soporte para períodos de gracia (solo Monthly)
+ * - Requerimientos de garantías o avales
+ * - Estados activos para control de productos descontinuados
  *
  * @version 1.0.0
- * @since 2025-01-04
+ * @since 2024-01-15
  */
 @Module({
   imports: [
@@ -34,7 +53,7 @@ import { PrismaModule } from '@infraestructure/prisma/prisma.module';
   controllers: [LoanTypesController],
   providers: [LoanTypesService],
   exports: [
-    LoanTypesService, // Exportado para uso en otros módulos, especialmente LoansModule
+    LoanTypesService, // Exportado para uso en módulos de Loans y Origination
   ],
 })
 export class LoanTypesModule {}
