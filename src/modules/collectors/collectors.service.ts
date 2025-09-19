@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '@infraestructure/prisma/prisma.service';
 import { CollectorPaginationDto, CreateCollectorDto, UpdateCollectorDto } from './dto';
 import { Prisma } from '@prisma/client';
@@ -6,14 +6,41 @@ import { UsersService } from '@modules/users/users.service';
 import * as bcrypt from 'bcrypt';
 import { ChangesService } from '@modules/changes/changes.service';
 
+/**
+ * Servicio para la gestión de cobradores
+ * 
+ * Este servicio maneja todas las operaciones relacionadas con el personal de cobranza:
+ * - Registro y gestión de cobradores en el sistema
+ * - Asignación de zonas y rutas de cobranza
+ * - Control de activación/desactivación del personal
+ * - Consultas con filtros para reportes administrativos
+ * - Integración con el sistema de usuarios para autenticación
+ * 
+ * Los cobradores son elementos clave del sistema ya que:
+ * - Realizan la cobranza en campo
+ * - Están asignados a zonas geográficas específicas
+ * - Su información se relaciona con los recaudos registrados
+ * - Cada cobrador tiene un usuario asociado para acceso al sistema
+ * 
+ * @version 1.0.0
+ * @since 2024-01-15
+ */
 @Injectable()
 export class CollectorsService {
+  private readonly logger = new Logger(CollectorsService.name);
+
   constructor(
     private prisma: PrismaService,
     private usersService: UsersService,
     private readonly changesService: ChangesService,
   ) { }
 
+  /**
+   * Obtiene lista paginada de cobradores con filtros
+   * 
+   * @param paginationDto Filtros y parámetros de paginación
+   * @returns Promise con cobradores paginados y metadatos
+   */
   async findAll(paginationDto: CollectorPaginationDto) {
     const { page = 1, limit = 10, isActive } = paginationDto;
 
@@ -61,6 +88,13 @@ export class CollectorsService {
     };
   }
 
+  /**
+   * Obtiene un cobrador específico por su ID
+   * 
+   * @param id ID del cobrador
+   * @returns Promise<Collector> El cobrador con información completa
+   * @throws {NotFoundException} Si el cobrador no existe
+   */
   async findOne(id: number) {
     const collector = await this.prisma.collector.findUnique({
       where: { id },
@@ -77,11 +111,25 @@ export class CollectorsService {
     };
   }
 
+  /**
+   * Crea un nuevo cobrador en el sistema
+   * 
+   * Este método maneja el registro completo de un nuevo cobrador:
+   * - Valida unicidad de documento y email
+   * - Crea usuario asociado con rol de cobrador
+   * - Registra información personal y laboral
+   * - Asigna zona si se proporciona
+   * - Maneja transacciones para integridad de datos
+   * 
+   * @param data Datos del cobrador a crear
+   * @returns Promise<Collector> El cobrador creado con información completa
+   * @throws {BadRequestException} Si el documento o email ya existen
+   */
   async create(data: CreateCollectorDto) {
 
     // Validaciones previas
     const [existingDoc, existingEmail] = await Promise.all([
-      this.prisma.collector.findUnique({ where: { documentNumber: data.documentNumber } }),
+      this.prisma.collector.findUnique({ where: { documentNumber: Number(data.documentNumber) } }),
       this.prisma.user.findUnique({ where: { email: data.email } }),
     ]);
 
@@ -108,7 +156,7 @@ export class CollectorsService {
           data: {
             firstName: data.firstName,
             lastName: data.lastName,
-            documentNumber: data.documentNumber,
+            documentNumber: Number(data.documentNumber),
             birthDate: new Date(data.birthDate),
             phone: data.phone,
             address: data.address,
@@ -138,6 +186,15 @@ export class CollectorsService {
     }
   }
 
+  /**
+   * Actualiza un cobrador existente
+   * 
+   * @param id ID del cobrador a actualizar
+   * @param data Datos a actualizar
+   * @returns Promise<Collector> El cobrador actualizado
+   * @throws {NotFoundException} Si el cobrador no existe
+   * @throws {BadRequestException} Si no hay cambios o hay conflictos de unicidad
+   */
   async update(id: number, data: UpdateCollectorDto) {
     const collector = await this.findOne(id);
     const changes = this.detectChanges(collector, data);
@@ -148,7 +205,7 @@ export class CollectorsService {
 
     // Validaciones de unicidad previas
     if (changes.documentNumber !== undefined) {
-      const docExists = await this.prisma.collector.findUnique({ where: { documentNumber: changes.documentNumber } });
+      const docExists = await this.prisma.collector.findUnique({ where: { documentNumber: Number(changes.documentNumber) } });
       if (docExists && docExists.id !== id) throw new BadRequestException('El número de documento ya está registrado.');
     }
     if (changes.email) {
@@ -162,11 +219,15 @@ export class CollectorsService {
       genderId,
       zoneId,
       email,
+      documentNumber,
+      birthDate,
       ...restChanges
     } = changes;
 
     const updateData: Prisma.CollectorUpdateInput = {
       ...restChanges,
+      ...(documentNumber && { documentNumber: Number(documentNumber) }), // Convertir a number
+      ...(birthDate && { birthDate: new Date(birthDate) }), // Convertir a Date
       ...(typeDocumentIdentificationId && { typeDocumentIdentification: { connect: { id: typeDocumentIdentificationId } } }),
       ...(genderId && { gender: { connect: { id: genderId } } }),
       ...(zoneId && { zone: { connect: { id: zoneId } } }),
@@ -217,6 +278,11 @@ export class CollectorsService {
     }
   }
 
+  /**
+   * Detecta cambios entre el cobrador existente y los datos de actualización
+   * 
+   * @private
+   */
   private detectChanges(existingCollector: any, data: UpdateCollectorDto): Partial<UpdateCollectorDto> {
     const changes: Partial<UpdateCollectorDto> = {};
     for (const key in data) {
@@ -227,6 +293,13 @@ export class CollectorsService {
       if (typedKey === 'email') {
         const oldEmail = existingCollector.user?.email;
         if (newValue !== oldEmail) changes.email = newValue as string;
+        continue;
+      }
+      if (typedKey === 'documentNumber') {
+        const oldValue = existingCollector[typedKey];
+        const oldDocStr = oldValue ? String(oldValue) : '';
+        const newDocStr = String(newValue);
+        if (oldDocStr !== newDocStr) changes[typedKey] = newValue as string;
         continue;
       }
       if (typedKey === 'birthDate') {

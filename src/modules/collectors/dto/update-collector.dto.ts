@@ -1,39 +1,112 @@
 import { PartialType } from '@nestjs/mapped-types';
 import { CreateCollectorDto } from './create-collector.dto';
-import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsInt, IsOptional, IsDateString, IsEmail, IsPhoneNumber, IsString } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
+import { IsOptional, IsBoolean } from 'class-validator';
 
+/**
+ * DTO para la actualización de un cobrador existente
+ * Hereda de CreateCollectorDto pero hace todos los campos opcionales
+ * Permite actualizaciones parciales del cobrador
+ */
 export class UpdateCollectorDto extends PartialType(CreateCollectorDto) {
-  @ApiPropertyOptional({ example: 'Carlos', description: 'Nuevo nombre' })
-  @IsOptional() @IsString() firstName?: string;
+  @ApiProperty({
+    description: 'Nombres del cobrador',
+    example: 'María Elena',
+    type: 'string',
+    maxLength: 100,
+    required: false
+  })
+  firstName?: string;
 
-  @ApiPropertyOptional({ example: 'Ramírez', description: 'Nuevo apellido' })
-  @IsOptional() @IsString() lastName?: string;
+  @ApiProperty({
+    description: 'Apellidos del cobrador',
+    example: 'Rodríguez García',
+    type: 'string',
+    maxLength: 100,
+    required: false
+  })
+  lastName?: string;
 
-  @ApiPropertyOptional({ example: 2, description: 'Nuevo tipo de documento' })
-  @IsOptional() @IsInt() typeDocumentIdentificationId?: number;
+  @ApiProperty({
+    description: 'Número de documento de identidad del cobrador',
+    example: '87654321',
+    type: 'string',
+    maxLength: 20,
+    required: false
+  })
+  documentNumber?: string;
 
-  @ApiPropertyOptional({ example: 987654321, description: 'Nuevo número de documento (único)' })
-  @IsOptional() @IsInt() documentNumber?: number;
+  @ApiProperty({
+    description: 'Fecha de nacimiento del cobrador',
+    example: '1985-03-15',
+    type: 'string',
+    format: 'date',
+    required: false
+  })
+  birthDate?: string;
 
-  @ApiPropertyOptional({ example: '1991-06-20', description: 'Nueva fecha de nacimiento' })
-  @IsOptional() @IsDateString() birthDate?: string;
+  @ApiProperty({
+    description: 'Número de teléfono móvil del cobrador',
+    example: '3001234567',
+    type: 'string',
+    maxLength: 15,
+    required: false
+  })
+  phone?: string;
 
-  @ApiPropertyOptional({ example: 2, description: 'Nuevo género' })
-  @IsOptional() @IsInt() genderId?: number;
+  @ApiProperty({
+    description: 'Dirección de residencia del cobrador',
+    example: 'Calle 45 #23-15, Barrio Centro',
+    type: 'string',
+    maxLength: 200,
+    required: false
+  })
+  address?: string;
 
-  @ApiPropertyOptional({ example: '+573009998887', description: 'Nuevo teléfono' })
-  @IsOptional() @IsPhoneNumber('CO') phone?: string;
+  @ApiProperty({
+    description: 'Correo electrónico del cobrador',
+    example: 'maria.rodriguez@empresa.com',
+    type: 'string',
+    format: 'email',
+    maxLength: 150,
+    required: false
+  })
+  email?: string;
 
-  @ApiPropertyOptional({ example: 'Av 12 #34-56', description: 'Nueva dirección' })
-  @IsOptional() @IsString() address?: string;
+  @ApiProperty({
+    description: 'ID del tipo de documento de identidad',
+    example: 1,
+    type: 'integer',
+    minimum: 1,
+    required: false
+  })
+  typeDocumentIdentificationId?: number;
 
-  @ApiPropertyOptional({ example: 'nuevo@migestor.com', description: 'Nuevo email (único)' })
-  @IsOptional() @IsEmail() email?: string;
+  @ApiProperty({
+    description: 'ID del género del cobrador',
+    example: 2,
+    type: 'integer',
+    minimum: 1,
+    required: false
+  })
+  genderId?: number;
 
-  @ApiPropertyOptional({ example: 3, description: 'Nueva zona' })
-  @IsOptional() @IsInt() zoneId?: number;
+  @ApiProperty({
+    description: 'ID de la zona asignada al cobrador',
+    example: 3,
+    type: 'integer',
+    minimum: 1,
+    required: false
+  })
+  zoneId?: number;
 
-  @ApiPropertyOptional({ example: false, description: 'Cambiar estado activo' })
-  @IsOptional() isActive?: boolean;
+  @ApiProperty({
+    description: 'Estado activo del cobrador',
+    example: false,
+    type: 'boolean',
+    required: false
+  })
+  @IsBoolean()
+  @IsOptional()
+  isActive?: boolean;
 }

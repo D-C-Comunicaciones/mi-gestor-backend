@@ -15,7 +15,7 @@ export class DiscountsService {
     private readonly changesService: ChangesService,
   ) { }
 
-  async create(dto: CreateDiscountDto, req: Request) {
+  async create(dto: CreateDiscountDto, req) {
     // Usuario extraído del JWT
     const user = req['user'];
     if (!user || !user.userId) {
