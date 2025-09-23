@@ -33,6 +33,7 @@
     "@nestjs/platform-express": "^11.0.1",
     "@nestjs/swagger": "^11.2.0",
     "@prisma/client": "^6.13.0",
+    "@scalar/nestjs-api-reference": "^1.0.2",
     "amqp-connection-manager": "^4.1.14",
     "amqplib": "^0.10.9",
     "axios": "^1.11.0",

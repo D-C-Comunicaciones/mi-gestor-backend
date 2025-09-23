@@ -24,35 +24,114 @@ export class CollectorsController {
   @ApiQuery({ name: 'isActive', required: false, schema: { type: 'boolean', example: true } })
   @ApiOkResponse({
     description: 'Listado obtenido',
-    schema: {
-      type: 'object',
-      properties: {
-        message: { type: 'string', example: 'Cobradores obtenidos correctamente' },
-        code: { type: 'number', example: 200 },
-        status: { type: 'string', example: 'success' },
-        data: {
-          type: 'object',
-          properties: {
-            collectors: { type: 'array', items: { $ref: getSchemaPath(ResponseCollectorDto) } },
-            meta: {
-              type: 'object',
-              properties: {
-                total: { type: 'number', example: 25 },
-                page: { type: 'number', example: 1 },
-                lastPage: { type: 'number', example: 3 },
-                limit: { type: 'number', example: 10 },
-                hasNextPage: { type: 'boolean', example: true }
-              }
+    examples: {
+      'success': {
+        summary: 'Lista obtenida exitosamente',
+        value: {
+          customMessage: 'Cobradores obtenidos correctamente',
+          collectors: [
+            {
+              id: 1,
+              firstName: 'Juan',
+              lastName: 'Pérez',
+              documentNumber: '12345678',
+              email: 'juan.perez@cobradores.com',
+              phone: '+57 300 123 4567',
+              birthDate: '1990-05-15',
+              isActive: true,
+              createdAt: '2024-01-15T10:30:00.000Z',
+              updatedAt: '2024-01-20T14:45:00.000Z'
+            },
+            {
+              id: 2,
+              firstName: 'María',
+              lastName: 'García',
+              documentNumber: '87654321',
+              email: 'maria.garcia@cobradores.com',
+              phone: '+57 300 987 6543',
+              birthDate: '1985-08-22',
+              isActive: true,
+              createdAt: '2024-01-16T11:30:00.000Z',
+              updatedAt: '2024-01-21T15:45:00.000Z'
             }
+          ],
+          meta: {
+            total: 25,
+            page: 1,
+            lastPage: 3,
+            limit: 10,
+            hasNextPage: true
           }
         }
       }
     }
   })
-  @ApiNotFoundResponse({ description: 'No existen registros', schema: { example: { message: 'No existen registros', code: 404, status: 'error' } } })
-  @ApiUnauthorizedResponse({ description: 'No autenticado' })
-  @ApiForbiddenResponse({ description: 'Sin permiso view.collectors' })
-  @ApiInternalServerErrorResponse({ description: 'Error interno' })
+  @ApiNotFoundResponse({ 
+    description: 'No existen registros',
+    examples: {
+      'no-records': {
+        summary: 'No se encontraron registros',
+        value: {
+          customMessage: 'No existen registros',
+          collectors: [],
+          meta: {
+            total: 0,
+            page: 1,
+            lastPage: 0,
+            limit: 10,
+            hasNextPage: false
+          }
+        }
+      }
+    }
+  })
+  @ApiUnauthorizedResponse({ 
+    description: 'No autenticado',
+    examples: {
+      'missing-token': {
+        summary: 'Token faltante',
+        value: {
+          statusCode: 401,
+          message: 'Token de acceso requerido',
+          error: 'Unauthorized'
+        }
+      },
+      'invalid-token': {
+        summary: 'Token inválido o expirado',
+        value: {
+          statusCode: 401,
+          message: 'Token de acceso inválido o expirado',
+          error: 'Unauthorized'
+        }
+      }
+    }
+  })
+  @ApiForbiddenResponse({ 
+    description: 'Sin permiso view.collectors',
+    examples: {
+      'insufficient-permissions': {
+        summary: 'Sin permisos para ver cobradores',
+        value: {
+          statusCode: 403,
+          message: 'No tienes permisos para ver los cobradores',
+          error: 'Forbidden'
+        }
+      }
+    }
+  })
+  @ApiInternalServerErrorResponse({ 
+    description: 'Error interno',
+    examples: {
+      'server-error': {
+        summary: 'Error interno del servidor',
+        value: {
+          statusCode: 500,
+          message: 'Error interno del servidor al obtener los cobradores',
+          error: 'Internal Server Error'
+        }
+      }
+    }
+  })
   async findAll(
     @Query() collectorPaginationDto: CollectorPaginationDto,
     @Res({ passthrough: true }) res: Response,
@@ -87,25 +166,87 @@ export class CollectorsController {
   @ApiParam({ name: 'id', type: Number, example: 1 })
   @ApiOkResponse({
     description: 'Cobrador encontrado',
-    schema: {
-      type: 'object',
-      properties: {
-        message: { type: 'string', example: 'Cobrador obtenido correctamente' },
-        code: { type: 'number', example: 200 },
-        status: { type: 'string', example: 'success' },
-        data: {
-          type: 'object',
-          properties: {
-            collector: { $ref: getSchemaPath(ResponseCollectorDto) }
+    examples: {
+      'success': {
+        summary: 'Cobrador encontrado exitosamente',
+        value: {
+          customMessage: 'Cobrador obtenido correctamente',
+          collector: {
+            id: 1,
+            firstName: 'Juan',
+            lastName: 'Pérez',
+            documentNumber: '12345678',
+            email: 'juan.perez@cobradores.com',
+            phone: '+57 300 123 4567',
+            birthDate: '1990-05-15',
+            isActive: true,
+            createdAt: '2024-01-15T10:30:00.000Z',
+            updatedAt: '2024-01-20T14:45:00.000Z'
           }
         }
       }
     }
   })
-  @ApiNotFoundResponse({ description: 'Cobrador no encontrado', schema: { example: { message: 'Cobrador no encontrado', code: 404, status: 'error' } } })
-  @ApiUnauthorizedResponse({ description: 'No autenticado' })
-  @ApiForbiddenResponse({ description: 'Sin permiso view.collectors' })
-  @ApiInternalServerErrorResponse({ description: 'Error interno' })
+  @ApiNotFoundResponse({ 
+    description: 'Cobrador no encontrado',
+    examples: {
+      'collector-not-found': {
+        summary: 'Cobrador no encontrado',
+        value: {
+          statusCode: 404,
+          message: 'Cobrador con ID 1 no encontrado',
+          error: 'Not Found'
+        }
+      }
+    }
+  })
+  @ApiUnauthorizedResponse({ 
+    description: 'No autenticado',
+    examples: {
+      'missing-token': {
+        summary: 'Token faltante',
+        value: {
+          statusCode: 401,
+          message: 'Token de acceso requerido',
+          error: 'Unauthorized'
+        }
+      },
+      'invalid-token': {
+        summary: 'Token inválido o expirado',
+        value: {
+          statusCode: 401,
+          message: 'Token de acceso inválido o expirado',
+          error: 'Unauthorized'
+        }
+      }
+    }
+  })
+  @ApiForbiddenResponse({ 
+    description: 'Sin permiso view.collectors',
+    examples: {
+      'insufficient-permissions': {
+        summary: 'Sin permisos para ver cobrador',
+        value: {
+          statusCode: 403,
+          message: 'No tienes permisos para ver este cobrador',
+          error: 'Forbidden'
+        }
+      }
+    }
+  })
+  @ApiInternalServerErrorResponse({ 
+    description: 'Error interno',
+    examples: {
+      'server-error': {
+        summary: 'Error interno del servidor',
+        value: {
+          statusCode: 500,
+          message: 'Error interno del servidor al obtener el cobrador',
+          error: 'Internal Server Error'
+        }
+      }
+    }
+  })
   async findOne(
     @Param('id', ParseIntPipe) id: number,
   ): Promise<CollectorResponse> {
@@ -125,23 +266,166 @@ export class CollectorsController {
   @Post()
   @Permissions('create.collectors')
   @ApiOperation({ summary: 'Crear cobrador', description: 'Crea un nuevo cobrador y su usuario asociado.' })
-  @ApiBody({ type: CreateCollectorDto })
-  @ApiCreatedResponse({
-    description: 'Cobrador creado',
-    schema: {
-      example: {
-        message: 'Cobrador creado correctamente',
-        code: 201,
-        status: 'success',
-        data: { collector: { id: 1, firstName: 'Juan', lastName: 'Pérez', documentNumber: 123, birthDate: '2000-01-01', createdAt: '2024-01-01 10:00:00' } }
+  @ApiBody({
+    type: CreateCollectorDto,
+    description: 'Datos del cobrador a crear',
+    examples: {
+      'cobrador-basico': {
+        summary: 'Cobrador básico',
+        description: 'Ejemplo de cobrador con información completa',
+        value: {
+          firstName: 'Juan',
+          lastName: 'Pérez',
+          typeDocumentIdentificationId: 1,
+          documentNumber: 1234567890,
+          birthDate: '2005-05-15',
+          genderId: 1,
+          phone: '+573001234567',
+          email: 'cobrador111@migestor.com',
+          address: 'test etes',
+          zoneId: 2
+        }
+      },
+      'cobrador-completo': {
+        summary: 'Cobrador completo',
+        description: 'Ejemplo de cobrador con otra zona y datos diferentes',
+        value: {
+          firstName: 'Ana Lucía',
+          lastName: 'Martínez López',
+          typeDocumentIdentificationId: 1,
+          documentNumber: 45678901,
+          birthDate: '1992-07-25',
+          genderId: 2,
+          phone: '+57 300 777 8899',
+          email: 'ana.martinez@migestor.com',
+          address: 'Calle 123 #45-67',
+          zoneId: 1
+        }
       }
     }
   })
-  @ApiBadRequestResponse({ description: 'Violación de unicidad o datos inválidos', schema: { example: { message: 'El número de documento ya está registrado.', code: 400, status: 'error' } } })
-  @ApiUnprocessableEntityResponse({ description: 'Error de validación', schema: { example: { message: 'Los datos enviados no son válidos.', code: 422, status: 'error', errors: ['firstName should not be empty'] } } })
-  @ApiUnauthorizedResponse({ description: 'No autenticado' })
-  @ApiForbiddenResponse({ description: 'Sin permiso create.collectors' })
-  @ApiInternalServerErrorResponse({ description: 'Error interno' })
+  @ApiCreatedResponse({
+    description: 'Cobrador creado',
+    examples: {
+      'success': {
+        summary: 'Cobrador creado exitosamente',
+        value: {
+          customMessage: 'Cobrador creado correctamente',
+          collector: {
+            id: 3,
+            firstName: 'Juan',
+            lastName: 'Pérez',
+            typeDocumentIdentificationId: 1,
+            documentNumber: 1234567890,
+            birthDate: '2005-05-14',
+            genderId: 1,
+            phone: '+573001234567',
+            address: 'test etes',
+            zoneId: 2,
+            userId: 5,
+            zone: {
+              id: 2,
+              name: 'Centro',
+              code: 'CTR'
+            },
+            user: {
+              id: 5,
+              email: 'cobrador111@migestor.com',
+              name: 'Juan Pérez'
+            },
+            createdAt: '2025-09-23 14:30:35',
+            updatedAt: '2025-09-23 14:30:35'
+          }
+        }
+      }
+    }
+  })
+  @ApiBadRequestResponse({ 
+    description: 'Violación de unicidad o datos inválidos',
+    examples: {
+      'duplicate-document': {
+        summary: 'Documento ya registrado',
+        value: {
+          statusCode: 400,
+          message: 'El número de documento ya está registrado.',
+          error: 'Bad Request'
+        }
+      },
+      'duplicate-email': {
+        summary: 'Email ya registrado',
+        value: {
+          statusCode: 400,
+          message: 'El email ya está registrado en el sistema.',
+          error: 'Bad Request'
+        }
+      }
+    }
+  })
+  @ApiUnprocessableEntityResponse({ 
+    description: 'Error de validación',
+    examples: {
+      'validation-error': {
+        summary: 'Errores de validación',
+        value: {
+          statusCode: 422,
+          message: [
+            'firstName no debe estar vacío',
+            'email debe ser un email válido',
+            'documentNumber debe tener al menos 6 caracteres',
+            'birthDate debe ser una fecha válida'
+          ],
+          error: 'Unprocessable Entity'
+        }
+      }
+    }
+  })
+  @ApiUnauthorizedResponse({ 
+    description: 'No autenticado',
+    examples: {
+      'missing-token': {
+        summary: 'Token faltante',
+        value: {
+          statusCode: 401,
+          message: 'Token de acceso requerido',
+          error: 'Unauthorized'
+        }
+      },
+      'invalid-token': {
+        summary: 'Token inválido o expirado',
+        value: {
+          statusCode: 401,
+          message: 'Token de acceso inválido o expirado',
+          error: 'Unauthorized'
+        }
+      }
+    }
+  })
+  @ApiForbiddenResponse({ 
+    description: 'Sin permiso create.collectors',
+    examples: {
+      'insufficient-permissions': {
+        summary: 'Sin permisos para crear cobradores',
+        value: {
+          statusCode: 403,
+          message: 'No tienes permisos para crear cobradores',
+          error: 'Forbidden'
+        }
+      }
+    }
+  })
+  @ApiInternalServerErrorResponse({ 
+    description: 'Error interno',
+    examples: {
+      'server-error': {
+        summary: 'Error interno del servidor',
+        value: {
+          statusCode: 500,
+          message: 'Error interno del servidor al crear el cobrador',
+          error: 'Internal Server Error'
+        }
+      }
+    }
+  })
   async create(
     @Body() data: CreateCollectorDto,
   ): Promise<CollectorResponse> {
@@ -162,14 +446,156 @@ export class CollectorsController {
   @Permissions('update.collectors')
   @ApiOperation({ summary: 'Actualizar cobrador', description: 'Actualiza campos del cobrador (solo cambios detectados).' })
   @ApiParam({ name: 'id', type: Number, example: 1 })
-  @ApiBody({ type: UpdateCollectorDto })
-  @ApiOkResponse({ description: 'Actualizado', schema: { example: { message: 'Cobrador actualizado correctamente', code: 200, status: 'success', data: { collector: { id: 1 } } } } })
-  @ApiBadRequestResponse({ description: 'Sin cambios o unicidad', schema: { example: { message: 'No se detectaron cambios.', code: 400, status: 'error' } } })
-  @ApiNotFoundResponse({ description: 'No existe', schema: { example: { message: 'Cobrador no encontrado', code: 404, status: 'error' } } })
-  @ApiUnprocessableEntityResponse({ description: 'Validación fallida' })
-  @ApiUnauthorizedResponse({ description: 'No autenticado' })
-  @ApiForbiddenResponse({ description: 'Sin permiso update.collectors' })
-  @ApiInternalServerErrorResponse({ description: 'Error interno' })
+  @ApiBody({
+    type: UpdateCollectorDto,
+    description: 'Datos del cobrador a actualizar (campos opcionales)',
+    examples: {
+      'actualizar-email': {
+        summary: 'Actualizar solo email',
+        description: 'Ejemplo actualizando únicamente el email',
+        value: {
+          email: 'nuevo.email@cobradores.com'
+        }
+      },
+      'actualizar-completo': {
+        summary: 'Actualización completa',
+        description: 'Ejemplo actualizando múltiples campos',
+        value: {
+          firstName: 'Carlos Alberto',
+          lastName: 'Rodríguez Actualizado',
+          email: 'carlos.actualizado@cobradores.com',
+          phone: '+57 300 999 8888',
+          address: 'Nueva dirección 456 #78-90'
+        }
+      },
+      'cambiar-estado': {
+        summary: 'Cambiar estado',
+        description: 'Ejemplo desactivando el cobrador',
+        value: {
+          isActive: false
+        }
+      }
+    }
+  })
+  @ApiOkResponse({ 
+    description: 'Actualizado',
+    examples: {
+      'success': {
+        summary: 'Cobrador actualizado exitosamente',
+        value: {
+          customMessage: 'Cobrador actualizado correctamente',
+          collector: {
+            id: 1,
+            firstName: 'Carlos Alberto',
+            lastName: 'Rodríguez Actualizado',
+            documentNumber: '98765432',
+            email: 'carlos.actualizado@cobradores.com',
+            phone: '+57 300 999 8888',
+            birthDate: '1988-03-10',
+            isActive: true,
+            updatedAt: '2024-01-20T14:45:00.000Z'
+          }
+        }
+      }
+    }
+  })
+  @ApiBadRequestResponse({ 
+    description: 'Sin cambios o unicidad',
+    examples: {
+      'no-changes': {
+        summary: 'No se detectaron cambios',
+        value: {
+          statusCode: 400,
+          message: 'No se detectaron cambios.',
+          error: 'Bad Request'
+        }
+      },
+      'duplicate-email': {
+        summary: 'Email ya existe',
+        value: {
+          statusCode: 400,
+          message: 'El email ya está registrado por otro cobrador.',
+          error: 'Bad Request'
+        }
+      }
+    }
+  })
+  @ApiNotFoundResponse({ 
+    description: 'No existe',
+    examples: {
+      'collector-not-found': {
+        summary: 'Cobrador no encontrado',
+        value: {
+          statusCode: 404,
+          message: 'Cobrador con ID 1 no encontrado',
+          error: 'Not Found'
+        }
+      }
+    }
+  })
+  @ApiUnprocessableEntityResponse({ 
+    description: 'Validación fallida',
+    examples: {
+      'validation-error': {
+        summary: 'Errores de validación',
+        value: {
+          statusCode: 422,
+          message: [
+            'email debe ser un email válido',
+            'phone debe tener un formato válido'
+          ],
+          error: 'Unprocessable Entity'
+        }
+      }
+    }
+  })
+  @ApiUnauthorizedResponse({ 
+    description: 'No autenticado',
+    examples: {
+      'missing-token': {
+        summary: 'Token faltante',
+        value: {
+          statusCode: 401,
+          message: 'Token de acceso requerido',
+          error: 'Unauthorized'
+        }
+      },
+      'invalid-token': {
+        summary: 'Token inválido o expirado',
+        value: {
+          statusCode: 401,
+          message: 'Token de acceso inválido o expirado',
+          error: 'Unauthorized'
+        }
+      }
+    }
+  })
+  @ApiForbiddenResponse({ 
+    description: 'Sin permiso update.collectors',
+    examples: {
+      'insufficient-permissions': {
+        summary: 'Sin permisos para actualizar cobradores',
+        value: {
+          statusCode: 403,
+          message: 'No tienes permisos para actualizar cobradores',
+          error: 'Forbidden'
+        }
+      }
+    }
+  })
+  @ApiInternalServerErrorResponse({ 
+    description: 'Error interno',
+    examples: {
+      'server-error': {
+        summary: 'Error interno del servidor',
+        value: {
+          statusCode: 500,
+          message: 'Error interno del servidor al actualizar el cobrador',
+          error: 'Internal Server Error'
+        }
+      }
+    }
+  })
   async update(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateCollectorDto,

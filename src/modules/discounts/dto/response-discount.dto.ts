@@ -1,45 +1,70 @@
-import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Expose, Transform, Type } from 'class-transformer';
-import { format } from 'date-fns';
+import { ApiProperty } from '@nestjs/swagger';
+import { Expose } from 'class-transformer';
 
 export class ResponseDiscountDto {
+  @ApiProperty({
+    description: 'Identificador único del descuento',
+    example: 1,
+    type: 'number'
+  })
   @Expose()
   id: number;
 
-  @Expose()
-  description?: string;
-
-  @Expose()
-  amount?: string; // Decimal → string para transporte seguro
-
-  @Expose()
-  percentage?: number;
-
-  @Expose()
-  installmentId?: number;
-
-  @Expose()
-  moratoryId?: number;
-
- @ApiPropertyOptional({ example: '2025-08-27 17:12:21', nullable: true })
-  @Expose()
-  @Transform(({ value, obj }) => {
-    if (value) {
-      try { return format(new Date(value), 'yyyy-MM-dd HH:mm:ss'); }
-      catch { /* ignore */ }
-    }
-    if (obj?.createdAtTimestamp) {
-      try { return format(new Date(obj.createdAtTimestamp), 'yyyy-MM-dd HH:mm:ss'); }
-      catch { /* ignore */ }
-    }
-    return null;
+  @ApiProperty({
+    description: 'Monto del descuento en pesos colombianos',
+    example: 88100,
+    type: 'number'
   })
-  createdAt: string | null;
-
   @Expose()
-  createdBy?: number;
+  amount: number;
 
-  // 👇 relaciones si quieres mostrarlas (opcional)
-  // @Type(() => ResponseLoanDto)
-  // loan?: ResponseLoanDto;
+  @ApiProperty({
+    description: 'ID del tipo de descuento',
+    example: 1,
+    type: 'number'
+  })
+  @Expose()
+  discountTypeId: number;
+
+  @ApiProperty({
+    description: 'Descripción detallada del descuento',
+    example: 'Descuento por buen comportamiento de pago a cuota, para que pague',
+    type: 'string'
+  })
+  @Expose()
+  description: string;
+
+  @ApiProperty({
+    description: 'ID de la moratoria asociada',
+    example: 1,
+    type: 'number'
+  })
+  @Expose()
+  moratoryId: number;
+
+  @ApiProperty({
+    description: 'Estado activo/inactivo del descuento',
+    example: true,
+    type: 'boolean'
+  })
+  @Expose()
+  isActive: boolean;
+
+  @ApiProperty({
+    description: 'Fecha de creación del registro',
+    example: '2024-01-15T10:30:00.000Z',
+    type: 'string',
+    format: 'date-time'
+  })
+  @Expose()
+  createdAt: Date;
+
+  @ApiProperty({
+    description: 'Fecha de última actualización del registro',
+    example: '2024-01-20T14:45:00.000Z',
+    type: 'string',
+    format: 'date-time'
+  })
+  @Expose()
+  updatedAt: Date;
 }

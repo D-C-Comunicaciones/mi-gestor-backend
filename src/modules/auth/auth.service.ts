@@ -7,7 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { HttpService } from '@nestjs/axios';
 import { REDIS_CLIENT } from '@infraestructure/redis/client';
 import { REQUEST } from '@nestjs/core';
-import { Request } from 'express';
+import { Request, Response } from 'express';
 import Redis from 'ioredis';
 import { LoginDto } from './dto';
 import { PrismaService } from '@infraestructure/prisma/prisma.service';
@@ -48,7 +48,7 @@ export class AuthService {
     return user;
   }
 
-  async login(data: LoginDto, req: Request) {
+  async login(data: LoginDto, req: Request, res: Response) {
     const user = await this.validateUser(data);
     const sessionId = uuidv4();
 
@@ -99,6 +99,15 @@ export class AuthService {
       expiresIn: expiresInSeconds,
       createdAt: new Date().toISOString(),
     };
+
+    // ✅ Establece la cookie con el token
+    res.cookie('access_token', token, {
+      httpOnly: true, // Protección contra ataques XSS
+      secure: envs.environment === 'production', // Solo envía la cookie en HTTPS en producción
+      sameSite: 'strict',
+      path: '/',
+      expires: new Date(Date.now() + this.parseExpirationToSeconds(envs.expiresIn) * 1000)
+    });
 
     await this.redis.set(
       `session:${sessionId}`,
@@ -155,12 +164,14 @@ export class AuthService {
   }
 
   async logout(jtiOrToken?: string): Promise<string> {
+    this.logger.debug(`🔐 Logout llamado con: ${jtiOrToken ? jtiOrToken.substring(0, 20) + '...' : 'undefined'}`);
+    
+    jtiOrToken = jtiOrToken ?? this.extractToken();
     if (!jtiOrToken) {
       throw new UnauthorizedException('No se proporcionó token ni jti para cerrar sesión');
     }
 
     let jti: string;
-    let ttl = 3600; // TTL por defecto
 
     // ✅ Determinar si es un token JWT o un jti directo
     if (jtiOrToken.startsWith('eyJ')) {
@@ -168,39 +179,40 @@ export class AuthService {
       try {
         const decoded: any = this.jwtService.decode(jtiOrToken);
         jti = decoded?.jti;
-        const exp = decoded?.exp;
-        ttl = exp ? Math.max(exp - Math.floor(Date.now() / 1000), 60) : ttl;
+
+        this.logger.debug(`🔍 Token decodificado - JTI: ${jti}`);
 
         if (!jti) {
           throw new UnauthorizedException('Token JWT no contiene jti válido');
         }
       } catch (error) {
+        this.logger.error(`❌ Error decodificando JWT: ${error.message}`);
         throw new UnauthorizedException('Token JWT inválido');
       }
     } else {
       // Es un jti directo (UUID)
       jti = jtiOrToken;
+      this.logger.debug(`🔍 JTI directo recibido: ${jti}`);
     }
 
-    // ✅ Verificar que la sesión existe en Redis
+    // ✅ Verificar que la sesión existe en Redis y eliminarla
     const sessionKey = `session:${jti}`;
+    this.logger.debug(`🔍 Buscando sesión en Redis con key: ${sessionKey}`);
+    
     const sessionExists = await this.redis.exists(sessionKey);
+    this.logger.debug(`🔍 Sesión existe en Redis: ${sessionExists ? 'Sí' : 'No'}`);
 
     if (!sessionExists) {
-      // ✅ No lanzar error si la sesión ya no existe, simplemente informar
-      this.logger.warn(`Sesión ${jti} no encontrada en Redis - posiblemente ya expirada`);
+      // ✅ Lanzar error específico cuando no hay sesión activa
+      this.logger.warn(`⚠️ Sesión ${jti} no encontrada en Redis - no hay sesión activa`);
+      throw new UnauthorizedException('No se encontró una sesión activa para cerrar');
     } else {
       // ✅ Eliminar sesión de Redis
-      await this.redis.del(sessionKey);
-      this.logger.log(`✅ Sesión ${jti} eliminada de Redis`);
+      const deletedCount = await this.redis.del(sessionKey);
+      this.logger.log(`✅ Sesión ${jti} eliminada de Redis (count: ${deletedCount})`);
     }
-
-    // ✅ Agregar jti a blacklist para invalidar el token
-    await this.redis.set(`bl:${jti}`, 'revoked', 'EX', ttl);
-    this.logger.log(`✅ Token ${jti} agregado a blacklist por ${ttl} segundos`);
     
-    const message =  'Sesión cerrada correctamente';
-
+    const message = 'Sesión cerrada correctamente';
     return message;
   }
 

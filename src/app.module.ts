@@ -52,7 +52,7 @@ import { ReportsModule } from './modules/reports/reports.module';
     CollectionsModule,
     ReportsModule
   ],
-  controllers: [AppController],
+  /*controllers: [AppController],*/
   providers: [AppService],
 })
 
