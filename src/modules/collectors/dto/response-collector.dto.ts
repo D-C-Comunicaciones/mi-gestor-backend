@@ -1,38 +1,128 @@
-import { Expose, Transform, Type } from 'class-transformer';
-import { format } from 'date-fns';
-import { UserResponseDto } from '@modules/users/dto';
-import { ZoneResponseDto } from '@modules/zones/dto';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Expose } from 'class-transformer';
+import { ApiProperty } from '@nestjs/swagger';
 
+/**
+ * DTO para la respuesta de cobrador
+ * Contiene la información completa de un cobrador del sistema
+ * Utilizado en consultas y reportes de personal de cobranza
+ */
 export class ResponseCollectorDto {
-  @ApiProperty({ example: 1 }) @Expose() id: number;
-  @ApiProperty({ example: 'Juan' }) @Expose() firstName: string;
-  @ApiProperty({ example: 'Pérez' }) @Expose() lastName: string;
-  @ApiProperty({ example: 1 }) @Expose() typeDocumentIdentificationId: number;
-  @ApiProperty({ example: 1234567890 }) @Expose() documentNumber: number;
-
-  @ApiProperty({ example: '1990-05-14' })
+  @ApiProperty({
+    description: 'Identificador único del cobrador',
+    example: 1,
+    type: 'integer',
+    minimum: 1,
+  })
   @Expose()
-  @Transform(({ value }) => (value ? format(new Date(value), 'yyyy-MM-dd') : value), { toPlainOnly: true })
-  birthDate: Date;
+  id: number;
 
-  @ApiProperty({ example: 1 }) @Expose() genderId: number;
-  @ApiProperty({ example: '+573001234567' }) @Expose() phone: string;
-  @ApiProperty({ example: 'Calle 1 #2-34' }) @Expose() address: string;
-
-  @ApiPropertyOptional({ example: 2 }) @Expose() zoneId?: number | null;
-  @ApiPropertyOptional({ example: 5 }) @Expose() userId?: number | null;
-
-  @ApiPropertyOptional({ type: () => ZoneResponseDto }) @Expose() @Type(() => ZoneResponseDto) zone?: ZoneResponseDto | null;
-  @ApiPropertyOptional({ type: () => UserResponseDto }) @Expose() @Type(() => UserResponseDto) user?: UserResponseDto | null;
-
-  @ApiProperty({ example: '2024-01-01 10:00:00' })
+  @ApiProperty({
+    description: 'Nombres del cobrador',
+    example: 'María Elena',
+    type: 'string',
+  })
   @Expose()
-  @Transform(({ value }) => (value ? format(new Date(value), 'yyyy-MM-dd HH:mm:ss') : value), { toPlainOnly: true })
+  firstName: string;
+
+  @ApiProperty({
+    description: 'Apellidos del cobrador',
+    example: 'Rodríguez García',
+    type: 'string',
+  })
+  @Expose()
+  lastName: string;
+
+  @ApiProperty({
+    description: 'Número de documento de identidad del cobrador',
+    example: '87654321',
+    type: 'string',
+  })
+  @Expose()
+  documentNumber: string;
+
+  @ApiProperty({
+    description: 'Fecha de nacimiento del cobrador',
+    example: '1985-03-15',
+    type: 'string',
+    format: 'date',
+  })
+  @Expose()
+  birthDate: string;
+
+  @ApiProperty({
+    description: 'Número de teléfono móvil del cobrador',
+    example: '3001234567',
+    type: 'string',
+  })
+  @Expose()
+  phone: string;
+
+  @ApiProperty({
+    description: 'Dirección de residencia del cobrador',
+    example: 'Calle 45 #23-15, Barrio Centro',
+    type: 'string',
+  })
+  @Expose()
+  address: string;
+
+  @ApiProperty({
+    description: 'Correo electrónico del cobrador',
+    example: 'maria.rodriguez@empresa.com',
+    type: 'string',
+    format: 'email',
+  })
+  @Expose()
+  email: string;
+
+  @ApiProperty({
+    description: 'ID del tipo de documento de identidad',
+    example: 1,
+    type: 'integer',
+  })
+  @Expose()
+  typeDocumentIdentificationId: number;
+
+  @ApiProperty({
+    description: 'ID del género del cobrador',
+    example: 2,
+    type: 'integer',
+  })
+  @Expose()
+  genderId: number;
+
+  @ApiProperty({
+    description: 'ID de la zona asignada al cobrador',
+    example: 2,
+    type: 'integer',
+    required: false,
+  })
+  @Expose()
+  zoneId?: number;
+
+  @ApiProperty({
+    description: 'Indica si el cobrador está activo en el sistema',
+    example: true,
+    type: 'boolean',
+    default: true,
+  })
+  @Expose()
+  isActive: boolean;
+
+  @ApiProperty({
+    description: 'Fecha de creación del registro',
+    example: '2024-01-15T08:30:00.000Z',
+    type: 'string',
+    format: 'date-time',
+  })
+  @Expose()
   createdAt: Date;
 
-  @ApiProperty({ example: '2024-01-05 12:30:00' })
+  @ApiProperty({
+    description: 'Fecha de última actualización del registro',
+    example: '2024-01-20T14:45:00.000Z',
+    type: 'string',
+    format: 'date-time',
+  })
   @Expose()
-  @Transform(({ value }) => (value ? format(new Date(value), 'yyyy-MM-dd HH:mm:ss') : value), { toPlainOnly: true })
   updatedAt: Date;
 }

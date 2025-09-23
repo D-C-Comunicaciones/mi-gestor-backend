@@ -8,6 +8,21 @@ import { ChangesModule } from './modules/changes/changes.module';
 import { CustomersModule } from '@modules/customers/customers.module';
 import { LoansModule } from '@modules/loans/loans.module';
 import { InstallmentsModule } from './modules/installments/installments.module';
+import { WorkersModule } from '@infraestructure/rabbitmq/workers/loan/workers.module';
+import { DiscountsModule } from '@modules/discounts/discounts.module';
+import { ImportsModule } from './modules/imports/imports.module';
+import { TemplatesModule } from './modules/templates/templates.module';
+import { TypeDocumentIdentificationsModule } from '@modules/type-document-identifications/type-document-identifications.module';
+import { GendersModule } from './modules/genders/genders.module';
+import { ZonesModule } from './modules/zones/zones.module';
+import { LoanTypesModule } from './modules/loan-types/loan-types.module';
+import { PaymentFrequenciesModule } from './modules/payment-frequencies/payment-frequencies.module';
+import { TermsModule } from './modules/terms/terms.module';
+import { InterestRatesModule } from './modules/interest-rates/interest-rates.module';
+import { PenaltyRatesModule } from './modules/penalty-rates/penalty-rates.module';
+import { GracePeriodsModule } from './modules/grace-periods/grace-periods.module';
+import { CollectionsModule } from '@modules/collections/collections.module';
+import { ReportsModule } from './modules/reports/reports.module';
 
 @Module({
   imports: [
@@ -20,9 +35,25 @@ import { InstallmentsModule } from './modules/installments/installments.module';
     CustomersModule,
     ChangesModule,
     LoansModule,
-    InstallmentsModule
+    InstallmentsModule,
+    WorkersModule,
+    DiscountsModule,
+    ImportsModule,
+    TemplatesModule,
+    TypeDocumentIdentificationsModule,
+    GendersModule,
+    ZonesModule,
+    LoanTypesModule,
+    PaymentFrequenciesModule,
+    TermsModule,
+    InterestRatesModule,
+    PenaltyRatesModule,
+    GracePeriodsModule,
+    CollectionsModule,
+    ReportsModule
   ],
   controllers: [AppController],
   providers: [AppService],
 })
+
 export class AppModule { }

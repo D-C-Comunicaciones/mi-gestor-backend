@@ -3,3 +3,4 @@ export * from './success-response.dto';
 export * from './error-response.dto';
 export * from './status.dto';
 export * from './token.dto';
+export * from './date-range.dto';

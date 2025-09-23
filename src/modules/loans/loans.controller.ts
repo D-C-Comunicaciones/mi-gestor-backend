@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query, Res, UseGuards, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query, Res, UseGuards } from '@nestjs/common';
 import { LoansService } from './loans.service';
 import { CreateLoanDto, UpdateLoanDto } from './dto';
 import { LoanPaginationDto } from './dto/loan-pagination.dto';
@@ -13,15 +13,15 @@ import {
 } from '@nestjs/swagger';
 import { plainToInstance } from 'class-transformer';
 import { ResponseLoanDto } from './dto';
-import { LoanListResponse, LoanResponse, LoanUpdateResponse, LoanRegenerateInstallmentsResponse } from './interfaces';
-import { DecimalInterceptor } from '@common/interceptors';
+import { LoanByCustomerResponse, LoanListResponse, LoanResponse, LoanUpdateResponse, RefinanceLoanResponse } from './interfaces';
+import { ResponseLoanWithInstallmentsDto } from './dto/response-loan-by-customer.dto';
+import { RefinanceLoanDto } from './dto';
 
 @ApiTags('Loans')
 @ApiBearerAuth()
 @ApiExtraModels(ResponseLoanDto)
 @Controller('loans')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
-@UseInterceptors(DecimalInterceptor)
 export class LoansController {
   constructor(private readonly loansService: LoansService) { }
 
@@ -78,8 +78,6 @@ export class LoansController {
       };
     }
 
-    // loans ya están convertidos y formateados por el servicio, 
-    // solo falta aplicar el DTO de respuesta
     const responseLoans = plainToInstance(ResponseLoanDto, arr, {
       excludeExtraneousValues: true
     });
@@ -138,25 +136,19 @@ export class LoansController {
   @ApiBadRequestResponse({ description: 'Validación / lógica' })
   @ApiUnauthorizedResponse()
   @ApiForbiddenResponse()
-  @Post()
-  async create(@Body() dto: CreateLoanDto) {
-    const { loan, installments } = await this.loansService.create(dto);
-
-    // Los Decimal ya están convertidos a números en el servicio
+  async create(@Body() dto: CreateLoanDto): Promise<LoanResponse> {
+    const result = await this.loansService.create(dto);
     const response = plainToInstance(
       ResponseLoanDto,
-      {
-        ...loan,
-        installments,
-      },
+      result.loan,
       { excludeExtraneousValues: true },
     );
-
     return {
       customMessage: 'Préstamo creado correctamente',
-      response,
+      loan: response,
     };
   }
+
   @Patch(':id')
   @Permissions('update.loans')
   @ApiOperation({ summary: 'Actualizar préstamo', description: 'Actualiza campos cambiados.' })
@@ -189,6 +181,61 @@ export class LoansController {
     };
   }
 
+  @Post(':id/refinance')
+  @Permissions('refinance.loans')
+  @ApiOperation({ summary: 'Refinanciar préstamo', description: 'Refinancia un préstamo inactivo, creando uno nuevo.' })
+  @ApiParam({ name: 'id', type: Number, example: 1 })
+  @ApiOkResponse({
+    description: 'Préstamo refinanciado',
+    schema: {
+      example: {
+        message: 'Préstamo refinanciado exitosamente',
+        code: 200,
+        status: 'success',
+        data: {
+          oldLoan: { id: 1 },
+          newLoan: { id: 2 }
+        },
+      },
+    },
+  })
+  @ApiBadRequestResponse({ description: 'Validación / lógica' })
+  @ApiNotFoundResponse({ description: 'Préstamo a refinanciar no encontrado' })
+  @ApiUnauthorizedResponse()
+  @ApiForbiddenResponse()
+  async refinance(
+    @Param('id', ParseIntPipe) loanId: number,
+    @Body() dto: RefinanceLoanDto, // 👈 Se usa el nuevo DTO aquí
+  ): Promise<RefinanceLoanResponse> {
+    const { oldMapped, newMapped } = await this.loansService.refinance(loanId, dto);
+    const oldLoan = plainToInstance(ResponseLoanDto, oldMapped, { excludeExtraneousValues: true });
+    const newLoan = plainToInstance(ResponseLoanDto, newMapped, { excludeExtraneousValues: true });
+    return {
+      customMessage: 'Préstamo refinanciado exitosamente',
+      oldLoan,
+      newLoan,
+    };
+  }
+
+  @Get('customer/:id')
+  @Permissions('view.loans')
+  @ApiOperation({ summary: 'Obtener préstamos por cliente', description: 'Retorna lista de préstamos de un cliente, con la última cuota.' })
+  @ApiParam({ name: 'id', type: Number, example: 1 })
+  @ApiOkResponse({
+    description: 'Préstamos obtenidos correctamente',
+    type: ResponseLoanWithInstallmentsDto, // 👈 Aquí
+  })
+  @ApiNotFoundResponse({ description: 'Cliente no encontrado' })
+  @ApiUnauthorizedResponse()
+  @ApiForbiddenResponse()
+  async getLoansByCustomer(@Param('id', ParseIntPipe) id: number): Promise<LoanByCustomerResponse> {
+    const rawLoansByCustomer = await this.loansService.getLoansByCustomer(id);
+    const loanByCustomer = plainToInstance(ResponseLoanWithInstallmentsDto, rawLoansByCustomer, { excludeExtraneousValues: true });
+    return {
+      customMessage: 'Préstamos obtenidos correctamente',
+      loanByCustomer,
+    };
+  }
   @Delete(':id')
   @Permissions('delete.loans')
   @ApiOperation({ summary: 'Inactivar préstamo', description: 'Soft delete (isActive=false).' })
@@ -204,46 +251,12 @@ export class LoansController {
       },
     },
   })
-  @ApiNotFoundResponse()
-  @ApiUnauthorizedResponse()
-  @ApiForbiddenResponse()
-  async remove(@Param('id', ParseIntPipe) id: number): Promise<LoanResponse> {
-    const raw = await this.loansService.softDelete(id);
-    const loan = plainToInstance(ResponseLoanDto, raw, { excludeExtraneousValues: true });
+  async delete(@Param('id', ParseIntPipe) id: number): Promise<LoanResponse> {
+    const deletedLoan = await this.loansService.softDelete(id);
+    const loan = plainToInstance(ResponseLoanDto, deletedLoan, { excludeExtraneousValues: true });
     return {
       customMessage: 'Préstamo inactivado correctamente',
       loan,
-    };
-  }
-
-  @Post(':id/regenerate-installments')
-  @Permissions('update.loans')
-  @ApiOperation({ summary: 'Regenerar cuotas', description: 'Elimina y recrea todas las cuotas.' })
-  @ApiParam({ name: 'id', type: Number, example: 1 })
-  @ApiOkResponse({
-    description: 'Cuotas regeneradas',
-    schema: {
-      example: {
-        message: 'Cuotas regeneradas correctamente',
-        code: 200,
-        status: 'success',
-        data: { generated: 12 },
-      },
-    },
-  })
-  @ApiBadRequestResponse({ description: 'Validación / frecuencia' })
-  @ApiNotFoundResponse()
-  @ApiUnauthorizedResponse()
-  @ApiForbiddenResponse()
-  async regenerateInstallments(
-    @Param('id', ParseIntPipe) id: number,
-    @Body('count', ParseIntPipe) count: number,
-    @Body('paymentAmount') paymentAmount: number,
-  ): Promise<LoanRegenerateInstallmentsResponse> {
-    const result = await this.loansService.regenerateInstallments(id, count, paymentAmount);
-    return {
-      customMessage: 'Cuotas regeneradas correctamente',
-      ...result, // { generated }
     };
   }
 }
