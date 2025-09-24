@@ -32,7 +32,12 @@ services:
     restart: unless-stopped
     networks:
       - mi-gestor-network
-
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.migestor.rule=Host(`api.dcmigestor.co`)"
+      - "traefik.http.routers.migestor.entrypoints=websecure"
+      - "traefik.http.routers.migestor.tls.certresolver=myresolver"
+      - "traefik.http.services.migestor.loadbalancer.server.port=3000"
 networks:
   mi-gestor-network:
     external: true
