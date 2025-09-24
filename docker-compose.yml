@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   api:
     build: .
@@ -7,8 +5,8 @@ services:
       - .env
     environment:
       - NODE_ENV=production
-      - REDIS_URL=redis://:${APP_REDIS_PASSWORD}@redis:6379/0
-      - RABBITMQ_URL=amqp://${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}@rabbitmq:5672
+      - REDIS_URL=${REDIS_URL}
+      - RABBITMQ_URL=${RABBITMQ_URL}
     command: sh -c "npx prisma migrate deploy && node dist/main"
     restart: unless-stopped
     depends_on:
@@ -16,6 +14,8 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+    networks:
+      - dokploy-network
 
   redis:
     image: redis:7-alpine
@@ -32,6 +32,8 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+    networks:
+      - dokploy-network
 
   rabbitmq:
     image: rabbitmq:3.13-management
@@ -50,7 +52,13 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - dokploy-network
 
 volumes:
   redis_data:
   rabbitmq_data:
+
+networks:
+  dokploy-network:
+    external: true
