@@ -9,56 +9,9 @@ services:
       - RABBITMQ_URL=${RABBITMQ_URL}
     command: sh -c "npx prisma migrate deploy && node dist/main"
     restart: unless-stopped
-    depends_on:
-      redis:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
     networks:
-      - dokploy-network
-
-  redis:
-    image: redis:7-alpine
-    command: ["redis-server", "--requirepass", "${APP_REDIS_PASSWORD}", "--appendonly", "yes"]
-    environment:
-      - APP_REDIS_PASSWORD=${APP_REDIS_PASSWORD}
-    volumes:
-      - redis_data:/data
-    restart: unless-stopped
-    ports:
-      - "6379:6379"   # 🔥 Redis expuesto para conexiones externas
-    healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${APP_REDIS_PASSWORD}", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-    networks:
-      - dokploy-network
-
-  rabbitmq:
-    image: rabbitmq:3.13-management
-    hostname: rabbitmq
-    environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
-    volumes:
-      - rabbitmq_data:/var/lib/rabbitmq
-    restart: unless-stopped
-    ports:
-      - "5672:5672"   # 🔥 Puerto AMQP (conexiones externas)
-      - "15672:15672" # 🔥 Consola web de RabbitMQ
-    healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - dokploy-network
-
-volumes:
-  redis_data:
-  rabbitmq_data:
+      - mi-gestor-net
 
 networks:
-  dokploy-network:
+  mi-gestor-net:
     external: true
