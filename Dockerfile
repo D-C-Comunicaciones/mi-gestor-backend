@@ -1,6 +1,6 @@
 # Etapa 1: dependencias (con dev para poder compilar)
-#FROM node:20-alpine AS deps
-FROM ghcr.io/nodejs/node:20-alpine AS deps
+FROM node:20-alpine AS deps
+
 WORKDIR /app
 
 # Instalar dependencias necesarias para compilar canvas
@@ -19,16 +19,16 @@ RUN npm ci
 RUN npx prisma generate
 
 # Etapa 2: build
-#FROM node:20-alpine AS build
-FROM ghcr.io/nodejs/node:20-alpine AS build
+FROM node:20-alpine AS build
+
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
 
 # Etapa 3: dependencias de producción (sin dev)
-#FROM node:20-alpine AS prod-deps
-FROM ghcr.io/nodejs/node:20-alpine AS prod-deps
+FROM node:20-alpine AS prod-deps
+
 WORKDIR /app
 
 # Instalar dependencias necesarias para compilar canvas en prod
@@ -47,8 +47,8 @@ COPY prisma ./prisma
 RUN npx prisma generate
 
 # Etapa final: runtime
-#FROM node:20-alpine AS runner
-FROM ghcr.io/nodejs/node:20-alpine AS runner
+FROM node:20-alpine AS runner
+
 WORKDIR /app
 ENV NODE_ENV=production
 
