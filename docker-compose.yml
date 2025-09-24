@@ -1,3 +1,5 @@
+version: "3.9"
+
 services:
   api:
     build: .
@@ -7,7 +9,26 @@ services:
       - NODE_ENV=production
       - REDIS_URL=${REDIS_URL}
       - RABBITMQ_URL=${RABBITMQ_URL}
-    command: sh -c "npx prisma migrate deploy && node dist/main"
+    command: >
+      sh -c "
+      echo 'Esperando a Redis...';
+      until nc -z -v -w5 migestor-redis-4sorwd-2d219a-206-189-65-31.traefik.me 6379; do
+        echo 'Redis no listo, esperando 2s...';
+        sleep 2;
+      done;
+      echo 'Esperando a RabbitMQ...';
+      until nc -z -v -w5 migestor-rabbitmq-3ca385-206-189-65-31.traefik.me 5672; do
+        echo 'RabbitMQ no listo, esperando 2s...';
+        sleep 2;
+      done;
+      echo 'Esperando a Postgres...';
+      until nc -z -v -w5 db-mi-gestor-do-user-16535172-0.e.db.ondigitalocean.com 25060; do
+        echo 'Postgres no listo, esperando 2s...';
+        sleep 2;
+      done;
+      echo '✅ Todos los servicios listos. Ejecutando API...';
+      npx prisma migrate deploy && node dist/main
+      "
     restart: unless-stopped
     networks:
       - mi-gestor-net
