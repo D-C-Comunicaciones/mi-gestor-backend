@@ -1,43 +1,29 @@
 services:
   api:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     env_file:
       - .env
     environment:
       - NODE_ENV=production
-      - APP_REDIS_HOST=${APP_REDIS_HOST}
-      - APP_REDIS_PORT=${APP_REDIS_PORT}
-      - RABBITMQ_HOST=${RABBITMQ_HOST}
-      - RABBITMQ_PORT=${RABBITMQ_PORT}
     command: >
-      sh -c "
-      echo 'Esperando a Redis...';
-      until nc -z -v -w5 ${APP_REDIS_HOST} ${APP_REDIS_PORT}; do
-        echo 'Redis no listo, esperando 2s...';
-        sleep 2;
-      done;
-      echo 'Esperando a RabbitMQ...';
-      until nc -z -v -w5 ${RABBITMQ_HOST} ${RABBITMQ_PORT}; do
-        echo 'RabbitMQ no listo, esperando 2s...';
-        sleep 2;
-      done;
-      echo 'Esperando a Postgres...';
-      until nc -z -v -w5 db-mi-gestor-do-user-16535172-0.e.db.ondigitalocean.com 25060; do
-        echo 'Postgres no listo, esperando 2s...';
-        sleep 2;
-      done;
-      echo '✅ Todos los servicios listos. Ejecutando API...';
-      npx prisma migrate deploy && node dist/main
-      "
+      sh -c "npx prisma migrate deploy && npx prisma db seed && node dist/main"
     restart: unless-stopped
     networks:
       - mi-gestor-network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.migestor.rule=Host(`api.dcmigestor.co`)"
-      - "traefik.http.routers.migestor.entrypoints=websecure"
-      - "traefik.http.routers.migestor.tls.certresolver=myresolver"
-      - "traefik.http.services.migestor.loadbalancer.server.port=3000"
+      - "traefik.http.routers.migestor-api.rule=Host(`rest.dcmigestor.co`)"
+      - "traefik.http.routers.migestor-api.entrypoints=websecure"
+      - "traefik.http.routers.migestor-api.tls.certresolver=myresolver"
+      - "traefik.http.services.migestor-api.loadbalancer.server.port=3000"
+
 networks:
   mi-gestor-network:
     external: true
