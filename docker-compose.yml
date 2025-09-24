@@ -5,17 +5,19 @@ services:
       - .env
     environment:
       - NODE_ENV=production
-      - REDIS_URL=${REDIS_URL}
-      - RABBITMQ_URL=${RABBITMQ_URL}
+      - APP_REDIS_HOST=${APP_REDIS_HOST}
+      - APP_REDIS_PORT=${APP_REDIS_PORT}
+      - RABBITMQ_HOST=${RABBITMQ_HOST}
+      - RABBITMQ_PORT=${RABBITMQ_PORT}
     command: >
       sh -c "
       echo 'Esperando a Redis...';
-      until nc -z -v -w5 migestor-redis-4sorwd-2d219a-206-189-65-31.traefik.me 6379; do
+      until nc -z -v -w5 ${APP_REDIS_HOST} ${APP_REDIS_PORT}; do
         echo 'Redis no listo, esperando 2s...';
         sleep 2;
       done;
       echo 'Esperando a RabbitMQ...';
-      until nc -z -v -w5 migestor-rabbitmq-3ca385-206-189-65-31.traefik.me 5672; do
+      until nc -z -v -w5 ${RABBITMQ_HOST} ${RABBITMQ_PORT}; do
         echo 'RabbitMQ no listo, esperando 2s...';
         sleep 2;
       done;
