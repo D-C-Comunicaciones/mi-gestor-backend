@@ -1,39 +1,55 @@
+version: "3.9"
+
 services:
   api:
     build: .
-    container_name: mi-gestor-api
     env_file:
       - .env
     environment:
       - NODE_ENV=production
-      - REDIS_URL=redis://redis:6379/0
+      - REDIS_URL=redis://:${APP_REDIS_PASSWORD}@redis:6379/0
+      - RABBITMQ_URL=amqp://${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}@rabbitmq:5672
     command: sh -c "npx prisma migrate deploy && node dist/main"
     restart: unless-stopped
     depends_on:
-      - redis
-      - rabbitmq
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
 
   redis:
     image: redis:7-alpine
-    container_name: mi-gestor-redis
     command: ["redis-server", "--requirepass", "${APP_REDIS_PASSWORD}", "--appendonly", "yes"]
     environment:
       - APP_REDIS_PASSWORD=${APP_REDIS_PASSWORD}
-    # 👇 Ya no expones puertos hacia afuera, se conecta la api por red interna
     volumes:
       - redis_data:/data
     restart: unless-stopped
+    ports:
+      - "6379:6379"   # 🔥 Redis expuesto para conexiones externas
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${APP_REDIS_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
   rabbitmq:
     image: rabbitmq:3.13-management
-    container_name: mi-gestor-rabbitmq
     hostname: rabbitmq
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
-    # 👇 Igual, no necesitas abrir 5672/15672 si solo la api accede
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
+    restart: unless-stopped
+    ports:
+      - "5672:5672"   # 🔥 Puerto AMQP (conexiones externas)
+      - "15672:15672" # 🔥 Consola web de RabbitMQ
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   redis_data:
