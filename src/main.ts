@@ -56,10 +56,14 @@ async function bootstrap() {
         options: {
           explorer: true,
         },
-      }
-      )
+      })
     );
   }
+
+  // Servir TODO lo que esté en /public
+  app.useStaticAssets(join(process.cwd(), 'public'), {
+    prefix: '/', // Acceso: http://localhost:3000/logos/... o /documents/...
+  });
 
   const logger = new Logger(envs.appName);
 

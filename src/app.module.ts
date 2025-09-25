@@ -4,25 +4,28 @@ import { AppService } from './app.service';
 import { ClsModule } from 'nestjs-cls';
 import { CollectorsModule } from '@modules/collectors/collectors.module';
 import { AuthModule } from '@modules/auth/auth.module';
-import { ChangesModule } from './modules/changes/changes.module';
+import { ChangesModule } from '@modules/changes/changes.module';
 import { CustomersModule } from '@modules/customers/customers.module';
 import { LoansModule } from '@modules/loans/loans.module';
-import { InstallmentsModule } from './modules/installments/installments.module';
+import { InstallmentsModule } from '@modules/installments/installments.module';
 import { WorkersModule } from '@infraestructure/rabbitmq/workers/loan/workers.module';
 import { DiscountsModule } from '@modules/discounts/discounts.module';
-import { ImportsModule } from './modules/imports/imports.module';
-import { TemplatesModule } from './modules/templates/templates.module';
+import { ImportsModule } from '@modules/imports/imports.module';
+import { TemplatesModule } from '@modules/templates/templates.module';
 import { TypeDocumentIdentificationsModule } from '@modules/type-document-identifications/type-document-identifications.module';
-import { GendersModule } from './modules/genders/genders.module';
-import { ZonesModule } from './modules/zones/zones.module';
-import { LoanTypesModule } from './modules/loan-types/loan-types.module';
-import { PaymentFrequenciesModule } from './modules/payment-frequencies/payment-frequencies.module';
-import { TermsModule } from './modules/terms/terms.module';
-import { InterestRatesModule } from './modules/interest-rates/interest-rates.module';
-import { PenaltyRatesModule } from './modules/penalty-rates/penalty-rates.module';
-import { GracePeriodsModule } from './modules/grace-periods/grace-periods.module';
+import { GendersModule } from '@modules/genders/genders.module';
+import { ZonesModule } from '@modules/zones/zones.module';
+import { LoanTypesModule } from '@modules/loan-types/loan-types.module';
+import { PaymentFrequenciesModule } from '@modules/payment-frequencies/payment-frequencies.module';
+import { TermsModule } from '@modules/terms/terms.module';
+import { InterestRatesModule } from '@modules/interest-rates/interest-rates.module';
+import { PenaltyRatesModule } from '@modules/penalty-rates/penalty-rates.module';
+import { GracePeriodsModule } from '@modules/grace-periods/grace-periods.module';
 import { CollectionsModule } from '@modules/collections/collections.module';
-import { ReportsModule } from './modules/reports/reports.module';
+import { ReportsModule } from '@modules/reports/reports.module';
+import { ConfigurationsModule } from '@modules/configurations/configurations.module';
+import { CompaniesModule } from '@modules/companies/companies.module';
+import { AmortizationsModule } from '@modules/amortizations/amortizations.module';
 
 @Module({
   imports: [
@@ -50,7 +53,10 @@ import { ReportsModule } from './modules/reports/reports.module';
     PenaltyRatesModule,
     GracePeriodsModule,
     CollectionsModule,
-    ReportsModule
+    ReportsModule,
+    ConfigurationsModule,
+    CompaniesModule,
+    AmortizationsModule
   ],
   controllers: [AppController],
   providers: [AppService],

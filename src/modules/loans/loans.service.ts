@@ -291,7 +291,9 @@ export class LoansService {
     const newMapped = this._mapLoan(this.convertLoanToPlain(newLoan), newLoanChanges);
 
     return { oldMapped, newMapped };
-  }  // ---------- FIND ALL ----------
+  }  
+  
+  // ---------- FIND ALL ----------
   async findAll(p: LoanPaginationDto) {
     const page = p.page ?? 1;
     const limit = p.limit ?? 10;
@@ -454,134 +456,134 @@ export class LoansService {
     return mappedLoan;
   }
 
-  // ---------- UPDATE ----------
-  async update(id: number, dto: UpdateLoanDto) {
-    const existing = await this.prisma.loan.findUnique({
-      where: { id },
-      include: {
-        interestRate: true,
-        term: true,
-        paymentFrequency: true,
-        loanType: true,
-        loanStatus: true,
-      }
-    });
+  // // ---------- UPDATE ----------
+  // async update(id: number, dto: UpdateLoanDto) {
+  //   const existing = await this.prisma.loan.findUnique({
+  //     where: { id },
+  //     include: {
+  //       interestRate: true,
+  //       term: true,
+  //       paymentFrequency: true,
+  //       loanType: true,
+  //       loanStatus: true,
+  //     }
+  //   });
 
-    if (!existing) throw new NotFoundException('Préstamo no encontrado');
+  //   if (!existing) throw new NotFoundException('Préstamo no encontrado');
 
-    const detected = this.detectChanges(existing, dto);
-    if (!Object.keys(detected).length) throw new BadRequestException('No se detectaron cambios.');
+  //   const detected = this.detectChanges(existing, dto);
+  //   if (!Object.keys(detected).length) throw new BadRequestException('No se detectaron cambios.');
 
-    const data: Prisma.LoanUpdateInput = {};
-    const changes: any = [];
+  //   const data: Prisma.LoanUpdateInput = {};
+  //   const changes: any = [];
 
-    // Campos escalares
-    if (detected.remainingBalance !== undefined) {
-      data.remainingBalance = new Prisma.Decimal(detected.remainingBalance);
-      changes.push({
-        field: 'remainingBalance',
-        old: existing.remainingBalance?.toNumber?.(),
-        new: detected.remainingBalance
-      });
-    }
+  //   // Campos escalares
+  //   if (detected.remainingBalance !== undefined) {
+  //     data.remainingBalance = new Prisma.Decimal(detected.remainingBalance);
+  //     changes.push({
+  //       field: 'remainingBalance',
+  //       old: existing.remainingBalance?.toNumber?.(),
+  //       new: detected.remainingBalance
+  //     });
+  //   }
 
-    if (detected.nextDueDate !== undefined) {
-      data.nextDueDate = detected.nextDueDate === null ?
-        null : new Date(detected.nextDueDate);
-      changes.push({
-        field: 'nextDueDate',
-        old: existing.nextDueDate,
-        new: detected.nextDueDate
-      });
-    }
+  //   if (detected.nextDueDate !== undefined) {
+  //     data.nextDueDate = detected.nextDueDate === null ?
+  //       null : new Date(detected.nextDueDate);
+  //     changes.push({
+  //       field: 'nextDueDate',
+  //       old: existing.nextDueDate,
+  //       new: detected.nextDueDate
+  //     });
+  //   }
 
-    if (detected.isActive !== undefined) {
-      data.isActive = detected.isActive;
-      changes.push({
-        field: 'isActive',
-        old: existing.isActive,
-        new: detected.isActive
-      });
-    }
+  //   if (detected.isActive !== undefined) {
+  //     data.isActive = detected.isActive;
+  //     changes.push({
+  //       field: 'isActive',
+  //       old: existing.isActive,
+  //       new: detected.isActive
+  //     });
+  //   }
 
-    // Relaciones
-    if (detected.loanStatusId !== undefined) {
-      data.loanStatus = { connect: { id: detected.loanStatusId } };
-      changes.push({
-        field: 'loanStatusId',
-        old: existing.loanStatusId,
-        new: detected.loanStatusId
-      });
-    }
+  //   // Relaciones
+  //   if (detected.loanStatusId !== undefined) {
+  //     data.loanStatus = { connect: { id: detected.loanStatusId } };
+  //     changes.push({
+  //       field: 'loanStatusId',
+  //       old: existing.loanStatusId,
+  //       new: detected.loanStatusId
+  //     });
+  //   }
 
-    if (detected.paymentFrequencyId !== undefined) {
-      data.paymentFrequency = { connect: { id: detected.paymentFrequencyId } };
-      changes.push({
-        field: 'paymentFrequencyId',
-        old: existing.paymentFrequencyId,
-        new: detected.paymentFrequencyId
-      });
-    }
+  //   if (detected.paymentFrequencyId !== undefined) {
+  //     data.paymentFrequency = { connect: { id: detected.paymentFrequencyId } };
+  //     changes.push({
+  //       field: 'paymentFrequencyId',
+  //       old: existing.paymentFrequencyId,
+  //       new: detected.paymentFrequencyId
+  //     });
+  //   }
 
-    if (detected.loanTypeId !== undefined) {
-      data.loanType = { connect: { id: detected.loanTypeId } };
-      changes.push({
-        field: 'loanTypeId',
-        old: existing.loanTypeId,
-        new: detected.loanTypeId
-      });
-    }
+  //   if (detected.loanTypeId !== undefined) {
+  //     data.loanType = { connect: { id: detected.loanTypeId } };
+  //     changes.push({
+  //       field: 'loanTypeId',
+  //       old: existing.loanTypeId,
+  //       new: detected.loanTypeId
+  //     });
+  //   }
 
-    if (detected.interestRateId !== undefined) {
-      data.interestRate = { connect: { id: detected.interestRateId } };
-      changes.push({
-        field: 'interestRateId',
-        old: existing.interestRateId,
-        new: detected.interestRateId
-      });
-    }
+  //   if (detected.interestRateId !== undefined) {
+  //     data.interestRate = { connect: { id: detected.interestRateId } };
+  //     changes.push({
+  //       field: 'interestRateId',
+  //       old: existing.interestRateId,
+  //       new: detected.interestRateId
+  //     });
+  //   }
 
-    if (detected.termId !== undefined) {
-      data.term = { connect: { id: detected.termId } };
-      changes.push({
-        field: 'termId',
-        old: existing.termId,
-        new: detected.termId
-      });
-    }
+  //   if (detected.termId !== undefined) {
+  //     data.term = { connect: { id: detected.termId } };
+  //     changes.push({
+  //       field: 'termId',
+  //       old: existing.termId,
+  //       new: detected.termId
+  //     });
+  //   }
 
-    const updatedCore = await this.prisma.loan.update({
-      where: { id },
-      data,
-      include: {
-        interestRate: true,
-        term: true,
-        paymentFrequency: true,
-        loanType: true,
-        loanStatus: true,
-      }
-    });
+  //   const updatedCore = await this.prisma.loan.update({
+  //     where: { id },
+  //     data,
+  //     include: {
+  //       interestRate: true,
+  //       term: true,
+  //       paymentFrequency: true,
+  //       loanType: true,
+  //       loanStatus: true,
+  //     }
+  //   });
 
-    const updatedWithTimestamps = await this.appendTimestamps(updatedCore);
-    const updated = this.convertLoanToPlain(updatedWithTimestamps);
+  //   const updatedWithTimestamps = await this.appendTimestamps(updatedCore);
+  //   const updated = this.convertLoanToPlain(updatedWithTimestamps);
 
-    return { updated, changes };
-  }
+  //   return { updated, changes };
+  // }
 
-  async getLoansByCustomer(customerId: number) {
+  async getLoansByCustomer(documentNumber: number) {
     // 1️⃣ Verificar que el cliente existe
     const customer = await this.prisma.customer.findUnique({
-      where: { id: customerId },
+      where: { documentNumber: documentNumber },
       select: { id: true, firstName: true, lastName: true },
     });
 
     if (!customer) {
-      throw new NotFoundException(`Customer with id ${customerId} not found`);
+      throw new NotFoundException(`Cliente con Numero de identificacion: ${documentNumber} no encontrado`);
     }
 
     // 2️⃣ Obtener préstamos con SOLO la cuota más reciente
     const loans = await this.prisma.loan.findMany({
-      where: { customerId, isActive: true },
+      where: { customerId: customer.id, isActive: true },
       include: {
         interestRate: true,
         penaltyRate: true,

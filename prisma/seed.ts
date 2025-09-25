@@ -127,6 +127,47 @@ async function main() {
   });
 
   // --------------------------
+  // Seed Currencies
+  // --------------------------
+  await prisma.currency.createMany({
+    data: [
+      { code: 'COP', name: 'Peso colombiano', symbol: '$' },
+      { code: 'USD', name: 'Dólar estadounidense', symbol: 'US$' },
+      { code: 'EUR', name: 'Euro', symbol: '€' },
+      { code: 'GBP', name: 'Libra esterlina', symbol: '£' },
+      { code: 'JPY', name: 'Yen japonés', symbol: '¥' },
+      { code: 'CAD', name: 'Dólar canadiense', symbol: 'C$' },
+      { code: 'AUD', name: 'Dólar australiano', symbol: 'A$' },
+      { code: 'CHF', name: 'Franco suizo', symbol: 'CHF' },
+      { code: 'CNY', name: 'Yuan chino', symbol: '¥' },
+      { code: 'MXN', name: 'Peso mexicano', symbol: 'MX$' },
+    ],
+  });
+
+  // --------------------------
+  // Seed Timezones
+  // --------------------------
+  await prisma.timezone.createMany({
+    data: [
+      { name: 'America/Bogota', offset: '-05:00' },
+      { name: 'America/New_York', offset: '-05:00' },
+      { name: 'America/Los_Angeles', offset: '-08:00' },
+      { name: 'America/Mexico_City', offset: '-06:00' },
+      { name: 'America/Argentina/Buenos_Aires', offset: '-03:00' },
+      { name: 'America/Sao_Paulo', offset: '-03:00' },
+      { name: 'Europe/London', offset: '+00:00' },
+      { name: 'Europe/Paris', offset: '+01:00' },
+      { name: 'Europe/Berlin', offset: '+01:00' },
+      { name: 'Europe/Madrid', offset: '+01:00' },
+      { name: 'Asia/Tokyo', offset: '+09:00' },
+      { name: 'Asia/Shanghai', offset: '+08:00' },
+      { name: 'Asia/Kolkata', offset: '+05:30' },
+      { name: 'Australia/Sydney', offset: '+10:00' },
+      { name: 'Pacific/Auckland', offset: '+12:00' },
+    ],
+  });
+
+  // --------------------------
   // 2️⃣ Seed Roles y Permisos
   // --------------------------
   await prisma.role.createMany({

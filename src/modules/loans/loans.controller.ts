@@ -155,7 +155,7 @@ export class LoansController {
     const arr = Array.isArray(loans) ? loans : [loans];
 
     if (arr.length === 0) {
-      res.status(404);
+      res.status(200);
       return {
         customMessage: 'No existen registros',
         loans: [],
@@ -511,150 +511,150 @@ export class LoansController {
     };
   }
 
-  @Patch(':id')
-  @Permissions('update.loans')
-  @ApiOperation({ summary: 'Actualizar préstamo', description: 'Actualiza campos cambiados.' })
-  @ApiParam({ name: 'id', type: Number, example: 1 })
-  @ApiBody({
-    type: UpdateLoanDto,
-    description: 'Datos del préstamo a actualizar (campos opcionales)',
-    examples: {
-      'actualizar-tasa': {
-        summary: 'Actualizar solo tasa de interés',
-        description: 'Ejemplo actualizando únicamente la tasa',
-        value: {
-          interestRate: 2.8
-        }
-      },
-      'actualizar-completo': {
-        summary: 'Actualización completa',
-        description: 'Ejemplo actualizando múltiples campos',
-        value: {
-          interestRate: 3.2,
-          description: 'Préstamo renegociado por situación económica del cliente',
-          status: 'renegotiated'
-        }
-      }
-    }
-  })
-  @ApiOkResponse({
-    description: 'Préstamo actualizado',
-    examples: {
-      'success': {
-        summary: 'Préstamo actualizado exitosamente',
-        value: {
-          customMessage: 'Préstamo actualizado correctamente',
-          loan: {
-            id: 1,
-            amount: 1000000,
-            interestRate: 2.8,
-            termId: 12,
-            customerId: 1,
-            status: 'active',
-            remainingBalance: 800000,
-            totalInterest: 168000,
-            updatedAt: '2024-01-20T14:45:00.000Z'
-          },
-          changes: [
-            'interestRate: 2.5 → 2.8'
-          ]
-        }
-      }
-    }
-  })
-  @ApiBadRequestResponse({ 
-    description: 'Sin cambios',
-    examples: {
-      'no-changes': {
-        summary: 'No se detectaron cambios',
-        value: {
-          statusCode: 400,
-          message: 'No se detectaron cambios.',
-          error: 'Bad Request'
-        }
-      }
-    }
-  })
-  @ApiNotFoundResponse({ 
-    description: 'Préstamo no encontrado',
-    examples: {
-      'loan-not-found': {
-        summary: 'Préstamo no encontrado',
-        value: {
-          statusCode: 404,
-          message: 'Préstamo con ID 1 no encontrado',
-          error: 'Not Found'
-        }
-      }
-    }
-  })
-  @ApiUnprocessableEntityResponse({
-    description: 'Errores de validación',
-    examples: {
-      'validation-error': {
-        summary: 'Errores de validación',
-        value: {
-          statusCode: 422,
-          message: [
-            'interestRate debe estar entre 1 y 50',
-            'status debe ser un valor válido'
-          ],
-          error: 'Unprocessable Entity'
-        }
-      }
-    }
-  })
-  @ApiUnauthorizedResponse({
-    description: 'No autenticado',
-    examples: {
-      'missing-token': {
-        summary: 'Token faltante',
-        value: {
-          statusCode: 401,
-          message: 'Token de acceso requerido',
-          error: 'Unauthorized'
-        }
-      }
-    }
-  })
-  @ApiForbiddenResponse({
-    description: 'Sin permiso update.loans',
-    examples: {
-      'insufficient-permissions': {
-        summary: 'Sin permisos para actualizar préstamos',
-        value: {
-          statusCode: 403,
-          message: 'No tienes permisos para actualizar préstamos',
-          error: 'Forbidden'
-        }
-      }
-    }
-  })
-  @ApiInternalServerErrorResponse({
-    description: 'Error interno del servidor',
-    examples: {
-      'server-error': {
-        summary: 'Error interno del servidor',
-        value: {
-          statusCode: 500,
-          message: 'Error interno del servidor al actualizar el préstamo',
-          error: 'Internal Server Error'
-        }
-      }
-    }
-  })
-  async update(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() dto: UpdateLoanDto,
-  ): Promise<LoanUpdateResponse> {
-    const { updated, changes } = await this.loansService.update(id, dto);
-    const loan = plainToInstance(ResponseLoanDto, updated, { excludeExtraneousValues: true });
-    return {
-      customMessage: 'Préstamo actualizado correctamente',
-      loan,
-      changes,
-    };
-  }
+  // @Patch(':id')
+  // @Permissions('update.loans')
+  // @ApiOperation({ summary: 'Actualizar préstamo', description: 'Actualiza campos cambiados.' })
+  // @ApiParam({ name: 'id', type: Number, example: 1 })
+  // @ApiBody({
+  //   type: UpdateLoanDto,
+  //   description: 'Datos del préstamo a actualizar (campos opcionales)',
+  //   examples: {
+  //     'actualizar-tasa': {
+  //       summary: 'Actualizar solo tasa de interés',
+  //       description: 'Ejemplo actualizando únicamente la tasa',
+  //       value: {
+  //         interestRate: 2.8
+  //       }
+  //     },
+  //     'actualizar-completo': {
+  //       summary: 'Actualización completa',
+  //       description: 'Ejemplo actualizando múltiples campos',
+  //       value: {
+  //         interestRate: 3.2,
+  //         description: 'Préstamo renegociado por situación económica del cliente',
+  //         status: 'renegotiated'
+  //       }
+  //     }
+  //   }
+  // })
+  // @ApiOkResponse({
+  //   description: 'Préstamo actualizado',
+  //   examples: {
+  //     'success': {
+  //       summary: 'Préstamo actualizado exitosamente',
+  //       value: {
+  //         customMessage: 'Préstamo actualizado correctamente',
+  //         loan: {
+  //           id: 1,
+  //           amount: 1000000,
+  //           interestRate: 2.8,
+  //           termId: 12,
+  //           customerId: 1,
+  //           status: 'active',
+  //           remainingBalance: 800000,
+  //           totalInterest: 168000,
+  //           updatedAt: '2024-01-20T14:45:00.000Z'
+  //         },
+  //         changes: [
+  //           'interestRate: 2.5 → 2.8'
+  //         ]
+  //       }
+  //     }
+  //   }
+  // })
+  // @ApiBadRequestResponse({ 
+  //   description: 'Sin cambios',
+  //   examples: {
+  //     'no-changes': {
+  //       summary: 'No se detectaron cambios',
+  //       value: {
+  //         statusCode: 400,
+  //         message: 'No se detectaron cambios.',
+  //         error: 'Bad Request'
+  //       }
+  //     }
+  //   }
+  // })
+  // @ApiNotFoundResponse({ 
+  //   description: 'Préstamo no encontrado',
+  //   examples: {
+  //     'loan-not-found': {
+  //       summary: 'Préstamo no encontrado',
+  //       value: {
+  //         statusCode: 404,
+  //         message: 'Préstamo con ID 1 no encontrado',
+  //         error: 'Not Found'
+  //       }
+  //     }
+  //   }
+  // })
+  // @ApiUnprocessableEntityResponse({
+  //   description: 'Errores de validación',
+  //   examples: {
+  //     'validation-error': {
+  //       summary: 'Errores de validación',
+  //       value: {
+  //         statusCode: 422,
+  //         message: [
+  //           'interestRate debe estar entre 1 y 50',
+  //           'status debe ser un valor válido'
+  //         ],
+  //         error: 'Unprocessable Entity'
+  //       }
+  //     }
+  //   }
+  // })
+  // @ApiUnauthorizedResponse({
+  //   description: 'No autenticado',
+  //   examples: {
+  //     'missing-token': {
+  //       summary: 'Token faltante',
+  //       value: {
+  //         statusCode: 401,
+  //         message: 'Token de acceso requerido',
+  //         error: 'Unauthorized'
+  //       }
+  //     }
+  //   }
+  // })
+  // @ApiForbiddenResponse({
+  //   description: 'Sin permiso update.loans',
+  //   examples: {
+  //     'insufficient-permissions': {
+  //       summary: 'Sin permisos para actualizar préstamos',
+  //       value: {
+  //         statusCode: 403,
+  //         message: 'No tienes permisos para actualizar préstamos',
+  //         error: 'Forbidden'
+  //       }
+  //     }
+  //   }
+  // })
+  // @ApiInternalServerErrorResponse({
+  //   description: 'Error interno del servidor',
+  //   examples: {
+  //     'server-error': {
+  //       summary: 'Error interno del servidor',
+  //       value: {
+  //         statusCode: 500,
+  //         message: 'Error interno del servidor al actualizar el préstamo',
+  //         error: 'Internal Server Error'
+  //       }
+  //     }
+  //   }
+  // })
+  // async update(
+  //   @Param('id', ParseIntPipe) id: number,
+  //   @Body() dto: UpdateLoanDto,
+  // ): Promise<LoanUpdateResponse> {
+  //   const { updated, changes } = await this.loansService.update(id, dto);
+  //   const loan = plainToInstance(ResponseLoanDto, updated, { excludeExtraneousValues: true });
+  //   return {
+  //     customMessage: 'Préstamo actualizado correctamente',
+  //     loan,
+  //     changes,
+  //   };
+  // }
 
   @Post(':id/refinance')
   @Permissions('refinance.loans')

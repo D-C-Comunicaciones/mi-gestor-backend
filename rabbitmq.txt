@@ -12,3 +12,5 @@ curl -L -o /plugins/rabbitmq_delayed_message_exchange.ez https://github.com/rabb
 rabbitmq-plugins enable rabbitmq_delayed_message_exchange
 
 4. reset container
+
+rabbitmq-plugins list | grep delayed
