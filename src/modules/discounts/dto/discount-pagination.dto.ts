@@ -1,32 +1,67 @@
-import { PaginationDto } from '@common/dto';
-import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform } from 'class-transformer';
-import { IsBoolean, IsOptional } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
+import { IsOptional, IsNumber, IsString, Min, Max } from 'class-validator';
 
-export class DiscountPaginationDto extends PaginationDto {
-  @ApiPropertyOptional({ example: true, description: 'Filtrar por descuentos activos/inactivos' })
-  @IsOptional()
-  @Transform(({ value }) => {
-    if (typeof value === 'string') {
-      const v = value.toLowerCase();
-      if (v === 'true' || v === '1') return true;
-      if (v === 'false' || v === '0') return false;
-    }
-    return value === true;
+export class DiscountPaginationDto {
+  @ApiProperty({
+    description: 'Número de página',
+    example: 1,
+    type: 'number',
+    minimum: 1,
+    default: 1,
+    required: false
   })
-  @IsBoolean()
-  isActive?: boolean;
-
-  @ApiPropertyOptional({ example: 1, description: 'Filtrar por ID de cuota' })
   @IsOptional()
-  installmentId?: number;
+  @Type(() => Number)
+  @IsNumber({}, { message: 'La página debe ser un número' })
+  @Min(1, { message: 'La página debe ser mayor a 0' })
+  page?: number = 1;
 
-  @ApiPropertyOptional({ example: 2, description: 'Filtrar por ID de préstamo' })
+  @ApiProperty({
+    description: 'Cantidad de elementos por página',
+    example: 10,
+    type: 'number',
+    minimum: 1,
+    maximum: 100,
+    default: 10,
+    required: false
+  })
   @IsOptional()
-  loanId?: number;
+  @Type(() => Number)
+  @IsNumber({}, { message: 'El límite debe ser un número' })
+  @Min(1, { message: 'El límite debe ser mayor a 0' })
+  @Max(100, { message: 'El límite no puede ser mayor a 100' })
+  limit?: number = 10;
 
-  @ApiPropertyOptional({ example: 1, description: 'Filtrar por ID de interes moratorio' })
+  @ApiProperty({
+    description: 'Término de búsqueda para filtrar descuentos por descripción',
+    example: 'buen comportamiento',
+    type: 'string',
+    required: false
+  })
   @IsOptional()
+  @IsString({ message: 'El término de búsqueda debe ser una cadena de texto' })
+  search?: string;
+
+  @ApiProperty({
+    description: 'Filtrar por ID de moratoria específica',
+    example: 1,
+    type: 'number',
+    required: false
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({}, { message: 'El ID de moratoria debe ser un número' })
   moratoryId?: number;
 
+  @ApiProperty({
+    description: 'Filtrar por ID de tipo de descuento',
+    example: 1,
+    type: 'number',
+    required: false
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({}, { message: 'El ID de tipo de descuento debe ser un número' })
+  discountTypeId?: number;
 }

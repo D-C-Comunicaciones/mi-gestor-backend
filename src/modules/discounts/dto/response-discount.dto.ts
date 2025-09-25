@@ -1,3 +1,5 @@
+import { ApiProperty } from '@nestjs/swagger';
+import { Expose } from 'class-transformer';
 import { Expose } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 
@@ -10,6 +12,7 @@ export class ResponseDiscountDto {
   @ApiProperty({
     description: 'Identificador único del descuento',
     example: 1,
+    type: 'number'
     type: 'integer',
     minimum: 1
   })
@@ -17,6 +20,9 @@ export class ResponseDiscountDto {
   id: number;
 
   @ApiProperty({
+    description: 'Monto del descuento en pesos colombianos',
+    example: 88100,
+    type: 'number'
     description: 'Nombre descriptivo del descuento',
     example: 'Descuento por pago anticipado',
     type: 'string'
@@ -31,9 +37,46 @@ export class ResponseDiscountDto {
     required: false
   })
   @Expose()
-  description?: string;
+  amount: number;
 
   @ApiProperty({
+    description: 'ID del tipo de descuento',
+    example: 1,
+    type: 'number'
+  })
+  @Expose()
+  discountTypeId: number;
+
+  @ApiProperty({
+    description: 'Descripción detallada del descuento',
+    example: 'Descuento por buen comportamiento de pago a cuota, para que pague',
+    type: 'string'
+  })
+  @Expose()
+  description: string;
+
+  @ApiProperty({
+    description: 'ID de la moratoria asociada',
+    example: 1,
+    type: 'number'
+  })
+  @Expose()
+  moratoryId: number;
+
+  @ApiProperty({
+    description: 'Estado activo/inactivo del descuento',
+    example: true,
+    type: 'boolean'
+  })
+  @Expose()
+  isActive: boolean;
+
+  @ApiProperty({
+    description: 'Fecha de creación del registro',
+    example: '2024-01-15T10:30:00.000Z',
+    type: 'string',
+    format: 'date-time'
+  })
     description: 'Tipo de descuento (porcentaje o monto fijo)',
     example: 'PERCENTAGE',
     type: 'string',

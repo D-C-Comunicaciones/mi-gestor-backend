@@ -9,11 +9,12 @@ import * as cookieParser from 'cookie-parser';
 import { PrismaDecimalInterceptor, ResponseInterceptor } from '@common/interceptors';
 import * as express from 'express';
 import { join } from 'path';
+import { apiReference } from '@scalar/nestjs-api-reference';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
-    // Servir carpeta public
+  // Servir carpeta public
   app.use('/public', express.static(join(process.cwd(), 'public')));
 
   app.use(cookieParser());
@@ -29,9 +30,10 @@ async function bootstrap() {
 
   if (envs.environment !== 'production') {
     const config = new DocumentBuilder()
-      .setTitle('API Mi Gestor')
-      .setDescription('Documentación de la API')
+      .setTitle('Mi Gestor API documentation')
+      .setDescription('Documentación de la API para la app miGestor')
       .setVersion('1.0')
+      .addTag('módulos', 'Módulos principales de la aplicación') 
       .addBearerAuth(
         {
           type: 'http',
@@ -44,27 +46,19 @@ async function bootstrap() {
       .addCookieAuth('token') // cookie con nombre "token"
       .build();
 
-    const document = SwaggerModule.createDocument(app, config);
-    SwaggerModule.setup('api/docs', app, document);
-  } if (envs.environment !== 'production') {
-    const config = new DocumentBuilder()
-      .setTitle('API Mi Gestor')
-      .setDescription('Documentación de la API')
-      .setVersion('1.0')
-      .addBearerAuth(
-        {
-          type: 'http',
-          scheme: 'bearer',
-          bearerFormat: 'JWT',
-          in: 'header',
-        },
-        'access-token',
-      )
-      .addCookieAuth('token') // cookie con nombre "token"
-      .build();
+    const apiDocumentation = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup('v1/docs', app, apiDocumentation);
 
-    const document = SwaggerModule.createDocument(app, config);
-    SwaggerModule.setup('api/docs', app, document);
+    app.use(
+      '/documentation',
+      apiReference({
+        content: apiDocumentation,
+        options: {
+          explorer: true,
+        },
+      }
+      )
+    );
   }
 
   const logger = new Logger(envs.appName);
