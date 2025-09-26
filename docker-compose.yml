@@ -1,5 +1,5 @@
 services:
-  migestor-api:
+  api:
     build:
       context: .
       dockerfile: Dockerfile
@@ -14,10 +14,27 @@ services:
       - mi-gestor-network
     labels:
       - "traefik.enable=true"
+
+      # Router principal
       - "traefik.http.routers.migestor-api.rule=Host(`rest.dcmigestor.co`)"
       - "traefik.http.routers.migestor-api.entrypoints=websecure"
       - "traefik.http.routers.migestor-api.tls.certresolver=myresolver"
+
+      # Puerto interno del servicio
       - "traefik.http.services.migestor-api.loadbalancer.server.port=3000"
+
+      # Middleware: /v1/docs -> /documentation
+      - "traefik.http.middlewares.migestor-api-redirect-v1docs.redirectregex.regex=^/v1/docs$$"
+      - "traefik.http.middlewares.migestor-api-redirect-v1docs.redirectregex.replacement=/documentation"
+      - "traefik.http.middlewares.migestor-api-redirect-v1docs.redirectregex.permanent=true"
+
+      # Middleware: /documentation -> /documentation (por si viene directo)
+      - "traefik.http.middlewares.migestor-api-redirect-docs.redirectregex.regex=^/documentation$$"
+      - "traefik.http.middlewares.migestor-api-redirect-docs.redirectregex.replacement=/documentation"
+      - "traefik.http.middlewares.migestor-api-redirect-docs.redirectregex.permanent=true"
+
+      # Asignar ambos middlewares al router
+      - "traefik.http.routers.migestor-api.middlewares=migestor-api-redirect-v1docs,migestor-api-redirect-docs"
 
 networks:
   mi-gestor-network:
