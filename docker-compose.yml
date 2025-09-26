@@ -1,58 +1,21 @@
 services:
-  api:
-    build: .
-    container_name: mi-gestor-api
-    env_file:
-      - .env
-    environment:
-      - NODE_ENV=production
-      - REDIS_URL=redis://redis:6379/0
-    command: sh -c "npx prisma migrate deploy && node dist/main"
-    restart: unless-stopped
-    depends_on:
-      - redis
-
   redis:
     image: redis:7-alpine
-    container_name: mi-gestor-redis
+    hostname: redis
+    restart: unless-stopped
     command: ["redis-server", "--requirepass", "${APP_REDIS_PASSWORD}", "--appendonly", "yes"]
     environment:
       - APP_REDIS_PASSWORD=${APP_REDIS_PASSWORD}
-    ports:
-      - "6379:6379"
     volumes:
-      - redis_data:/data
-    restart: unless-stopped
-
-  caddy:
-    image: caddy:2-alpine
-    container_name: mi-gestor-caddy
-    depends_on:
-      - api
+      - redis-data:/data
     ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    restart: unless-stopped
-
-  rabbitmq:
-    image: rabbitmq:3.13-management
-    container_name: mi-gestor-rabbitmq
-    hostname: rabbitmq
-    ports:
-      - "5672:5672"
-      - "15672:15672" # Dashboard de RabbitMQ
-    environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
-    volumes:
-      - rabbitmq_data:/var/lib/rabbitmq
+      - 6379:6379
+    networks:
+      - mi-gestor-network
 
 volumes:
-  caddy_data:
-  caddy_config:
-  redis_data:
-  rabbitmq_data:
+  redis-data: {}
+
+networks:
+  mi-gestor-network:
+    external: true

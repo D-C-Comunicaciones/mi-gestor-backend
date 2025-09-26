@@ -1,5 +1,6 @@
 # Etapa 1: dependencias (con dev para poder compilar)
 FROM node:20-alpine AS deps
+
 WORKDIR /app
 
 # Instalar dependencias necesarias para compilar canvas
@@ -19,6 +20,7 @@ RUN npx prisma generate
 
 # Etapa 2: build
 FROM node:20-alpine AS build
+
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
@@ -26,6 +28,7 @@ RUN npm run build
 
 # Etapa 3: dependencias de producción (sin dev)
 FROM node:20-alpine AS prod-deps
+
 WORKDIR /app
 
 # Instalar dependencias necesarias para compilar canvas en prod
@@ -45,6 +48,7 @@ RUN npx prisma generate
 
 # Etapa final: runtime
 FROM node:20-alpine AS runner
+
 WORKDIR /app
 ENV NODE_ENV=production
 
@@ -56,7 +60,7 @@ RUN apk add --no-cache \
     giflib
 
 # (Opcional) user no-root:
-# RUN addgroup -S app && adduser -S app -G app
+RUN addgroup -S app && adduser -S app -G app
 
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist

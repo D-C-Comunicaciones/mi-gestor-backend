@@ -432,6 +432,17 @@ model InstallmentStatus {
   @@map("installment_statuses")
 }
 
+model PaymentMethod {
+  id        Int     @id @default(autoincrement())
+  name      String  @unique
+  isActive  Boolean @default(true)
+  payments  Payment[]
+
+  @@index([name])
+  @@index([isActive])
+  @@map("payment_methods")
+}
+
 model Payment {
   id     Int  @id @default(autoincrement())
   loanId Int
@@ -441,11 +452,16 @@ model Payment {
   paymentTypeId Int
   paymentType   PaymentType @relation(fields: [paymentTypeId], references: [id])
 
+  paymentMethodId Int
+  paymentMethod   PaymentMethod @relation(fields: [paymentMethodId], references: [id])
+
   date             DateTime @default(now())
   recordedByUserId Int
   recordedByUser   User     @relation("PaymentsRecordedByUser", fields: [recordedByUserId], references: [id])
 
   allocations PaymentAllocation[]
+
+  
 
   @@index([loanId])
   @@index([paymentTypeId])

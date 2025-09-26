@@ -3,8 +3,8 @@ import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags, ApiOkResponse, ApiNotFo
 import { Permissions } from '@auth/decorators';
 import { ReportsService } from './reports.service';
 import { DateRangeDto } from '@common/dto';
-import { ResponseLoanSummaryReportDto, LoanSummaryReportDetailDto } from './dto';
-import { ReportLoanSummaryResponse } from './interfaces';
+import { ResponseLoanSummaryReportDto, LoanSummaryReportDetailDto, InterestReportPaginationDto } from './dto';
+import { NewLoansInterestReportResponse, ReportLoanSummaryResponse } from './interfaces';
 import { Response } from 'express';
 import { ReportsExporterService } from './reports-exporter.service'; // 👈 Nuevo import
 import { plainToInstance } from 'class-transformer';
@@ -489,5 +489,244 @@ export class ReportsController {
     });
 
     res.send(fileBuffer);
+  }
+
+  @Get('interest-summary')
+  @Permissions('view.interest.reports')
+  @ApiOperation({
+    summary: 'Obtener reporte de intereses pagados por créditos con paginación',
+    description: 'Retorna el total de intereses (normal y moratorio) pagados por créditos en un rango de fechas, con paginación y filtros. Los créditos se clasifican como Nuevos si su fecha de inicio está dentro del rango especificado. Incluye totales globales y detalle por crédito con sus cuotas e intereses recaudados.'
+  })
+  @ApiQuery({ name: 'startDate', required: false, example: '2025-01-01', description: 'Fecha de inicio (Formato YYYY-MM-DD)' })
+  @ApiQuery({ name: 'endDate', required: false, example: '2025-12-31', description: 'Fecha de fin (Formato YYYY-MM-DD)' })
+  @ApiQuery({ name: 'page', required: false, example: 1, description: 'Número de página para paginación' })
+  @ApiQuery({ name: 'limit', required: false, example: 10, description: 'Límite de registros por página' })
+  @ApiQuery({ 
+    name: 'loanStatusName', 
+    required: false, 
+    example: 'Paid', 
+    description: 'Filtrar por estado específico del crédito',
+    enum: ['Paid', 'Overdue', 'Pending', 'Refinanced', 'Created']
+  })
+  @ApiOkResponse({ 
+    description: 'Reporte de intereses generado correctamente con paginación',
+    examples: {
+      'success': {
+        summary: 'Reporte generado exitosamente',
+        value: {
+          customMessage: 'Resumen de intereses de créditos obtenido exitosamente',
+          interestSummary: {
+            grandTotals: {
+              totalInterestRecaudado: 500000,
+              totalMoratorioRecaudado: 75000,
+              totalGeneralRecaudado: 575000,
+              totalSaldoPendiente: 2500000,
+              totalMoraPendiente: 150000,
+              totalDeudaPendiente: 2650000
+            },
+            details: [
+              {
+                loanId: 2,
+                customerName: 'Juan Pérez',
+                customerDocument: 111222333,
+                collectorName: 'Admin User',
+                loanStatusName: 'Up to Date',
+                paymentDate: '2025-09-23 14:12:43',
+                appliedToInterest: 146763.32,
+                appliedToLateFee: 0,
+                appliedToCapital: 0,
+                totalPaid: 146763.32,
+                remainingBalance: 958.12,
+                installmentStatus: {
+                  paid: [
+                    {
+                      sequence: 1,
+                      dueDate: '2025-09-15',
+                      totalAmount: 146763.32,
+                      paidAmount: 146763.32,
+                      saldoPendiente: 0,
+                      moratoryAmount: 0,
+                      payments: [
+                        {
+                          paymentDate: '2025-09-23 14:12:43',
+                          collectorName: 'Admin User',
+                          appliedToInterest: 100000,
+                          appliedToLateFee: 0,
+                          appliedToCapital: 46763.32,
+                          totalPaid: 146763.32
+                        }
+                      ]
+                    }
+                  ],
+                  mora: [],
+                  pendiente: [
+                    {
+                      sequence: 2,
+                      dueDate: '2025-10-15',
+                      totalAmount: 146763.32,
+                      paidAmount: 0,
+                      saldoPendiente: 146763.32,
+                      moratoryAmount: 0,
+                      payments: []
+                    }
+                  ]
+                }
+              }
+            ],
+            meta: {
+              total: 1,
+              page: 1,
+              lastPage: 1,
+              limit: 10,
+              hasNextPage: false,
+              hasPreviousPage: false
+            }
+          }
+        }
+      },
+      'no-data': {
+        summary: 'Sin datos en el período',
+        value: {
+          customMessage: 'Resumen de intereses de créditos obtenido exitosamente',
+          interestSummary: {
+            grandTotals: {
+              totalInterestRecaudado: 0,
+              totalMoratorioRecaudado: 0,
+              totalGeneralRecaudado: 0,
+              totalSaldoPendiente: 0,
+              totalMoraPendiente: 0,
+              totalDeudaPendiente: 0
+            },
+            details: [],
+            meta: {
+              total: 0,
+              page: 1,
+              lastPage: 0,
+              limit: 10,
+              hasNextPage: false,
+              hasPreviousPage: false
+            }
+          }
+        }
+      }
+    }
+  })
+  @ApiBadRequestResponse({ 
+    description: 'Parámetros de fecha o paginación inválidos',
+    examples: {
+      'invalid-date-format': {
+        summary: 'Formato de fecha inválido',
+        value: {
+          statusCode: 400,
+          message: [
+            'startDate debe tener formato YYYY-MM-DD',
+            'endDate debe ser posterior a startDate'
+          ],
+          error: 'Bad Request'
+        }
+      },
+      'invalid-pagination': {
+        summary: 'Parámetros de paginación inválidos',
+        value: {
+          statusCode: 400,
+          message: [
+            'page debe ser un número positivo',
+            'limit debe estar entre 1 y 100'
+          ],
+          error: 'Bad Request'
+        }
+      },
+      'date-range-error': {
+        summary: 'Rango de fechas inválido',
+        value: {
+          statusCode: 400,
+          message: 'El rango de fechas no puede ser mayor a 1 año',
+          error: 'Bad Request'
+        }
+      }
+    }
+  })
+  @ApiNotFoundResponse({ 
+    description: 'No se encontraron datos en el rango de fechas',
+    examples: {
+      'no-loans-in-period': {
+        summary: 'No hay préstamos en el período',
+        value: {
+          statusCode: 404,
+          message: 'No se encontraron préstamos con pagos en el rango de fechas especificado',
+          error: 'Not Found'
+        }
+      },
+      'no-payments-found': {
+        summary: 'No se encontraron pagos',
+        value: {
+          statusCode: 404,
+          message: 'No se registraron pagos de intereses en el período especificado',
+          error: 'Not Found'
+        }
+      }
+    }
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado - Token de acceso requerido o inválido',
+    examples: {
+      'missing-token': {
+        summary: 'Token faltante',
+        value: {
+          statusCode: 401,
+          message: 'Token de acceso requerido',
+          error: 'Unauthorized'
+        }
+      },
+      'invalid-token': {
+        summary: 'Token inválido o expirado',
+        value: {
+          statusCode: 401,
+          message: 'Token de acceso inválido o expirado',
+          error: 'Unauthorized'
+        }
+      }
+    }
+  })
+  @ApiForbiddenResponse({
+    description: 'Acceso prohibido - Sin permisos para ver reportes de intereses',
+    examples: {
+      'insufficient-permissions': {
+        summary: 'Sin permisos para ver reportes de intereses',
+        value: {
+          statusCode: 403,
+          message: 'No tienes permisos para ver los reportes de intereses',
+          error: 'Forbidden'
+        }
+      }
+    }
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor',
+    examples: {
+      'server-error': {
+        summary: 'Error interno del servidor',
+        value: {
+          statusCode: 500,
+          message: 'Error interno del servidor al generar el reporte de intereses',
+          error: 'Internal Server Error'
+        }
+      },
+      'calculation-error': {
+        summary: 'Error en cálculos de intereses',
+        value: {
+          statusCode: 500,
+          message: 'Error al calcular los totales de intereses y moratorias',
+          error: 'Internal Server Error'
+        }
+      }
+    }
+  })
+  async getLoanInterestSummary(@Query() dto: InterestReportPaginationDto): Promise<any> { 
+    const interestSummaryRaw = await this.reportsService.getLoanInterestSummary(dto);
+    return {
+      customMessage: 'Resumen de intereses de créditos obtenido exitosamente',
+      interestSummary: interestSummaryRaw,
+    };
   }
 }

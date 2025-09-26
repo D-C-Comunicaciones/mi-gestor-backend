@@ -26,6 +26,7 @@ import { ReportsModule } from '@modules/reports/reports.module';
 import { ConfigurationsModule } from '@modules/configurations/configurations.module';
 import { CompaniesModule } from '@modules/companies/companies.module';
 import { AmortizationsModule } from '@modules/amortizations/amortizations.module';
+import { PaymentMethodsModule } from './modules/payment-methods/payment-methods.module';
 
 @Module({
   imports: [
@@ -56,7 +57,8 @@ import { AmortizationsModule } from '@modules/amortizations/amortizations.module
     ReportsModule,
     ConfigurationsModule,
     CompaniesModule,
-    AmortizationsModule
+    AmortizationsModule,
+    PaymentMethodsModule
   ],
   controllers: [AppController],
   providers: [AppService],
