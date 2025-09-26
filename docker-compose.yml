@@ -6,7 +6,7 @@ services:
     env_file:
       - .env
     environment:
-      - NODE_ENV=production
+      - NODE_ENV=development
     command: >
       sh -c "npx prisma migrate deploy && npx prisma db seed && node dist/main"
     restart: unless-stopped
