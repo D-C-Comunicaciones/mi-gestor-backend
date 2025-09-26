@@ -1,5 +1,5 @@
 services:
-  api:
+  migestor-api:
     build:
       context: .
       dockerfile: Dockerfile
