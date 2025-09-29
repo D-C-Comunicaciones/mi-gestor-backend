@@ -435,13 +435,15 @@ export class ReportsExporterService {
                 headerRow: true,
                 columns: [
                     { name: 'ID' },
-                    { name: 'Monto' },
+                    { name: 'Monto Prestado' }, // ✅ Cambio de nombre para claridad
+                    { name: 'Saldo Restante' }, // ✅ Nueva columna
                     { name: 'Fecha de Inicio' },
                     { name: 'Estado' },
                 ],
                 rows: data.newLoansDetails.map(l => [
                     l.id,
                     this.formatCurrency(l.loanAmount),
+                    this.formatCurrency(l.remainingBalance || 0), // ✅ Nueva columna
                     l.startDate,
                     l.loanStatusName,
                 ]),
@@ -456,13 +458,15 @@ export class ReportsExporterService {
                 headerRow: true,
                 columns: [
                     { name: 'ID' },
-                    { name: 'Monto' },
+                    { name: 'Monto Prestado' }, // ✅ Cambio de nombre para claridad
+                    { name: 'Saldo Restante' }, // ✅ Nueva columna
                     { name: 'Fecha de Inicio' },
                     { name: 'Estado' },
                 ],
                 rows: data.refinancedLoansDetails.map(l => [
                     l.id,
                     this.formatCurrency(l.loanAmount),
+                    this.formatCurrency(l.remainingBalance || 0), // ✅ Nueva columna
                     l.startDate,
                     l.loanStatusName,
                 ]),
@@ -559,7 +563,7 @@ export class ReportsExporterService {
             data: {
                 labels: ['Créditos Nuevos', 'Créditos Refinanciados'],
                 datasets: [{
-                    label: 'Cantidad',
+                    label: 'Cantidad créditos por tipo',
                     data: [data.numberOfNewLoans || 0, data.numberOfRefinancedLoans || 0],
                     backgroundColor: ['#4bc0c0', '#9966ff'],
                 }],
@@ -654,12 +658,12 @@ export class ReportsExporterService {
                         { text: 'TOTAL PENDIENTE (Global)', style: 'tableHeader' }
                     ],
                     [
-                        { text: 'Interés Normal de Cuota', color: '#4bc0c0', bold: true },
+                        { text: 'Interés Corriente', color: '#4bc0c0', bold: true },
                         { text: this.formatCurrency(data.totalInterestRecaudado), alignment: 'right' },
                         { text: this.formatCurrency(data.totalInterestPendiente), alignment: 'right' }
                     ],
                     [
-                        { text: 'Interés Moratorio (Late Fee)', color: '#ff6384', bold: true },
+                        { text: 'Interés Moratorio', color: '#ff6384', bold: true },
                         { text: this.formatCurrency(data.totalMoratorioRecaudado), alignment: 'right' },
                         { text: this.formatCurrency(data.totalMoratorioPendiente), alignment: 'right' }
                     ],
@@ -837,13 +841,14 @@ export class ReportsExporterService {
         return {
             table: {
                 headerRows: 1,
-                widths: ['auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'],
+                widths: ['auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'], // ✅ Agregar una columna más
                 body: [
                     [
                         { text: 'ID', style: 'tableHeader' },
                         { text: 'Cliente', style: 'tableHeader' },
                         { text: 'Documento', style: 'tableHeader' },
-                        { text: 'Monto', style: 'tableHeader' },
+                        { text: 'Monto Prestado', style: 'tableHeader' }, // ✅ Cambio de nombre
+                        { text: 'Saldo Restante', style: 'tableHeader' }, // ✅ Nueva columna
                         { text: 'Fecha de Inicio', style: 'tableHeader' },
                         { text: 'Estado', style: 'tableHeader' },
                         { text: 'Tasa Interés (%)', style: 'tableHeader' },
@@ -854,6 +859,7 @@ export class ReportsExporterService {
                         l.customerName || '',
                         l.customerDocument || '',
                         this.formatCurrency(l.loanAmount),
+                        this.formatCurrency(l.remainingBalance || 0), // ✅ Nueva columna
                         l.startDate,
                         this.translateStatus(l.loanStatusName),
                         l.interestRateValue ?? '',

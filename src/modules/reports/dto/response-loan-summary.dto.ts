@@ -13,6 +13,12 @@ export class LoanSummaryReportDetailDto {
   @Type(() => Number)
   loanAmount: number;
 
+  @ApiProperty({ description: 'Saldo restante del préstamo', example: 800000.25 })
+  @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
+  remainingBalance?: number;
+
   @ApiProperty({ description: 'Fecha de inicio del préstamo', example: '2025-01-01' })
   @IsString()
   startDate: string;

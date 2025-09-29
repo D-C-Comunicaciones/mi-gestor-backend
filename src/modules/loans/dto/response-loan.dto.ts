@@ -7,6 +7,11 @@ import { format } from 'date-fns';
 export class ResponseLoanDto {
   @ApiProperty({ example: 1 }) @Expose() id: number;
   @ApiProperty({ example: 3 }) @Expose() customerId: number;
+  
+  @ApiProperty({ example: 'Juan Pérez' })
+  @Expose()
+  customerName: string;
+  
   @ApiProperty({ example: 1000000 }) @Expose() loanAmount: number;
   @ApiProperty({ example: 1000000 }) @Expose() remainingBalance: number;
   @ApiProperty({ example: 1 }) @Expose() interestRateId: number;

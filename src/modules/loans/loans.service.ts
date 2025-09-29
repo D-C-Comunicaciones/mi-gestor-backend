@@ -323,6 +323,13 @@ export class LoansService {
         paymentFrequency: true,
         loanType: true,
         loanStatus: true,
+        customer: { // ✅ Incluir información del customer
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+          }
+        },
         installments: { orderBy: { sequence: 'asc' } },
       },
       skip: (page - 1) * limit,
@@ -697,6 +704,38 @@ export class LoansService {
     if (!type) throw new BadRequestException('LoanType no encontrada');
   }
 
+  // ✅ Métodos de traducción
+  private translateLoanType(loanTypeName: string): string {
+    const translations = {
+      'fixed_fees': 'Cuotas Fijas',
+      'only_interests': 'Interés Mensual',
+    };
+    return translations[loanTypeName] || loanTypeName;
+  }
+
+  private translatePaymentFrequency(frequencyName: string): string {
+    const translations = {
+      'Minute': 'Minuto',
+      'Weekly': 'Semanal',
+      'Biweekly': 'Quincenal',
+      'Monthly': 'Mensual',
+      'Daily': 'Diario',
+    };
+    return translations[frequencyName] || frequencyName;
+  }
+
+  private translateLoanStatus(statusName: string): string {
+    const translations = {
+      'Up to Date': 'Al día',
+      'Overdue': 'En Mora',
+      'Paid': 'Pagado',
+      'Cancelled': 'Cancelado',
+      'Refinanced': 'Refinanciado',
+      'Outstanding Balance': 'Saldo Pendiente',
+    };
+    return translations[statusName] || statusName;
+  }
+
   private async appendTimestamps<T extends { id: number }>(entity: T): Promise<T & { createdAt: Date; updatedAt: Date }> {
     try {
       const { create, lastUpdate } = await this.changesService.getChanges('loan', entity.id);
@@ -800,9 +839,12 @@ export class LoansService {
       interestRateValue: loan.interestRate?.value ?? 0,
       penaltyRateValue: loan.penaltyRate?.value ?? 0,
       termValue: loan.term?.value ?? null,
-      paymentFrequencyName: loan.paymentFrequency?.name || '',
-      loanTypeName: loan.loanType?.name || '',
-      loanStatusName: loan.loanStatus?.name || '',
+      paymentFrequencyName: this.translatePaymentFrequency(loan.paymentFrequency?.name || ''), // ✅ Traducido
+      loanTypeName: this.translateLoanType(loan.loanType?.name || ''), // ✅ Traducido
+      loanStatusName: this.translateLoanStatus(loan.loanStatus?.name || ''), // ✅ Traducido
+      
+      // ✅ Agregar nombre del cliente
+      customerName: loan.customer ? `${loan.customer.firstName || ''} ${loan.customer.lastName || ''}`.trim() : '',
 
       // Campos de fechas formateados
       startDate: loan.startDate ? format(new Date(loan.startDate), 'yyyy-MM-dd') : '',
@@ -822,4 +864,5 @@ export class LoansService {
     };
   }
 }
+
 

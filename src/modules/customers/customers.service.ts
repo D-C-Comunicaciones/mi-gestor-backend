@@ -116,6 +116,7 @@ export class CustomersService {
       loans.push({
         id: loan.id,
         customerId: loan.customerId,
+        customerName: `${customer.firstName} ${customer.lastName}`,
         loanAmount: loan.loanAmount.toNumber(),
         remainingBalance: loan.remainingBalance.toNumber(),
         interestRateId: loan.interestRateId,

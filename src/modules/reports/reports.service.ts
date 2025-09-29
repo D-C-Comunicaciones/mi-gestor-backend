@@ -57,8 +57,8 @@ export class ReportsService {
         select: {
           id: true,
           loanAmount: true,
+          remainingBalance: true, // ✅ Agregar remainingBalance
           startDate: true,
-          // ✅ Corrección: Seleccionar el valor de la tasa
           interestRate: { select: { value: true } },
           penaltyRate: { select: { value: true } },
           loanType: { select: { name: true } },
@@ -88,8 +88,8 @@ export class ReportsService {
         select: {
           id: true,
           loanAmount: true,
+          remainingBalance: true, // ✅ Agregar remainingBalance
           startDate: true,
-          // ✅ Corrección: Seleccionar el valor de la tasa
           interestRate: { select: { value: true } },
           penaltyRate: { select: { value: true } },
           loanType: { select: { name: true } },
@@ -109,10 +109,9 @@ export class ReportsService {
     // 3. Mapeo final con conversiones seguras
     const mapLoanDetails = (loan: any) => ({
       id: loan.id,
-      // ✅ Conversión de Decimal a number, asumiendo loanAmount es no-nulo.
       loanAmount: loan.loanAmount.toNumber(),
+      remainingBalance: loan.remainingBalance?.toNumber() || 0, // ✅ Agregar remainingBalance
       startDate: format(loan.startDate, 'yyyy-MM-dd'),
-      // ✅ Conversión segura de Decimal de la relación
       interestRateValue: loan.interestRate?.value?.toNumber() || 0,
       penaltyRateValue: loan.penaltyRate?.value?.toNumber() ?? null,
       creditTypeName: loan.loanType?.name || '',
