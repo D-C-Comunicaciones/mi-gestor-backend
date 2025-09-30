@@ -1,12 +1,13 @@
-import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Post, Req, UseGuards, Get, Query, Res } from '@nestjs/common';
 import { CollectionsService } from './collections.service';
 import { CreateCollectionDto } from './dto/create-collection.dto';
 import { JwtAuthGuard, PermissionsGuard } from '@modules/auth/guards';
 import { Permissions } from '@modules/auth/decorators';
 import { plainToInstance } from 'class-transformer';
-import { ResponseCollectionDto } from './dto';
-import { CollectionResponse } from './interfaces';
-import { ApiTags, ApiBearerAuth, ApiOperation, ApiCreatedResponse, ApiBadRequestResponse, ApiUnauthorizedResponse, ApiForbiddenResponse, ApiNotFoundResponse, ApiInternalServerErrorResponse, ApiBody, ApiUnprocessableEntityResponse } from '@nestjs/swagger';
+import { ResponseCollectionDto, ResponseCollectionListDto } from './dto';
+import { CollectionResponse, CollectionListResponse } from './interfaces';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiCreatedResponse, ApiBadRequestResponse, ApiUnauthorizedResponse, ApiForbiddenResponse, ApiNotFoundResponse, ApiInternalServerErrorResponse, ApiBody, ApiUnprocessableEntityResponse, ApiQuery, ApiOkResponse } from '@nestjs/swagger';
+import { PaginationDto } from '@common/dto';
 
 @ApiTags('collections')
 @ApiBearerAuth()
@@ -220,5 +221,166 @@ export class CollectionsController {
       customMessage: 'Cobro registrado exitosamente',
       collection
     }
+  }
+
+  @Get()
+  @Permissions('view.collections')
+  @ApiOperation({
+    summary: 'Obtener historial de cobros',
+    description: 'Retorna una lista paginada con todos los cobros/pagos realizados en el sistema con información del cobrador, cliente y préstamo'
+  })
+  @ApiQuery({ name: 'page', required: false, schema: { type: 'integer', example: 1, description: 'Número de página' } })
+  @ApiQuery({ name: 'limit', required: false, schema: { type: 'integer', example: 10, description: 'Elementos por página' } })
+  @ApiQuery({ name: 'loanId', required: false, schema: { type: 'integer', example: 1, description: 'Filtrar por ID de préstamo' } })
+  @ApiQuery({ name: 'collectorId', required: false, schema: { type: 'integer', example: 1, description: 'Filtrar por ID de cobrador' } })
+  @ApiQuery({ name: 'startDate', required: false, schema: { type: 'string', format: 'date', example: '2024-01-01', description: 'Fecha de inicio' } })
+  @ApiQuery({ name: 'endDate', required: false, schema: { type: 'string', format: 'date', example: '2024-12-31', description: 'Fecha de fin' } })
+  @ApiOkResponse({
+    description: 'Lista de cobros obtenida exitosamente',
+    examples: {
+      'success': {
+        summary: 'Lista obtenida exitosamente',
+        value: {
+          customMessage: 'Historial de cobros obtenido correctamente',
+          collections: [
+            {
+              id: 1,
+              loanId: 2,
+              amount: '146763.32',
+              appliedToCapital: '100000.00',
+              appliedToInterest: '46763.32',
+              appliedToLateFee: '0.00',
+              excessAmount: '0.00',
+              paymentDate: '2024-01-15 10:30:00',
+              isFullyPaid: false,
+              customer: {
+                id: 1,
+                name: 'Juan Pérez',
+                documentNumber: '12345678'
+              },
+              loan: {
+                id: 2,
+                loanAmount: 1000000,
+                remainingBalance: 500000,
+                loanTypeName: 'Cuotas Fijas',
+                loanStatusName: 'Al día'
+              },
+              collector: {
+                id: 1,
+                name: 'Carlos Cobrador',
+                documentNumber: '87654321',
+                phone: '+57 300 555 1234',
+                zoneName: 'Centro'
+              }
+            }
+          ],
+          meta: {
+            total: 25,
+            page: 1,
+            lastPage: 3,
+            limit: 10,
+            hasNextPage: true
+          }
+        }
+      }
+    }
+  })
+  @ApiBadRequestResponse({
+    description: 'Parámetros de consulta inválidos',
+    examples: {
+      'pagination-error': {
+        summary: 'Parámetros de paginación inválidos',
+        value: {
+          statusCode: 400,
+          message: [
+            'page debe ser un número positivo',
+            'limit debe estar entre 1 y 100'
+          ],
+          error: 'Bad Request'
+        }
+      }
+    }
+  })
+  @ApiNotFoundResponse({
+    description: 'No se encontraron cobros',
+    examples: {
+      'no-records': {
+        summary: 'No existen registros',
+        value: {
+          customMessage: 'No existen registros',
+          collections: [],
+          meta: {
+            total: 0,
+            page: 1,
+            lastPage: 0,
+            limit: 10,
+            hasNextPage: false
+          }
+        }
+      }
+    }
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado - Token de acceso requerido o inválido',
+    examples: {
+      'missing-token': {
+        summary: 'Token faltante',
+        value: {
+          statusCode: 401,
+          message: 'Token de acceso requerido',
+          error: 'Unauthorized'
+        }
+      }
+    }
+  })
+  @ApiForbiddenResponse({
+    description: 'Acceso prohibido - Sin permisos para ver cobros',
+    examples: {
+      'insufficient-permissions': {
+        summary: 'Sin permisos para ver cobros',
+        value: {
+          statusCode: 403,
+          message: 'No tienes permisos para ver los cobros',
+          error: 'Forbidden'
+        }
+      }
+    }
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor',
+    examples: {
+      'server-error': {
+        summary: 'Error interno del servidor',
+        value: {
+          statusCode: 500,
+          message: 'Error interno del servidor al obtener los cobros',
+          error: 'Internal Server Error'
+        }
+      }
+    }
+  })
+  async findAll(
+    @Query() paginationDto: PaginationDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<CollectionListResponse> {
+    const { collections, meta } = await this.collectionsService.findAll(paginationDto);
+
+    if (collections.length === 0) {
+      return {
+        customMessage: 'No existen registros',
+        collections: [],
+        meta,
+      };
+    }
+
+    const collectionsResponse = plainToInstance(ResponseCollectionListDto, collections, {
+      excludeExtraneousValues: true,
+    });
+
+    return {
+      customMessage: 'Historial de cobros obtenido correctamente',
+      collections: collectionsResponse,
+      meta,
+    };
   }
 }

@@ -27,6 +27,8 @@ import { ConfigurationsModule } from '@modules/configurations/configurations.mod
 import { CompaniesModule } from '@modules/companies/companies.module';
 import { AmortizationsModule } from '@modules/amortizations/amortizations.module';
 import { PaymentMethodsModule } from './modules/payment-methods/payment-methods.module';
+import { PrometheusModule } from '@willsoto/nestjs-prometheus';
+import { CollectionRoutesModule } from './modules/collection-routes/collection-routes.module';
 
 @Module({
   imports: [
@@ -34,6 +36,7 @@ import { PaymentMethodsModule } from './modules/payment-methods/payment-methods.
       global: true,
       middleware: { mount: true }, // esto lo instala como middleware global
     }),
+    PrometheusModule.register(),
     AuthModule,
     CollectorsModule,
     CustomersModule,
@@ -58,7 +61,8 @@ import { PaymentMethodsModule } from './modules/payment-methods/payment-methods.
     ConfigurationsModule,
     CompaniesModule,
     AmortizationsModule,
-    PaymentMethodsModule
+    PaymentMethodsModule,
+    CollectionRoutesModule
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -1,24 +1,27 @@
-import { Controller, Get, Query, Res, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, Res, Param, UseGuards, BadRequestException, Logger } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags, ApiOkResponse, ApiNotFoundResponse, ApiExtraModels, ApiParam, ApiBadRequestResponse, ApiUnauthorizedResponse, ApiForbiddenResponse, ApiInternalServerErrorResponse, ApiProduces } from '@nestjs/swagger';
 import { Permissions } from '@auth/decorators';
 import { ReportsService } from './reports.service';
 import { DateRangeDto } from '@common/dto';
-import { ResponseLoanSummaryReportDto, LoanSummaryReportDetailDto, InterestReportPaginationDto } from './dto';
-import { NewLoansInterestReportResponse, ReportLoanSummaryResponse } from './interfaces';
+import { ResponseLoanSummaryReportDto, LoanSummaryReportDetailDto, InterestReportPaginationDto, ResponseCollectionReportDto } from './dto';
+import { NewLoansInterestReportResponse, ReportLoanSummaryResponse, CollectionReportResponse } from './interfaces';
 import { Response } from 'express';
-import { ReportsExporterService } from './reports-exporter.service'; // 👈 Nuevo import
+import { ReportsExporterService } from './reports-exporter.service';
 import { plainToInstance } from 'class-transformer';
 import { JwtAuthGuard, PermissionsGuard } from '@modules/auth/guards';
+import { ReportsCollectionsService } from './reports-collections.service';
 
 @UseGuards(JwtAuthGuard, PermissionsGuard)
-@ApiTags('Reports')
+@ApiTags('reports')
 @ApiBearerAuth()
 @ApiExtraModels(ResponseLoanSummaryReportDto, LoanSummaryReportDetailDto)
 @Controller('reports')
 export class ReportsController {
+  private readonly logger = new Logger(ReportsController.name);
   constructor(
     private readonly reportsService: ReportsService,
-    private readonly reportsExporterService: ReportsExporterService // 👈 Inyección del nuevo servicio
+    private readonly reportsExporterService: ReportsExporterService,
+    private readonly reportsCollectionsService: ReportsCollectionsService,
   ) { }
 
   @Get('loans-summary')
@@ -166,7 +169,7 @@ export class ReportsController {
     description: 'No se encontraron datos en el rango de fechas',
     examples: {
       'no-data': {
-        summary: 'No hay datos en el período',  
+        summary: 'No hay datos en el período',
         value: {
           statusCode: 404,
           message: 'No se encontraron préstamos en el rango de fechas proporcionado',
@@ -237,15 +240,15 @@ export class ReportsController {
     summary: 'Exportar cualquier reporte en formato específico',
     description: 'Genera y descarga un reporte dinámicamente según el tipo y formato solicitados. Formatos disponibles: Excel (.xlsx) y PDF (.pdf)',
   })
-  @ApiParam({ 
-    name: 'reportType', 
-    enum: ['loans-summary'], 
+  @ApiParam({
+    name: 'reportType',
+    enum: ['loans-summary', 'interest-summary', 'collections-report'],
     description: 'Tipo de reporte a exportar',
     example: 'loans-summary'
   })
-  @ApiParam({ 
-    name: 'format', 
-    enum: ['xlsx', 'pdf'], 
+  @ApiParam({
+    name: 'format',
+    enum: ['xlsx', 'pdf'],
     description: 'Formato de archivo deseado',
     example: 'xlsx'
   })
@@ -287,7 +290,7 @@ export class ReportsController {
       'application/pdf': {
         schema: {
           type: 'string',
-          format: 'binary',  
+          format: 'binary',
           description: 'Archivo PDF con el reporte de préstamos'
         },
         examples: {
@@ -480,15 +483,139 @@ export class ReportsController {
     @Query() dto: DateRangeDto,
     @Res() res: Response,
   ): Promise<void> {
-    const fileBuffer = await this.reportsExporterService.exportReport(reportType, format, dto);
+    let fileBuffer: Buffer;
 
-    // Configurar los encabezados de la respuesta para la descarga
-    res.set({
-      'Content-Type': format === 'xlsx' ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'application/pdf',
-      'Content-Disposition': `attachment; filename="${reportType}.${format}"`,
-    });
+    // Validar tipo de reporte y formato
+    const validReportTypes = ['loans-summary', 'interest-summary', 'collections-report'];
+    const validFormats = ['xlsx', 'pdf'];
 
-    res.send(fileBuffer);
+    if (!validReportTypes.includes(reportType)) {
+      res.status(400).json({
+        statusCode: 400,
+        message: `Tipo de reporte "${reportType}" no válido. Tipos disponibles: ${validReportTypes.join(', ')}`,
+        error: 'Bad Request'
+      });
+      return;
+    }
+
+    if (!validFormats.includes(format)) {
+      res.status(400).json({
+        statusCode: 400,
+        message: `Formato "${format}" no válido. Formatos disponibles: ${validFormats.join(', ')}`,
+        error: 'Bad Request'
+      });
+      return;
+    }
+
+    try {
+      let reportData: any;
+
+      switch (reportType) {
+        case 'loans-summary':
+          reportData = await this.reportsService.getLoanValuesSummary(dto);
+          
+          // Validar si hay datos para exportar
+          const hasNewLoans = (reportData.numberOfNewLoans || 0) > 0;
+          const hasRefinancedLoans = (reportData.numberOfRefinancedLoans || 0) > 0;
+          
+          if (!hasNewLoans && !hasRefinancedLoans) {
+            res.status(404).json({
+              statusCode: 404,
+              message: `No se encontraron préstamos para exportar en el período especificado`,
+              error: 'Not Found'
+            });
+            return;
+          }
+          
+          if (format === 'xlsx') {
+            fileBuffer = await this.reportsExporterService.generateLoansExcel(reportData);
+          } else {
+            fileBuffer = await this.reportsExporterService.generateLoansPdf(reportData);
+          }
+          break;
+
+        case 'interest-summary':
+          reportData = await this.reportsService.getLoanInterestSummary({ ...dto, page: 1, limit: 99999999 });
+          
+          // Validar si hay datos de intereses
+          const hasInterestData = (reportData.details && reportData.details.length > 0) || 
+                                  (reportData.totalGeneralRecaudado && reportData.totalGeneralRecaudado > 0);
+          
+          if (!hasInterestData) {
+            res.status(404).json({
+              statusCode: 404,
+              message: `No se encontraron datos de intereses para exportar en el período especificado`,
+              error: 'Not Found'
+            });
+            return;
+          }
+          
+          if (format === 'xlsx') {
+            fileBuffer = await this.reportsExporterService.generateInterestReportExcel(reportData);
+          } else {
+            fileBuffer = await this.reportsExporterService.generateInterestReportPdf(reportData);
+          }
+          break;
+
+        case 'collections-report':
+          // Obtener datos del reporte directamente
+          reportData = await this.reportsCollectionsService.getCollectionsReportData(dto);
+          
+          // Validar si hay datos para exportar
+          if (!reportData.collections || reportData.collections.length === 0) {
+            res.status(404).json({
+              statusCode: 404,
+              message: `No se encontraron recaudos para exportar en el período ${reportData.metadata.period}`,
+              error: 'Not Found'
+            });
+            return;
+          }
+          
+          if (format === 'xlsx') {
+            fileBuffer = await this.reportsExporterService.generateCollectionReportExcel(reportData);
+          } else {
+            fileBuffer = await this.reportsExporterService.generateCollectionReportPdf(reportData);
+          }
+          break;
+
+        default:
+          res.status(400).json({
+            statusCode: 400,
+            message: `Tipo de reporte "${reportType}" no implementado`,
+            error: 'Bad Request'
+          });
+          return;
+      }
+
+      // Configurar los encabezados de la respuesta para la descarga
+      const contentType = format === 'xlsx'
+        ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        : 'application/pdf';
+
+      res.set({
+        'Content-Type': contentType,
+        'Content-Disposition': `attachment; filename="${reportType}.${format}"`,
+      });
+
+      res.send(fileBuffer);
+
+    } catch (error) {
+      // Manejar errores específicos de "No se encontraron datos"
+      if (error.message.includes('No se encontraron')) {
+        res.status(404).json({
+          statusCode: 404,
+          message: error.message,
+          error: 'Not Found'
+        });
+        return;
+      }
+
+      res.status(500).json({
+        statusCode: 500,
+        message: `Error al generar el reporte: ${error.message}`,
+        error: 'Internal Server Error'
+      });
+    }
   }
 
   @Get('interest-summary')
@@ -501,14 +628,14 @@ export class ReportsController {
   @ApiQuery({ name: 'endDate', required: false, example: '2025-12-31', description: 'Fecha de fin (Formato YYYY-MM-DD)' })
   @ApiQuery({ name: 'page', required: false, example: 1, description: 'Número de página para paginación' })
   @ApiQuery({ name: 'limit', required: false, example: 10, description: 'Límite de registros por página' })
-  @ApiQuery({ 
-    name: 'loanStatusName', 
-    required: false, 
-    example: 'Paid', 
+  @ApiQuery({
+    name: 'loanStatusName',
+    required: false,
+    example: 'Paid',
     description: 'Filtrar por estado específico del crédito',
     enum: ['Paid', 'Overdue', 'Pending', 'Refinanced', 'Created']
   })
-  @ApiOkResponse({ 
+  @ApiOkResponse({
     description: 'Reporte de intereses generado correctamente con paginación',
     examples: {
       'success': {
@@ -611,7 +738,7 @@ export class ReportsController {
       }
     }
   })
-  @ApiBadRequestResponse({ 
+  @ApiBadRequestResponse({
     description: 'Parámetros de fecha o paginación inválidos',
     examples: {
       'invalid-date-format': {
@@ -646,7 +773,7 @@ export class ReportsController {
       }
     }
   })
-  @ApiNotFoundResponse({ 
+  @ApiNotFoundResponse({
     description: 'No se encontraron datos en el rango de fechas',
     examples: {
       'no-loans-in-period': {
@@ -722,11 +849,335 @@ export class ReportsController {
       }
     }
   })
-  async getLoanInterestSummary(@Query() dto: InterestReportPaginationDto): Promise<any> { 
+  async getLoanInterestSummary(@Query() dto: InterestReportPaginationDto): Promise<any> {
     const interestSummaryRaw = await this.reportsService.getLoanInterestSummary(dto);
     return {
       customMessage: 'Resumen de intereses de créditos obtenido exitosamente',
       interestSummary: interestSummaryRaw,
     };
+  }
+
+  // Retornar reporte de recaudos por cobrador en JSON  
+  @Get('collections-report')
+  @Permissions('view.reports')
+  @ApiOperation({
+    summary: 'Obtener reporte de recaudos por cobrador',
+    description: 'Genera un reporte detallado de recaudos por cobrador con totales, promedios y detalle de cada recaudo. Por defecto muestra los últimos 30 días.'
+  })
+  @ApiQuery({
+    name: 'startDate',
+    required: false,
+    type: 'string',
+    format: 'date-time',
+    description: 'Fecha de inicio del reporte (ISO 8601)',
+    example: '2024-01-01T00:00:00.000Z'
+  })
+  @ApiQuery({
+    name: 'endDate',
+    required: false,
+    type: 'string',
+    format: 'date-time',
+    description: 'Fecha de fin del reporte YYYY-MM-DD',
+    example: '2024-01-31'
+  })
+  @ApiOkResponse({
+    description: 'Reporte de recaudos obtenido exitosamente',
+    examples: {
+      'success': {
+        summary: 'Reporte generado exitosamente',
+        value: {
+          customMessage: 'Reporte de recaudos generado correctamente',
+          collectionReport: {
+            summary: {
+              totalCollections: 125,
+              totalAmount: 15000000.00,
+              activeCollectors: 5,
+              uniqueCustomers: 85,
+              averagePerCollector: 3000000.00,
+              averagePerCustomer: 176470.59
+            },
+            collectorSummary: [
+              {
+                id: 1,
+                name: 'Carlos Cobrador',
+                documentNumber: '12345678',
+                zoneName: 'Centro',
+                totalCollections: 35,
+                totalAmount: 5250000.00
+              },
+              {
+                id: 2,
+                name: 'Ana Cobradora',
+                documentNumber: '87654321',
+                zoneName: 'Norte',
+                totalCollections: 28,
+                totalAmount: 4200000.00
+              }
+            ],
+            details: [
+              {
+                paymentId: 25,
+                paymentDate: '2024-01-15 14:30:00',
+                amount: 146763.32,
+                customerName: 'Juan Pérez García',
+                customerDocument: '87654321',
+                collectorName: 'Carlos Cobrador',
+                loanId: 2,
+                zoneName: 'Centro'
+              }
+            ]
+          }
+        }
+      }
+    }
+  })
+  @ApiNotFoundResponse({
+    description: 'No se encontraron recaudos en el periodo',
+    examples: {
+      'no-data': {
+        summary: 'Sin datos en el periodo',
+        value: {
+          statusCode: 404,
+          message: 'No se encontraron recaudos en el periodo especificado.',
+          error: 'Not Found'
+        }
+      }
+    }
+  })
+  @ApiBadRequestResponse({
+    description: 'Parámetros de fecha inválidos',
+    examples: {
+      'invalid-date-range': {
+        summary: 'Rango de fechas inválido',
+        value: {
+          statusCode: 400,
+          message: 'La fecha de inicio no puede ser posterior a la fecha de fin.',
+          error: 'Bad Request'
+        }
+      }
+    }
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado',
+    examples: {
+      'missing-token': {
+        summary: 'Token faltante',
+        value: {
+          statusCode: 401,
+          message: 'Token de acceso requerido',
+          error: 'Unauthorized'
+        }
+      }
+    }
+  })
+  @ApiForbiddenResponse({
+    description: 'Sin permisos para ver reportes',
+    examples: {
+      'insufficient-permissions': {
+        summary: 'Sin permisos',
+        value: {
+          statusCode: 403,
+          message: 'No tienes permisos para ver los reportes',
+          error: 'Forbidden'
+        }
+      }
+    }
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor',
+    examples: {
+      'server-error': {
+        summary: 'Error interno',
+        value: {
+          statusCode: 500,
+          message: 'Error interno del servidor al generar el reporte',
+          error: 'Internal Server Error'
+        }
+      }
+    }
+  })
+  async getCollectionReport(
+    @Query() dateRangeDto: DateRangeDto,
+    @Res({ passthrough: true }) res: Response
+  ): Promise<CollectionReportResponse> {
+    try {
+      // Obtener datos del reporte directamente
+      const reportData = await this.reportsCollectionsService.getCollectionsReportData(dateRangeDto);
+
+      // Validar si hay datos en el reporte
+      if (!reportData.collections || reportData.collections.length === 0) {
+        res.status(404);
+        return {
+          customMessage: `No se encontraron recaudos en el período ${reportData.metadata.period}`,
+          collectionReport: []
+        };
+      }
+
+      this.logger.log(`Generando reporte con ${reportData.collections.length} registros para el período ${reportData.metadata.period}`);
+
+      const collectionReport = plainToInstance(ResponseCollectionReportDto, reportData, {
+        excludeExtraneousValues: true,
+      });
+
+      return {
+        customMessage: 'Reporte de recaudos generado correctamente',
+        collectionReport,
+      };
+
+    } catch (error) {
+      this.logger.error(`Error al generar reporte de recaudos: ${error.message}`);
+      throw error;
+    }
+  }
+
+  @Get('collection-report/export/:format')
+  @Permissions('export.reports')
+  @ApiOperation({
+    summary: 'Exportar reporte de recaudos',
+    description: 'Exporta el reporte de recaudos por cobrador en formato Excel o PDF con gráficas y tablas'
+  })
+  @ApiParam({
+    name: 'format',
+    enum: ['xlsx', 'pdf'],
+    description: 'Formato de exportación',
+    example: 'pdf'
+  })
+  @ApiQuery({
+    name: 'startDate',
+    required: false,
+    type: 'string',
+    format: 'date-time',
+    description: 'Fecha de inicio del reporte',
+    example: '2024-01-01T00:00:00.000Z'
+  })
+  @ApiQuery({
+    name: 'endDate',
+    required: false,
+    type: 'string',
+    format: 'date-time',
+    description: 'Fecha de fin del reporte',
+    example: '2024-01-31T23:59:59.999Z'
+  })
+  @ApiOkResponse({
+    description: 'Archivo generado exitosamente',
+    schema: {
+      type: 'string',
+      format: 'binary',
+    },
+    headers: {
+      'Content-Disposition': {
+        description: 'Nombre del archivo',
+        schema: { type: 'string', example: 'attachment; filename="reporte-recaudos.pdf"' }
+      },
+      'Content-Type': {
+        description: 'Tipo de contenido',
+        schema: { type: 'string', example: 'application/pdf' }
+      }
+    }
+  })
+  @ApiBadRequestResponse({
+    description: 'Formato no soportado',
+    examples: {
+      'invalid-format': {
+        summary: 'Formato inválido',
+        value: {
+          statusCode: 400,
+          message: 'Formato de exportación "doc" no soportado.',
+          error: 'Bad Request'
+        }
+      }
+    }
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado',
+    examples: {
+      'missing-token': {
+        summary: 'Token faltante',
+        value: {
+          statusCode: 401,
+          message: 'Token de acceso requerido',
+          error: 'Unauthorized'
+        }
+      }
+    }
+  })
+  @ApiForbiddenResponse({
+    description: 'Sin permisos para exportar reportes',
+    examples: {
+      'insufficient-permissions': {
+        summary: 'Sin permisos',
+        value: {
+          statusCode: 403,
+          message: 'No tienes permisos para exportar reportes',
+          error: 'Forbidden'
+        }
+      }
+    }
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error al generar archivo',
+    examples: {
+      'export-error': {
+        summary: 'Error en exportación',
+        value: {
+          statusCode: 500,
+          message: 'Error interno del servidor al generar el archivo',
+          error: 'Internal Server Error'
+        }
+      }
+    }
+  })
+  /**
+   * Genera reporte de recaudos (PDF o Excel)
+   * Ejemplo:
+   *   GET /reports/collections?startDate=2025-09-01&endDate=2025-09-29&format=pdf
+   */
+  @Get()
+  async exportCollections(
+    @Query() dto: DateRangeDto,
+    @Query('format') format: 'pdf' | 'xlsx' = 'pdf',
+    @Res() res: Response,
+  ) {
+    if (!dto.startDate || !dto.endDate) {
+      throw new BadRequestException('Debes enviar startDate y endDate');
+    }
+    if (!['pdf', 'xlsx'].includes(format)) {
+      throw new BadRequestException('Formato inválido, use pdf o xlsx');
+    }
+
+    try {
+      // Obtener los datos del reporte directamente
+      const reportData = await this.reportsCollectionsService.getCollectionsReportData(dto);
+      
+      // Validar si hay datos para exportar
+      if (!reportData.collections || reportData.collections.length === 0) {
+        res.status(404).json({
+          statusCode: 404,
+          message: `No se encontraron recaudos para exportar en el período ${reportData.metadata.period}`,
+          error: 'Not Found'
+        });
+        return;
+      }
+
+      // Generar el archivo según el formato
+      let buffer: Buffer;
+      if (format === 'pdf') {
+        buffer = await this.reportsExporterService.generateCollectionReportPdf(reportData);
+      } else {
+        buffer = await this.reportsExporterService.generateCollectionReportExcel(reportData);
+      }
+
+      res.setHeader(
+        'Content-Type',
+        format === 'pdf'
+          ? 'application/pdf'
+          : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      );
+      res.setHeader('Content-Disposition', `attachment; filename=collections-report.${format}`);
+      res.send(buffer);
+
+    } catch (error) {
+      throw error;
+    }
   }
 }

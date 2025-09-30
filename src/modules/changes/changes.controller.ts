@@ -1,14 +1,18 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { ChangesService } from './changes.service';
 import { ChangesListResponse } from './interfaces';
 import { plainToInstance } from 'class-transformer';
 import { AuditPaginationDto, ResponseChangeDto } from './dto';
+import { JwtAuthGuard, PermissionsGuard } from '@modules/auth/guards';
+import { Permissions } from '@modules/auth/decorators';
 
-@Controller('Changes')
+@Controller('changes')
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class ChangesController {
   constructor(private readonly ChangesService: ChangesService) { }
 
   @Get()
+  @Permissions('read.changes')
   async findAll(@Query() query: AuditPaginationDto): Promise<ChangesListResponse> {
     const { rawChanges, meta } = await this.ChangesService.findAll(query);
 

@@ -4,6 +4,7 @@ import { PrismaService } from '@infraestructure/prisma/prisma.service';
 import { Decimal } from '@prisma/client/runtime/library';
 import { Prisma, PaymentAllocation, PositiveBalance } from '@prisma/client';
 import { CreateCollectionDto } from './dto/create-collection.dto';
+import { CollectionPaginationDto } from './dto/collection-pagination.dto';
 
 type InstallmentWithLoan = Prisma.InstallmentGetPayload<{
   include: {
@@ -17,6 +18,7 @@ type InstallmentWithLoan = Prisma.InstallmentGetPayload<{
           };
         };
         loanStatus: true;
+        loanType: true;
       };
     };
     paymentAllocations: true;
@@ -29,16 +31,6 @@ export class CollectionsService {
 
   constructor(private readonly prisma: PrismaService) { }
 
-  /**
-   * Crea un payment y aplica el monto siguiendo la prioridad:
-   * 1) Moras (todas las cuotas del loan)
-   * 2) Cuotas anteriores a la target: interest (corriente) then capital
-   * 3) Cuota objetivo: interest then capital
-   *
-   * Asegura que no queden saldos negativos y que solo se actualicen:
-   * - paidAmount, isPaid, paidAt, statusId en Installment.
-   * Los allocations se registran en payment_allocations.
-   */
   async create(dto: CreateCollectionDto, req) {
     const user = req['user'];
     if (!user?.userId) {
@@ -46,7 +38,7 @@ export class CollectionsService {
     }
 
     return this.prisma.$transaction(async (tx) => {
-      // 1) Buscar la cuota objetivo con el loan y relaciones necesarias
+      // Traer la cuota objetivo y loan (sin filtrar moratoryInterests aquí)
       const installment: InstallmentWithLoan | null = await tx.installment.findUnique({
         where: { id: dto.installmentId },
         include: {
@@ -61,6 +53,7 @@ export class CollectionsService {
                 orderBy: { sequence: 'asc' },
               },
               loanStatus: true,
+              loanType: true,
             },
           },
           paymentAllocations: true,
@@ -71,7 +64,7 @@ export class CollectionsService {
 
       const loan = installment.loan;
 
-      // Validaciones de estado del préstamo
+      // Validaciones de estado
       if (loan.loanStatus.name === 'Cancelled')
         throw new BadRequestException('El crédito está cancelado, no puede gestionarse.');
       if (loan.loanStatus.name === 'Refinanced')
@@ -79,7 +72,7 @@ export class CollectionsService {
           'El crédito está refinanciado, verifique el nuevo crédito y recaude allí.',
         );
 
-      // Obtener estados necesarios
+      //Obtener ids de los estados de loan (Up to Date , Overdue, Paid, Cancelled, Refinanced, Outstanding Balance)
       const [paidStatus, pendingStatus, upToDateStatus, outstandingStatus, loanPaidStatus] =
         await Promise.all([
           tx.installmentStatus.findFirst({ where: { name: 'Paid' } }),
@@ -87,34 +80,103 @@ export class CollectionsService {
           tx.loanStatus.findFirst({ where: { name: 'Up to Date' } }),
           tx.loanStatus.findFirst({ where: { name: 'Outstanding Balance' } }),
           tx.loanStatus.findFirst({ where: { name: 'Paid' } }),
+          tx.loanStatus.findFirst({ where: { name: 'Overdue' } }),
+          tx.loanStatus.findFirst({ where: { name: 'Cancelled' } }),
+          tx.loanStatus.findFirst({ where: { name: 'Refinanced' } }),
         ]);
 
       if (!paidStatus || !pendingStatus || !upToDateStatus || !outstandingStatus || !loanPaidStatus)
         throw new BadRequestException('No se encontraron los estados requeridos.');
 
+      // Validar si el crédito ya está pagado en su totalidad
+      if(loan.loanStatus.name === 'Paid'){
+        throw new BadRequestException('El crédito ya está pagado en su totalidad.');
+      }
+
       if (installment.isPaid === true && installment.statusId === paidStatus?.id) {
-        // Si la cuota ya está pagada, no se puede gestionar
         throw new BadRequestException('La cuota ya está pagada.');
       }
 
-      // 2) Crear registro payment
+      // Obtener ids de estados de moratory (paid, partially paid, unpaid)
+      const [miPaidStatus, miPartiallyStatus, miUnpaidStatus] = await Promise.all([
+        tx.moratoryInterestStatus.findFirst({ where: { name: 'paid' } }),
+        tx.moratoryInterestStatus.findFirst({ where: { name: 'partially paid' } }),
+        tx.moratoryInterestStatus.findFirst({ where: { name: 'unpaid' } }),
+      ]);
+
+      // ======= Calcular moratorios pendientes del installment objetivo =======
+      const pendingMoratoriesForTarget = await tx.moratoryInterest.findMany({
+        where: {
+          installmentId: installment.id,
+          isPaid: false,
+          moratoryInterestStatus: { name: { in: ['unpaid', 'partially paid'] } },
+        },
+        orderBy: { id: 'asc' },
+      });
+
+      const totalMoratoryPendingForTarget = pendingMoratoriesForTarget.reduce(
+        (acc, m) => {
+          const pending = new Decimal(m.amount ?? 0).minus(new Decimal(m.paidAmount ?? 0));
+          return acc.plus(Decimal.max(pending, 0));
+        },
+        new Decimal(0),
+      );
+
+      let remainingAmount = new Decimal(dto.amount);
+
+      // -------- Validaciones especiales según tipo de préstamo (antes de crear payment) --------
+      if (loan.loanType?.name === 'only_interests') {
+        const targetInterest = new Decimal(installment.interestAmount ?? 0);
+        const remainingCapital = new Decimal(loan.remainingBalance ?? 0);
+        // totalNeeded: moratorios del target + interés corriente de la cuota + capital restante
+        const totalNeeded = totalMoratoryPendingForTarget.plus(targetInterest).plus(remainingCapital);
+
+        // Si periodo de gracia expirado y el pago cubre solo interés o menos -> rechazar
+        if (loan.requiresCapitalPayment === true) {
+          if (new Decimal(dto.amount).lte(targetInterest)) {
+            throw new BadRequestException('Periodo de gracia expirado, debe abonar al capital.');
+          }
+        }
+
+        // Pago exacto de toda la deuda (moratorios del target + interés target + remainingCapital)
+        if (new Decimal(dto.amount).eq(totalNeeded)) {
+          this.logger.log(`✅ Pago exacto de toda la deuda loanId=${loan.id}`);
+        }
+
+        // Si intenta pagar más que lo necesario para saldar TODO -> advertir/rechazar
+        const tolerance = new Decimal(50);
+
+
+        if (new Decimal(dto.amount).gte(totalNeeded) &&
+          new Decimal(dto.amount).lte(totalNeeded.plus(tolerance))) {
+          // El pago está dentro del rango aceptable: aplica solo lo necesario
+          remainingAmount = new Decimal(totalNeeded);
+        } else if (new Decimal(dto.amount).gt(totalNeeded.plus(tolerance))) {
+          // Pago mucho mayor, ahí sí rechazamos
+          throw new BadRequestException(
+            `El cliente solo debe pagar ${totalNeeded.toFixed(2)} para saldar la deuda.`
+          );
+        }
+      }
+
+      // ------------- Crear registro payment -------------
       const payment = await tx.payment.create({
         data: {
           loanId: loan.id,
           amount: dto.amount,
           paymentTypeId: 1,
+          paymentMethodId: 1,
           recordedByUserId: user.userId,
         },
       });
 
       // Inicializadores
-      let remainingAmount = new Decimal(dto.amount);
+
       const allocations: Omit<PaymentAllocation, 'id'>[] = [];
       let totalCapital = new Decimal(0);
       let totalInterest = new Decimal(0);
       let totalLateFee = new Decimal(0);
 
-      // Helper: suma pagos ya aplicados por una cuota (desde paymentAllocations)
       const sumAppliedFromAllocations = (inst: typeof loan.installments[number]) => {
         const paidCapital = inst.paymentAllocations.reduce(
           (acc, a) => acc.plus(a.appliedToCapital ?? 0),
@@ -127,32 +189,55 @@ export class CollectionsService {
         return { paidCapital, paidInterest };
       };
 
-      // ---------- Fase A: aplicar moras (moratoryInterests) sobre TODAS las cuotas ----------
-      // Recorremos todas las cuotas generadas (isActive true) del loan en orden de sequence
+      // ---------- Fase A: Moras (ahora procesando múltiples MoratoryInterest por cuota) ----------
       const activeInstallments = loan.installments.filter((i) => i.isActive !== false);
       const orderedInstallments = activeInstallments.sort((a, b) => a.sequence - b.sequence);
 
       for (const inst of orderedInstallments) {
         if (remainingAmount.lte(0)) break;
 
-        // Cada moratoryInterest (puede ser varias) se cubre con prioridad
-        for (const mora of inst.moratoryInterests ?? []) {
+        // Tomamos los moratorios pendientes de esta cuota (ordenados por id)
+        const moratories = (inst.moratoryInterests ?? [])
+          .filter((m) => !m.isPaid)
+          .sort((a, b) => a.id - b.id);
+
+        for (const mora of moratories) {
           if (remainingAmount.lte(0)) break;
 
-          const pendingMora = new Decimal(mora.amount ?? 0);
-          if (pendingMora.lte(0)) continue;
+          // Pendiente real = amount - paidAmount
+          const moraPaidSoFar = new Decimal(mora.paidAmount ?? 0);
+          const moraTotal = new Decimal(mora.amount ?? 0);
+          const pendiente = Decimal.max(moraTotal.minus(moraPaidSoFar), 0);
 
-          const toApply = Decimal.min(pendingMora, remainingAmount);
-          remainingAmount = remainingAmount.minus(toApply);
+          if (pendiente.lte(0)) continue;
 
-          // actualizar moratoryInterest a 0 (se asume que se borra el pendiente)
-          await tx.moratoryInterest.update({
-            where: { id: mora.id },
-            data: { amount: 0, daysLate: 0 },
-          });
+          const toApply = Decimal.min(pendiente, remainingAmount);
 
-          totalLateFee = totalLateFee.plus(toApply);
+          // Si cubrimos completamente este moratorio
+          if (toApply.gte(pendiente)) {
+            // marcar pagado
+            await tx.moratoryInterest.update({
+              where: { id: mora.id },
+              data: {
+                isPaid: true,
+                paidAmount: moraPaidSoFar.plus(pendiente).toNumber(),
+                paidAt: new Date(),
+                moratoryInterestStatusId: miPaidStatus ? miPaidStatus.id : undefined,
+              },
+            });
+          } else {
+            // pago parcial
+            await tx.moratoryInterest.update({
+              where: { id: mora.id },
+              data: {
+                paidAmount: moraPaidSoFar.plus(toApply).toNumber(),
+                paidAt: new Date(),
+                moratoryInterestStatusId: miPartiallyStatus ? miPartiallyStatus.id : undefined,
+              },
+            });
+          }
 
+          // Registrar allocation (aplicado a mora -> late fee)
           allocations.push({
             paymentId: payment.id,
             installmentId: inst.id,
@@ -161,33 +246,30 @@ export class CollectionsService {
             appliedToLateFee: toApply,
             createdAt: new Date(),
           });
+
+          totalLateFee = totalLateFee.plus(toApply);
+          remainingAmount = remainingAmount.minus(toApply);
         }
       }
 
-      // ---------- Fase B: cubrir cuotas anteriores a la objetivo (interest -> capital) ----------
-      // Recorremos en secuencia ascendente y vamos cubriendo pendientes hasta llegar a la cuota objetivo
+      // ---------- Fase B: Cuotas anteriores (interest -> capital) ----------
       for (const inst of orderedInstallments) {
         if (remainingAmount.lte(0)) break;
-        if (inst.id === installment.id) break; // detener antes de la target (la target se procesa después)
+        if (inst.id === installment.id) break;
 
-        // calcular lo ya pagado en esta cuota (desde paymentAllocations)
         const { paidCapital, paidInterest } = sumAppliedFromAllocations(inst);
-
-        // pendiente corriente
         const pendingInterest = Decimal.max(new Decimal(inst.interestAmount ?? 0).minus(paidInterest), 0);
         const pendingCapital = Decimal.max(new Decimal(inst.capitalAmount ?? 0).minus(paidCapital), 0);
 
         let appliedInterest = new Decimal(0);
         let appliedCapital = new Decimal(0);
 
-        // aplicar interés corriente primero
         if (pendingInterest.gt(0) && remainingAmount.gt(0)) {
           const toApply = Decimal.min(pendingInterest, remainingAmount);
           remainingAmount = remainingAmount.minus(toApply);
           appliedInterest = appliedInterest.plus(toApply);
         }
 
-        // si interés quedó cubierto (considerando pagos previos), aplicar capital
         if (remainingAmount.gt(0) && appliedInterest.plus(paidInterest).gte(new Decimal(inst.interestAmount ?? 0))) {
           if (pendingCapital.gt(0)) {
             const toApply = Decimal.min(pendingCapital, remainingAmount);
@@ -196,7 +278,6 @@ export class CollectionsService {
           }
         }
 
-        // si aplicamos algo, actualizamos solo los campos permitidos de la cuota
         if (appliedInterest.gt(0) || appliedCapital.gt(0)) {
           const newPaidAmount = new Decimal(inst.paidAmount ?? 0).plus(appliedInterest).plus(appliedCapital);
 
@@ -228,20 +309,15 @@ export class CollectionsService {
         }
       }
 
-      // ---------- Fase C: procesar la cuota objetivo (interest -> capital) ----------
-      // Recalcular paid amounts para target desde loan.installments (buscamos la instancia en orderedInstallments)
+      // ---------- Fase C: Cuota objetivo (interest -> capital) ----------
       const targetInst = orderedInstallments.find((i) => i.id === installment.id);
-
-      if (!targetInst) {
-        throw new BadRequestException('No se encontró la cuota objetivo en el préstamo.');
-      }
+      if (!targetInst) throw new BadRequestException('No se encontró la cuota objetivo.');
 
       const { paidCapital: tPaidCapital, paidInterest: tPaidInterest } = sumAppliedFromAllocations(targetInst);
 
       let tAppliedInterest = new Decimal(0);
       let tAppliedCapital = new Decimal(0);
 
-      // pendiente de interés corriente en target
       const targetPendingInterest = Decimal.max(
         new Decimal(targetInst.interestAmount ?? 0).minus(tPaidInterest),
         0,
@@ -253,7 +329,6 @@ export class CollectionsService {
         tAppliedInterest = tAppliedInterest.plus(toApply);
       }
 
-      // si interés corriente quedó cubierto, aplicar capital pendiente
       if (remainingAmount.gt(0) && tAppliedInterest.plus(tPaidInterest).gte(new Decimal(targetInst.interestAmount ?? 0))) {
         const pendingCapital = Decimal.max(new Decimal(targetInst.capitalAmount ?? 0).minus(tPaidCapital), 0);
         if (pendingCapital.gt(0)) {
@@ -263,7 +338,6 @@ export class CollectionsService {
         }
       }
 
-      // Aplicar a la cuota objetivo (solo campos permitidos)
       if (tAppliedInterest.gt(0) || tAppliedCapital.gt(0)) {
         const newPaidAmount = new Decimal(targetInst.paidAmount ?? 0).plus(tAppliedInterest).plus(tAppliedCapital);
 
@@ -294,40 +368,46 @@ export class CollectionsService {
         totalInterest = totalInterest.plus(tAppliedInterest);
       }
 
-      // ---------- Fase D: si queda remainingAmount -> positive balance ----------
+      // ---------- Fase D: PositiveBalance / FixedFees ----------
       let positiveBalance: PositiveBalance | undefined;
+
       if (remainingAmount.gt(0)) {
-        const existingBalance = await tx.positiveBalance.findFirst({
-          where: { loanId: loan.id, isUsed: false },
-        });
+        if (loan.loanType?.name === 'fixed_fees') {
+          // No se permite PositiveBalance: excedente va directo al remainingBalance
+          const newRemainingBalance = Decimal.max(
+            new Decimal(loan.remainingBalance ?? 0).minus(remainingAmount),
+            0,
+          );
 
-        if (existingBalance) {
-          positiveBalance = await tx.positiveBalance.update({
-            where: { id: existingBalance.id },
-            data: {
-              amount: new Decimal(existingBalance.amount).plus(remainingAmount),
-            },
+          await tx.loan.update({
+            where: { id: loan.id },
+            data: { remainingBalance: newRemainingBalance },
           });
 
           this.logger.log(
-            `💰 PositiveBalance actualizado loanId=${loan.id}, nuevo amount=${positiveBalance.amount.toString()}`,
+            `⚠️ Excedente aplicado directo al saldo. loanId=${loan.id}, -${remainingAmount.toFixed(2)}`,
           );
+
+          remainingAmount = new Decimal(0);
         } else {
-          positiveBalance = await tx.positiveBalance.create({
-            data: {
-              loanId: loan.id,
-              amount: remainingAmount,
-              source: 'overpayment',
-              isUsed: false,
-            },
+          // Flujo normal de PositiveBalance
+          const existingBalance = await tx.positiveBalance.findFirst({
+            where: { loanId: loan.id, isUsed: false },
           });
 
-          this.logger.log(
-            `💰 PositiveBalance creado loanId=${loan.id}, amount=${positiveBalance.amount.toString()}`,
-          );
-        }
+          if (existingBalance) {
+            positiveBalance = await tx.positiveBalance.update({
+              where: { id: existingBalance.id },
+              data: { amount: new Decimal(existingBalance.amount).plus(remainingAmount) },
+            });
+          } else {
+            positiveBalance = await tx.positiveBalance.create({
+              data: { loanId: loan.id, amount: remainingAmount, source: 'overpayment', isUsed: false },
+            });
+          }
 
-        remainingAmount = new Decimal(0);
+          remainingAmount = new Decimal(0);
+        }
       }
 
       // ---------- Fase E: actualizar loan.remainingBalance y loanStatus ----------
@@ -345,23 +425,19 @@ export class CollectionsService {
       });
 
       // ---------- Fase F: persistir allocations y preparar respuesta ----------
-      // Creamos allocations en BD (si hubo). createMany acepta Decimal.
       if (allocations.length > 0) {
-        // Prisma createMany ignores defaults like createdAt sometimes depending on db; we provided createdAt explicitly.
         await tx.paymentAllocation.createMany({ data: allocations });
       }
 
-      // Recuperar allocations exactas (para devolver detalle)
       const dbAllocations = await tx.paymentAllocation.findMany({
         where: { paymentId: payment.id },
         orderBy: { id: 'asc' },
       });
 
-      // Respuesta serializada (decimales a string)
       return {
         paymentId: payment.id,
         loanId: loan.id,
-        paymentDate: payment.date,
+        paymentDate: payment.paymentDate,
         appliedToCapital: totalCapital.toFixed(2),
         appliedToInterest: totalInterest.toFixed(2),
         appliedToLateFee: totalLateFee.toFixed(2),
@@ -376,5 +452,182 @@ export class CollectionsService {
         })),
       };
     });
+  }
+
+  // ------------------- findAll (igual que antes) -------------------
+  /**
+   * Obtiene todos los cobros/pagos con paginación y filtros
+   */
+  async findAll(paginationDto: CollectionPaginationDto) {
+    const { page = 1, limit = 10, loanId, collectorId, startDate, endDate } = paginationDto;
+
+    // Construir filtros
+    const where: any = {};
+
+    if (loanId) {
+      where.loanId = loanId;
+    }
+
+    if (startDate || endDate) {
+      where.paymentDate = {};
+      if (startDate) {
+        where.paymentDate.gte = new Date(startDate);
+      }
+      if (endDate) {
+        where.paymentDate.lte = new Date(endDate);
+      }
+    }
+
+    if (collectorId) {
+      where.recordedByUser = {
+        OR: [
+          { collector: { id: collectorId } },
+          { id: collectorId } // En caso de que sea el ID del usuario directamente
+        ]
+      };
+    }
+
+    // Obtener total de registros
+    const total = await this.prisma.payment.count({ where });
+
+    if (total === 0) {
+      return {
+        collections: [],
+        meta: {
+          total: 0,
+          page: 1,
+          lastPage: 0,
+          limit,
+          hasNextPage: false,
+        },
+      };
+    }
+
+    const lastPage = Math.ceil(total / limit);
+    if (page > lastPage) {
+      throw new BadRequestException(`La página #${page} no existe`);
+    }
+
+    // ✅ Obtener pagos con todas las relaciones necesarias
+    const payments = await this.prisma.payment.findMany({
+      where,
+      include: {
+        loan: {
+          include: {
+            customer: {
+              include: {
+                typeDocumentIdentification: true,
+                zone: true,
+              }
+            },
+            loanType: true,
+            loanStatus: true,
+          }
+        },
+        recordedByUser: {
+          include: {
+            collector: {
+              include: {
+                zone: true,
+                typeDocumentIdentification: true,
+              }
+            }
+          }
+        },
+        allocations: {
+          include: {
+            installment: true,
+          }
+        },
+        paymentType: true,
+        paymentMethod: true, // ✅ Incluir método de pago
+      },
+      orderBy: { paymentDate: 'desc' },
+      skip: (page - 1) * limit,
+      take: limit,
+    });
+
+    // Mapear los resultados
+    const collections = payments.map((payment) => {
+      // Calcular totales de las allocations
+      const totalCapital = payment.allocations.reduce(
+        (sum, alloc) => sum + Number(alloc.appliedToCapital || 0), 0
+      );
+      const totalInterest = payment.allocations.reduce(
+        (sum, alloc) => sum + Number(alloc.appliedToInterest || 0), 0
+      );
+      const totalLateFee = payment.allocations.reduce(
+        (sum, alloc) => sum + Number(alloc.appliedToLateFee || 0), 0
+      );
+
+      // Calcular exceso (si el pago fue mayor que lo aplicado)
+      const totalApplied = totalCapital + totalInterest + totalLateFee;
+      const excessAmount = Math.max(0, Number(payment.amount) - totalApplied);
+
+      return {
+        id: payment.id,
+        loanId: payment.loanId,
+        amount: payment.amount.toFixed(2),
+        appliedToCapital: totalCapital.toFixed(2),
+        appliedToInterest: totalInterest.toFixed(2),
+        appliedToLateFee: totalLateFee.toFixed(2),
+        excessAmount: excessAmount.toFixed(2),
+        paymentDate: payment.paymentDate.toISOString().replace('T', ' ').slice(0, 19),
+        isFullyPaid: Number(payment.loan.remainingBalance) <= 0,
+        customer: {
+          id: payment.loan.customer.id,
+          name: `${payment.loan.customer.firstName} ${payment.loan.customer.lastName}`,
+          documentNumber: payment.loan.customer.documentNumber.toString(),
+        },
+        loan: {
+          id: payment.loan.id,
+          loanAmount: Number(payment.loan.loanAmount),
+          remainingBalance: Number(payment.loan.remainingBalance),
+          loanTypeName: this.translateLoanType(payment.loan.loanType.name),
+          loanStatusName: this.translateLoanStatus(payment.loan.loanStatus.name),
+        },
+        collector: {
+          id: payment.recordedByUser.collector?.id || payment.recordedByUser.id,
+          name: payment.recordedByUser.collector
+            ? `${payment.recordedByUser.collector.firstName} ${payment.recordedByUser.collector.lastName}`
+            : payment.recordedByUser.name,
+          documentNumber: payment.recordedByUser.collector?.documentNumber?.toString() || '',
+          phone: payment.recordedByUser.collector?.phone || '',
+          zoneName: payment.recordedByUser.collector?.zone?.name || '',
+        },
+      };
+    });
+
+    return {
+      collections,
+      meta: {
+        total,
+        page,
+        lastPage,
+        limit,
+        hasNextPage: page < lastPage,
+      },
+    };
+  }
+
+  // Métodos auxiliares para traducción
+  private translateLoanType(loanTypeName: string): string {
+    const translations = {
+      'fixed_fees': 'Cuotas Fijas',
+      'only_interests': 'Interés Mensual',
+    };
+    return translations[loanTypeName] || loanTypeName;
+  }
+
+  private translateLoanStatus(statusName: string): string {
+    const translations = {
+      'Up to Date': 'Al día',
+      'Overdue': 'En Mora',
+      'Paid': 'Pagado',
+      'Cancelled': 'Cancelado',
+      'Refinanced': 'Refinanciado',
+      'Outstanding Balance': 'Saldo Pendiente',
+    };
+    return translations[statusName] || statusName;
   }
 }

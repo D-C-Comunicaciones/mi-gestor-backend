@@ -1,7 +1,8 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Query, Res, UseGuards } from '@nestjs/common';
 import { LoansService } from './loans.service';
-import { CreateLoanDto, UpdateLoanDto } from './dto';
-import { LoanPaginationDto } from './dto/loan-pagination.dto';
+import { CreateLoanDto, UpdateLoanDto, ResponseOverdueLoanDto, LoanPaginationDto } from './dto';
+import { PaginationDto } from '@common/dto';
+import { LoanByCustomerResponse, LoanListResponse, LoanResponse, RefinanceLoanResponse, OverdueLoansResponse } from './interfaces';
 import { Response } from 'express';
 import { Permissions } from '@auth/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '@modules/auth/guards';
@@ -16,7 +17,6 @@ import {
 } from '@nestjs/swagger';
 import { plainToInstance } from 'class-transformer';
 import { ResponseLoanDto } from './dto';
-import { LoanByCustomerResponse, LoanListResponse, LoanResponse, LoanUpdateResponse, RefinanceLoanResponse } from './interfaces';
 import { ResponseLoanWithInstallmentsDto } from './dto/response-loan-by-customer.dto';
 import { RefinanceLoanDto } from './dto';
 
@@ -34,7 +34,6 @@ export class LoansController {
   @ApiQuery({ name: 'page', required: false, schema: { type: 'integer', example: 1 } })
   @ApiQuery({ name: 'limit', required: false, schema: { type: 'integer', example: 10 } })
   @ApiQuery({ name: 'isActive', required: false, schema: { type: 'boolean', example: true } })
-  @ApiQuery({ name: 'include', required: false, schema: { type: 'string', example: 'customer,installments' } })
   @ApiOkResponse({
     description: 'Listado obtenido',
     examples: {
@@ -173,11 +172,173 @@ export class LoansController {
       meta,
     };
   }
+
+  @Get('overdue')
+  @Permissions('view.loans')
+  @ApiOperation({ 
+    summary: 'Obtener préstamos en mora', 
+    description: 'Retorna lista paginada de préstamos que tienen cuotas en mora con información del cliente y detalles de las cuotas vencidas.' 
+  })
+  @ApiQuery({ name: 'page', required: false, schema: { type: 'integer', example: 1, description: 'Número de página' } })
+  @ApiQuery({ name: 'limit', required: false, schema: { type: 'integer', example: 10, description: 'Elementos por página' } })
+  @ApiOkResponse({
+    description: 'Préstamos en mora obtenidos correctamente',
+    examples: {
+      'success': {
+        summary: 'Préstamos en mora obtenidos exitosamente',
+        value: {
+          customMessage: 'Préstamos en mora obtenidos correctamente',
+          overdueLoans: [
+            {
+              loanId: 1,
+              loanAmount: '1000000.00',
+              remainingBalance: '500000.00',
+              loanTypeName: 'Cuotas Fijas',
+              startDate: '2024-01-01',
+              totalDaysLate: 45,
+              totalAmountOwed: '250000.00',
+              customer: {
+                id: 1,
+                name: 'Juan Pérez',
+                documentNumber: '12345678',
+                phone: '+57 300 123 4567',
+                address: 'Calle 123 #45-67',
+                zoneName: 'Centro',
+                zoneCode: 'CTR'
+              },
+              overdueInstallments: [
+                {
+                  id: 3,
+                  sequence: 3,
+                  dueDate: '2024-01-15',
+                  daysLate: 45,
+                  capitalAmount: '100000.00',
+                  interestAmount: '25000.00',
+                  totalAmount: '125000.00',
+                  paidAmount: '50000.00',
+                  pendingAmount: '75000.00',
+                  lateFeeAmount: '15000.00',
+                  totalOwed: '90000.00',
+                  statusName: 'Mora Pagada'
+                }
+              ]
+            }
+          ],
+          meta: {
+            total: 15,
+            page: 1,
+            lastPage: 2,
+            limit: 10,
+            hasNextPage: true
+          }
+        }
+      }
+    }
+  })
+  @ApiNotFoundResponse({ 
+    description: 'No se encontraron préstamos en mora',
+    examples: {
+      'no-overdue-loans': {
+        summary: 'No hay préstamos en mora',
+        value: {
+          customMessage: 'No se encontraron préstamos en mora',
+          overdueLoans: [],
+          meta: {
+            total: 0,
+            page: 1,
+            lastPage: 0,
+            limit: 10,
+            hasNextPage: false
+          }
+        }
+      }
+    }
+  })
+  @ApiBadRequestResponse({
+    description: 'Parámetros de consulta inválidos',
+    examples: {
+      'pagination-error': {
+        summary: 'Parámetros de paginación inválidos',
+        value: {
+          statusCode: 400,
+          message: [
+            'page debe ser un número positivo',
+            'limit debe estar entre 1 y 100'
+          ],
+          error: 'Bad Request'
+        }
+      }
+    }
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autenticado',
+    examples: {
+      'missing-token': {
+        summary: 'Token faltante',
+        value: {
+          statusCode: 401,
+          message: 'Token de acceso requerido',
+          error: 'Unauthorized'
+        }
+      }
+    }
+  })
+  @ApiForbiddenResponse({
+    description: 'Sin permiso view.loans',
+    examples: {
+      'insufficient-permissions': {
+        summary: 'Sin permisos para ver préstamos',
+        value: {
+          statusCode: 403,
+          message: 'No tienes permisos para ver los préstamos',
+          error: 'Forbidden'
+        }
+      }
+    }
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor',
+    examples: {
+      'server-error': {
+        summary: 'Error interno del servidor',
+        value: {
+          statusCode: 500,
+          message: 'Error interno del servidor al obtener los préstamos en mora',
+          error: 'Internal Server Error'
+        }
+      }
+    }
+  })
+  async getOverdueLoans(
+    @Query() queryDto: PaginationDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<OverdueLoansResponse> {
+    const { overdueLoans, meta } = await this.loansService.getOverdueLoans(queryDto);
+
+    if (overdueLoans.length === 0) {
+      res.status(404);
+      return {
+        customMessage: 'No se encontraron préstamos en mora',
+        overdueLoans: [],
+        meta,
+      };
+    }
+
+    const overdueLoansResponse = plainToInstance(ResponseOverdueLoanDto, overdueLoans, {
+      excludeExtraneousValues: true,
+    });
+
+    return {
+      customMessage: 'Préstamos en mora obtenidos correctamente',
+      overdueLoans: overdueLoansResponse,
+      meta,
+    };
+  }
+
   @Get(':id')
   @Permissions('view.loans')
   @ApiOperation({ summary: 'Obtener préstamo', description: 'Retorna un préstamo por id.' })
   @ApiParam({ name: 'id', type: Number, example: 1 })
-  @ApiQuery({ name: 'include', required: false, schema: { type: 'string', example: 'customer,installments' } })
   @ApiOkResponse({
     description: 'Préstamo encontrado',
     examples: {
@@ -274,9 +435,8 @@ export class LoansController {
   })
   async findOne(
     @Param('id', ParseIntPipe) id: number,
-    @Query('include') include?: string,
   ): Promise<LoanResponse> {
-    const raw = await this.loansService.findOne(id, include);
+    const raw = await this.loansService.findOne(id);
     const [loan] = plainToInstance(ResponseLoanDto, [raw], { excludeExtraneousValues: true });
     return {
       customMessage: 'Préstamo obtenido correctamente',
@@ -941,103 +1101,4 @@ export class LoansController {
     };
   }
 
-  @Delete(':id')
-  @Permissions('delete.loans')
-  @ApiOperation({ summary: 'Inactivar préstamo', description: 'Soft delete (isActive=false).' })
-  @ApiParam({ name: 'id', type: Number, example: 1 })
-  @ApiOkResponse({
-    description: 'Préstamo inactivado',
-    examples: {
-      'success': {
-        summary: 'Préstamo inactivado exitosamente',
-        value: {
-          customMessage: 'Préstamo inactivado correctamente',
-          loan: {
-            id: 1,
-            amount: 1000000,
-            interestRate: 2.5,
-            termId: 12,
-            customerId: 1,
-            status: 'cancelled',
-            remainingBalance: 800000,
-            isActive: false,
-            updatedAt: '2024-01-20T14:45:00.000Z'
-          }
-        }
-      }
-    }
-  })
-  @ApiNotFoundResponse({ 
-    description: 'Préstamo no encontrado',
-    examples: {
-      'loan-not-found': {
-        summary: 'Préstamo no encontrado',
-        value: {
-          statusCode: 404,
-          message: 'Préstamo con ID 1 no encontrado',
-          error: 'Not Found'
-        }
-      }
-    }
-  })
-  @ApiBadRequestResponse({
-    description: 'No se puede inactivar',
-    examples: {
-      'cannot-delete': {
-        summary: 'No se puede inactivar',
-        value: {
-          statusCode: 400,
-          message: 'No se puede inactivar un préstamo que ya está inactivo',
-          error: 'Bad Request'
-        }
-      }
-    }
-  })
-  @ApiUnauthorizedResponse({
-    description: 'No autenticado',
-    examples: {
-      'missing-token': {
-        summary: 'Token faltante',
-        value: {
-          statusCode: 401,
-          message: 'Token de acceso requerido',
-          error: 'Unauthorized'
-        }
-      }
-    }
-  })
-  @ApiForbiddenResponse({
-    description: 'Sin permiso delete.loans',
-    examples: {
-      'insufficient-permissions': {
-        summary: 'Sin permisos para inactivar préstamos',
-        value: {
-          statusCode: 403,
-          message: 'No tienes permisos para inactivar préstamos',
-          error: 'Forbidden'
-        }
-      }
-    }
-  })
-  @ApiInternalServerErrorResponse({
-    description: 'Error interno del servidor',
-    examples: {
-      'server-error': {
-        summary: 'Error interno del servidor',
-        value: {
-          statusCode: 500,
-          message: 'Error interno del servidor al inactivar el préstamo',
-          error: 'Internal Server Error'
-        }
-      }
-    }
-  })
-  async delete(@Param('id', ParseIntPipe) id: number): Promise<LoanResponse> {
-    const deletedLoan = await this.loansService.softDelete(id);
-    const loan = plainToInstance(ResponseLoanDto, deletedLoan, { excludeExtraneousValues: true });
-    return {
-      customMessage: 'Préstamo inactivado correctamente',
-      loan,
-    };
-  }
 }

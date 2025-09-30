@@ -5,3 +5,4 @@ export * from './response-loan.dto';
 export * from './response-loan-by-customer.dto';
 export * from './response-refinance-loan.dto';
 export * from './refinance-loan.dto';
+export * from './response-overdue-loan.dto';

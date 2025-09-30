@@ -17,6 +17,7 @@
     "noImplicitAny": false,
     "strictBindCallApply": false,
     "noFallthroughCasesInSwitch": false,
+    "esModuleInterop": true,
     "paths": {
       "@infraestructure/*": ["src/infraestructure/*"],
       "@modules/*": ["src/modules/*"],
@@ -30,7 +31,8 @@
       "@users/*": ["src/modules/users/*"],
       "@types/*": ["src/types/*"],
       "@prisma/*": ["src/infraestructure/prisma/*"],
-      "@redis/*": ["src/infraestructure/redis/*"]
+      "@redis/*": ["src/infraestructure/redis/*"],
+      "templates/*": ["src/assets/reports/templates/*"]
     }
   },
   "include": ["src/**/*"],

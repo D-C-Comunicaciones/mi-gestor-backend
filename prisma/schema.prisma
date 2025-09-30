@@ -269,6 +269,7 @@ model Collector {
   zone     Zone?     @relation(fields: [zoneId], references: [id])
   user     User?     @relation(fields: [userId], references: [id])
   advances Advance[] @relation("AdvancesCollectedByCollector") // Abonos recolectados
+  payments Payment[] @relation("PaymentsCollectedBy") // Pagos recolectados
 
   @@index([firstName])
   @@index([lastName])
@@ -309,15 +310,28 @@ model PenaltyRate {
 
 model MoratoryInterest {
   id            Int   @id @default(autoincrement())
-  installmentId Int   @unique
+  installmentId Int   
   daysLate      Int
   amount        Float
-
+  paidAt       DateTime? @db.Date
+  paidAmount  Decimal @default(0) @db.Decimal(20, 2)
+  isPaid      Boolean @default(false)
+  moratoryInterestStatusId Int @default(1)
+  moratoryInterestStatus  MoratoryInterestStatus @relation(fields: [moratoryInterestStatusId], references: [id])
   installment Installment @relation(fields: [installmentId], references: [id])
   discounts   Discount[]  @relation("MoratoryDiscounts")
 
-  @@index([installmentId, daysLate, amount])
+  @@index([installmentId, moratoryInterestStatusId, daysLate, amount, paidAt, paidAmount, isPaid])
   @@map("moratory_interests")
+}
+
+model MoratoryInterestStatus {
+  id          Int                 @id @default(autoincrement())
+  name        String              @unique
+  moratories  MoratoryInterest[]
+
+  @@index([id, name])
+  @@map("moratory_interest_statuses")
 }
 
 model GracePeriod {
@@ -448,24 +462,32 @@ model Payment {
   loanId Int
   loan   Loan @relation(fields: [loanId], references: [id])
 
-  amount        Decimal     @db.Decimal(20, 2)
+  amount              Decimal   @db.Decimal(20, 2)
+  appliedToCapital    Decimal   @default(0) @db.Decimal(20, 2)
+  appliedToInterest   Decimal   @default(0) @db.Decimal(20, 2)
+  appliedToLateFee    Decimal   @default(0) @db.Decimal(20, 2)
+  
   paymentTypeId Int
   paymentType   PaymentType @relation(fields: [paymentTypeId], references: [id])
 
   paymentMethodId Int
   paymentMethod   PaymentMethod @relation(fields: [paymentMethodId], references: [id])
 
-  date             DateTime @default(now())
-  recordedByUserId Int
-  recordedByUser   User     @relation("PaymentsRecordedByUser", fields: [recordedByUserId], references: [id])
+  paymentDate         DateTime @db.Date @default(now())
+  recordedByUserId    Int
+  recordedByUser      User     @relation("PaymentsRecordedByUser", fields: [recordedByUserId], references: [id])
+
+  // Agregar relación con collector
+  collectorId         Int?
+  collector           Collector? @relation("PaymentsCollectedBy", fields: [collectorId], references: [id])
 
   allocations PaymentAllocation[]
-
-  
 
   @@index([loanId])
   @@index([paymentTypeId])
   @@index([recordedByUserId])
+  @@index([collectorId])
+  @@index([paymentDate])
   @@map("payments")
 }
 

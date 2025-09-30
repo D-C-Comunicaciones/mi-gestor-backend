@@ -59,12 +59,6 @@ export class PermissionsGuard implements CanActivate {
 
 
       //permissions messages
-      'view.collectors': 'ver información de cobradores',
-      'create.collectors': 'crear cobradores',
-      'update.collectors': 'actualizar cobradores',
-      'view.customers': 'ver información de clientes',
-      'create.customers': 'crear clientes',
-      'update.customers': 'actualizar clientes',
       'change.customers.status': 'cambiar estado de clientes',
 
       // loan messages
@@ -76,6 +70,133 @@ export class PermissionsGuard implements CanActivate {
       // assign/revoke roles to users
       'assign roles to users': 'asignar roles a usuarios',
       'revoke roles to users': 'revocar roles a usuarios',
+
+      //reports messages
+      'view.reports': 'ver información de reportes',
+      'generate.reports': 'generar reportes',
+
+      //changes messages
+      'read.changes': 'leer auditorías de cambios',
+
+      // collections messages
+      'view.collections': 'ver información de cobranzas',
+      'create.collections': 'crear cobranzas',
+      'update.collections': 'actualizar cobranzas',
+      'delete.collections': 'eliminar cobranzas',
+
+      // payment frequencies messages
+      'create.payment-frequencies': 'crear frecuencias de pago',
+      'update.payment-frequencies': 'actualizar frecuencias de pago',
+      'delete.payment-frequencies': 'eliminar frecuencias de pago',
+
+      // type document identifications messages
+      'create.type-document-identifications': 'crear tipos de identificación',
+      'update.type-document-identifications': 'actualizar tipos de identificación',
+      'delete.type-document-identifications': 'eliminar tipos de identificación',
+
+      // customers messages
+      'view.customers': 'ver información de clientes',
+      'create.customers': 'crear clientes',
+      'update.customers': 'actualizar clientes',
+      'delete.customers': 'eliminar clientes',
+
+      // collectors messages
+      'view.collectors': 'ver información de cobradores',
+      'create.collectors': 'crear cobradores',
+      'update.collectors': 'actualizar cobradores',
+      'delete.collectors': 'eliminar cobradores',
+
+      // users messages
+      'view.users': 'ver información de usuarios',
+      'create.users': 'crear usuarios',
+      'update.users': 'actualizar usuarios',
+      'delete.users': 'eliminar usuarios',
+
+      // roles messages
+      'view.roles': 'ver información de roles',
+      'create.roles': 'crear roles',
+      'update.roles': 'actualizar roles',
+      'delete.roles': 'eliminar roles',
+
+      // permissions messages
+      'view.permissions': 'ver información de permisos',
+      'create.permissions': 'crear permisos',
+      'update.permissions': 'actualizar permisos',
+      'delete.permissions': 'eliminar permisos',
+
+      // zones messages
+      'create.zones': 'crear zonas',
+      'update.zones': 'actualizar zonas',
+      'delete.zones': 'eliminar zonas',
+
+      // genders messages
+      'create.genders': 'crear géneros',
+      'update.genders': 'actualizar géneros',
+      'delete.genders': 'eliminar géneros',
+
+      //loan-types messages
+      'create.loan-types': 'crear tipos de préstamos',
+      'update.loan-types': 'actualizar tipos de préstamos',
+      'delete.loan-types': 'eliminar tipos de préstamos',
+
+      //interest-rates messages
+      'create.interest-rates': 'crear tasas de interés',
+      'update.interest-rates': 'actualizar tasas de interés',
+      'delete.interest-rates': 'eliminar tasas de interés',
+
+      //penalty-rates messages
+      'create.penalty-rates': 'crear tasas de penalidad',
+      'update.penalty-rates': 'actualizar tasas de penalidad',
+      'delete.penalty-rates': 'eliminar tasas de penalidad',
+
+      //payment-methods messages
+      'create.payment-methods': 'crear métodos de pago',
+      'update.payment-methods': 'actualizar métodos de pago',
+      'delete.payment-methods': 'eliminar métodos de pago',
+
+      //terms messages
+      'create.terms': 'crear términos',
+      'update.terms': 'actualizar términos',
+      'delete.terms': 'eliminar términos',
+
+      //discounts messages
+      'create.discounts': 'crear descuentos',
+      'update.discounts': 'actualizar descuentos',
+      'delete.discounts': 'eliminar descuentos',
+
+      //grace-periods messages
+      'create.grace-periods': 'crear períodos de gracia',
+      'update.grace-periods': 'actualizar períodos de gracia',
+      'delete.grace-periods': 'eliminar períodos de gracia',
+
+      //configurations messages
+      'update.configurations': 'actualizar configuraciones',
+
+      //companies messages
+      'view.companies': 'ver información de compañías',
+      'create.companies': 'crear compañías',
+      'update.companies': 'actualizar compañías',
+      'delete.companies': 'eliminar compañías',
+
+      //imports messages
+      'create.imports': 'crear importaciones',
+
+      //templates messages
+      'create.templates': 'crear plantillas',
+      'update.templates': 'actualizar plantillas',
+      'delete.templates': 'eliminar plantillas',
+
+      //amortizations messages
+      'view.amortizations': 'ver información de amortizaciones',
+      'create.amortizations': 'crear amortizaciones',
+      'update.amortizations': 'actualizar amortizaciones',
+      'delete.amortizations': 'eliminar amortizaciones',
+
+      //installments messages
+      'view.installments': 'ver información de cuotas',
+      'create.installments': 'crear cuotas',
+      'update.installments': 'actualizar cuotas',
+      'delete.installments': 'eliminar cuotas',
 
       // Otros permisos
       // Agrega más si lo deseas

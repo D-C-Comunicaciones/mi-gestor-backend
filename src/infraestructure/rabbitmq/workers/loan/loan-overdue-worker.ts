@@ -229,35 +229,30 @@ export class LoanOverdueWorker implements OnModuleInit {
     }
   }
 
-  private async processLateFee(installmentId: number, loanAmount: Decimal, penaltyRate: Decimal, todayString: string) {
-    const existing = await this.prisma.moratoryInterest.findFirst({
-      where: { installmentId }
-    });
-
+  private async processLateFee(
+    installmentId: number,
+    loanAmount: Decimal,
+    penaltyRate: Decimal,
+    todayString: string
+  ) {
+    // Calcular interés diario
     const dailyInterest = loanAmount.mul(penaltyRate).div(30);
 
-    if (existing) {
-      // Verificar si ya se actualizó hoy basándose en daysLate
-      // Como no tenemos updatedAt, usamos una lógica diferente
-      const newAmount = new Decimal(existing.amount).add(dailyInterest);
-      await this.prisma.moratoryInterest.update({
-        where: { id: existing.id },
-        data: {
-          amount: newAmount.toNumber(),
-          daysLate: existing.daysLate + 1
-        }
-      });
-      this.logger.log(`💰 Interés moratorio actualizado installmentId=${installmentId} -> ${newAmount.toNumber()}`);
-    } else {
-      await this.prisma.moratoryInterest.create({
-        data: {
-          installmentId,
-          amount: dailyInterest.toNumber(),
-          daysLate: 1
-        }
-      });
-      this.logger.log(`💰 Interés moratorio creado installmentId=${installmentId} -> ${dailyInterest.toNumber()}`);
-    }
+    // Crear un nuevo registro por cada día de atraso detectado
+    await this.prisma.moratoryInterest.create({
+      data: {
+        installmentId,
+        amount: dailyInterest.toNumber(),
+        daysLate: 1, // cada registro representa un día
+        paidAmount: new Decimal(0),
+        isPaid: false,
+        moratoryInterestStatusId: 1, // "Unpaid" (asegúrate que existe ese status)
+      },
+    });
+
+    this.logger.log(
+      `💰 Interés moratorio generado installmentId=${installmentId} -> ${dailyInterest.toFixed(2)}`
+    );
   }
 
   private async startConsuming() {

@@ -5,7 +5,7 @@ import { ClassSerializerInterceptor, Logger, ValidationPipe } from '@nestjs/comm
 import { AllExceptionsFilter } from '@common/filters/all-exceptions.filter';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { NestExpressApplication } from '@nestjs/platform-express';
-import * as cookieParser from 'cookie-parser';
+import cookieParser from 'cookie-parser';
 import { PrismaDecimalInterceptor, ResponseInterceptor } from '@common/interceptors';
 import * as express from 'express';
 import { join } from 'path';
@@ -54,6 +54,7 @@ async function bootstrap() {
       apiReference({
         content: apiDocumentation,
         options: {
+          title: 'API Reference - Mi Gestor',
           explorer: true,
         },
       })
