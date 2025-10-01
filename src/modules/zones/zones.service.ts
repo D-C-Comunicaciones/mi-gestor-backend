@@ -165,47 +165,4 @@ export class ZonesService {
     }
   }
 
-  async remove(id: number) {
-    // Verificar que la zona existe
-    await this.findOne(id);
-
-    try {
-      // Verificar si la zona está siendo utilizada por cobradores o clientes
-      const collectorsCount = await this.prisma.collector.count({
-        where: { zoneId: id, isActive: true }
-      });
-
-      const customersCount = await this.prisma.customer.count({
-        where: { zoneId: id, isActive: true }
-      });
-
-      if (collectorsCount > 0 || customersCount > 0) {
-        throw new ConflictException(
-          `No se puede eliminar la zona porque está siendo utilizada por ${collectorsCount} cobradores y ${customersCount} clientes`
-        );
-      }
-
-      // Desactivar la zona en lugar de eliminarla
-      const deletedZone = await this.prisma.zone.update({
-        where: { id },
-        data: {
-          isActive: false
-        }
-      });
-
-      const zoneResponse = plainToInstance(ResponseZoneDto, deletedZone, { 
-        excludeExtraneousValues: true 
-      });
-
-      return {
-        message: 'Zona eliminada correctamente',
-        zone: zoneResponse
-      };
-    } catch (error) {
-      if (error instanceof ConflictException) {
-        throw error;
-      }
-      throw new BadRequestException('Error al eliminar la zona: ' + error.message);
-    }
-  }
 }

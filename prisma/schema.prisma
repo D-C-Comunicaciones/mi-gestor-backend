@@ -17,7 +17,6 @@ model Zone {
   code     String  @unique // Código corto de la zona (útil para integraciones)
   isActive Boolean @default(true) // Indica si la zona está activa (soft delete)
 
-  collectors Collector[] // Rel: cobradores asignados a la zona
   customers  Customer[] // Rel: clientes asignados a la zona
 
   @@index([name])
@@ -229,12 +228,14 @@ model Customer {
   address        String
   phone          String // Teléfono
   zoneId         Int? // FK opcional a Zone (si trabaja por zona)
+  collectionRouteId Int? // FK opcional, porque podría no estar asignado
   userId         Int?     @unique // FK opcional a User (si tiene cuenta)
   isActive       Boolean  @default(true) // Activación del cobrador
 
   // Relaciones
   zone Zone? @relation(fields: [zoneId], references: [id])
   user User? @relation(fields: [userId], references: [id])
+  collectionRoute   CollectionRoute? @relation(fields: [collectionRouteId], references: [id])
 
   loans Loan[] // Créditos asociados a este customer
 
@@ -262,21 +263,34 @@ model Collector {
   birthDate      DateTime @db.Date // Fecha de nacimiento (opcional, pero útil para auditoría)
   address        String
   phone          String // Teléfono
-  zoneId         Int? // FK opcional a Zone (si trabaja por zona)
   userId         Int?     @unique // FK opcional a User (si tiene cuenta)
   isActive       Boolean  @default(true) // Activación del cobrador
 
   // Relaciones
-  zone     Zone?     @relation(fields: [zoneId], references: [id])
   user     User?     @relation(fields: [userId], references: [id])
   advances Advance[] @relation("AdvancesCollectedByCollector") // Abonos recolectados
   payments Payment[] @relation("PaymentsCollectedBy") // Pagos recolectados
 
-  @@index([firstName])
-  @@index([lastName])
-  @@index([zoneId])
-  @@index([isActive])
+  routes CollectionRoute[] // Rutas asignadas al cobrador
+
+  @@index([firstName, lastName, isActive])
+
   @@map("collectors")
+}
+
+model CollectionRoute {
+  id          Int       @id @default(autoincrement())
+  collectorId Int?
+  name        String
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  createdBy   Int
+  collector   Collector? @relation(fields: [collectorId], references: [id])
+  customers   Customer[]  // <- Relación con customers
+
+  @@index([collectorId, isActive,  createdBy, createdAt, updatedAt, name, id])
+  @@map("collection_routes")
 }
 
 model InterestRate {

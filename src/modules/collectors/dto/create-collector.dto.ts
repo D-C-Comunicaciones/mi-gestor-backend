@@ -41,11 +41,6 @@ export class CreateCollectorDto {
   @IsEmail()
   email: string;
 
-  @ApiPropertyOptional({ example: 2, description: 'ID de la zona (opcional)' })
-  @IsOptional()
-  @IsInt()
-  zoneId?: number;
-
   @ApiPropertyOptional({ example: true, description: 'Estado inicial (por defecto true)' })
   @IsOptional()
   isActive?: boolean;

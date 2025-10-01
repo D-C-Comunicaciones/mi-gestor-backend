@@ -33,7 +33,11 @@ export class CollectorsService {
       take: limit,
       where,
       orderBy: { id: 'asc' },
-      include: { user: true, zone: true }, // incluir para facilitar dto
+      include: { 
+        user: true,
+        typeDocumentIdentification: true,
+        gender: true
+      },
     });
 
     // Por cada collector, obtener createdAt y updatedAt de cambios
@@ -64,7 +68,12 @@ export class CollectorsService {
   async findOne(id: number) {
     const collector = await this.prisma.collector.findUnique({
       where: { id },
-      include: { user: true, zone: true },
+      include: { 
+        user: true,
+        typeDocumentIdentification: true,
+        gender: true,
+        routes: true // Incluir las rutas asignadas al cobrador
+      },
     });
     if (!collector) throw new NotFoundException('Cobrador no encontrado');
 
@@ -114,10 +123,13 @@ export class CollectorsService {
             address: data.address,
             typeDocumentIdentification: { connect: { id: data.typeDocumentIdentificationId } },
             gender: { connect: { id: data.genderId } },
-            zone: data.zoneId ? { connect: { id: data.zoneId } } : undefined,
             user: { connect: { id: user.id } },
           },
-          include: { user: true, zone: true },
+          include: { 
+            user: true,
+            typeDocumentIdentification: true,
+            gender: true
+          },
         });
 
         const now = new Date();
@@ -160,7 +172,6 @@ export class CollectorsService {
     const {
       typeDocumentIdentificationId,
       genderId,
-      zoneId,
       email,
       ...restChanges
     } = changes;
@@ -169,14 +180,18 @@ export class CollectorsService {
       ...restChanges,
       ...(typeDocumentIdentificationId && { typeDocumentIdentification: { connect: { id: typeDocumentIdentificationId } } }),
       ...(genderId && { gender: { connect: { id: genderId } } }),
-      ...(zoneId && { zone: { connect: { id: zoneId } } }),
     };
 
     try {
       const updatedCollector = await this.prisma.collector.update({
         where: { id },
         data: updateData,
-        include: { user: true, zone: true },
+        include: { 
+          user: true,
+          typeDocumentIdentification: true,
+          gender: true,
+          routes: true
+        },
       });
 
       type UserUpdateDto = { password?: string; name?: string; email?: string; };

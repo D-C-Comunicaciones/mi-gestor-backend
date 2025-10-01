@@ -29,4 +29,14 @@ export class CreateCollectionDto {
   @IsPositive({ message: 'El monto debe ser mayor a cero' })
   @Type(() => Number)
   amount: number;
+
+  @Type(() => Number)
+  @ApiProperty({
+    description: 'ID del método de pago utilizado (opcional, por defecto 1 = efectivo)',
+    example: 1,
+  })
+  @IsNumber({}, { message: 'El ID del método de pago debe ser un número' })
+  @IsPositive({ message: 'El ID del método de pago debe ser mayor a cero' })
+  @Type(() => Number)
+  paymentMethodId?: number; // <-- ID del método de pago (opcional, por defecto 'efectivo' con ID 1)
 }

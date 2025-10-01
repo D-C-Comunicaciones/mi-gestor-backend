@@ -528,7 +528,6 @@ export class CollectionsService {
           include: {
             collector: {
               include: {
-                zone: true,
                 typeDocumentIdentification: true,
               }
             }
@@ -593,7 +592,6 @@ export class CollectionsService {
             : payment.recordedByUser.name,
           documentNumber: payment.recordedByUser.collector?.documentNumber?.toString() || '',
           phone: payment.recordedByUser.collector?.phone || '',
-          zoneName: payment.recordedByUser.collector?.zone?.name || '',
         },
       };
     });

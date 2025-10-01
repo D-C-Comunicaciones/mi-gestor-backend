@@ -318,7 +318,8 @@ export class ReportsService {
                         include: {
                             collector: {
                                 include: {
-                                    zone: true,
+                                    typeDocumentIdentification: true,
+                                    routes: true, // Incluir rutas asignadas al cobrador
                                 },
                             },
                         },
@@ -348,7 +349,7 @@ export class ReportsService {
                 customerDocument: string;
                 loanStatus: string;
                 collectorName: string;
-                zoneName: string;
+                routeNames: string; // Cambiar zoneName por routeNames
             }> = [];
 
             payments.forEach((payment) => {
@@ -359,11 +360,14 @@ export class ReportsService {
                     const collectorKey = collector.id;
 
                     if (!collectorMap.has(collectorKey)) {
+                        // Obtener nombres de rutas asignadas
+                        const routeNames = collector.routes?.map(route => route.name).join(', ') || 'Sin rutas asignadas';
+
                         collectorMap.set(collectorKey, {
                             collectorId: collector.id,
                             collectorName: `${collector.firstName} ${collector.lastName}`,
                             documentNumber: collector.documentNumber.toString(),
-                            zoneName: collector.zone?.name || 'Sin zona',
+                            routeNames: routeNames, // Cambiar zoneName por routeNames
                             totalAssigned: 0,
                             totalCollected: 0,
                             collectionsCount: 0,
@@ -379,6 +383,8 @@ export class ReportsService {
                     // ...existing code para procesamiento de datos...
 
                     payment.allocations.forEach(allocation => {
+                        const routeNames = collector.routes?.map(route => route.name).join(', ') || 'Sin rutas asignadas';
+
                         allCollections.push({
                             paymentId: payment.id,
                             paymentDate: format(payment.paymentDate, 'yyyy-MM-dd HH:mm:ss'), // Usar paymentDate
@@ -391,7 +397,7 @@ export class ReportsService {
                             customerDocument: payment.loan.customer.documentNumber.toString(),
                             loanStatus: payment.loan.loanStatus.name,
                             collectorName: `${collector.firstName} ${collector.lastName}`,
-                            zoneName: collector.zone?.name || 'Sin zona',
+                            routeNames: routeNames, // Cambiar zoneName por routeNames
                         });
                     });
                 }
