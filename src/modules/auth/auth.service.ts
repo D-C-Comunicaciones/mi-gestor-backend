@@ -27,7 +27,7 @@ export class AuthService {
 
   async validateUser(data: LoginDto) {
     const user = await this.prisma.user.findUnique({
-      where: { email: data.email },
+      where: { email: data.email, isActive: true },
       include: {
         role: {
           include: {

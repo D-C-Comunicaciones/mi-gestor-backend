@@ -697,6 +697,99 @@ export class LoansService {
     });
   }
 
+  async cancelLoan(loanId: number) {
+    return await this.prisma.$transaction(async tx => {
+      // 1️⃣ Buscar préstamo
+      const loan = await tx.loan.findUnique({
+        where: { id: loanId },
+        include: {
+          customer: {
+            include: {
+              typeDocumentIdentification: true,
+              gender: true,
+              zone: true,
+              user: true
+            }
+          },
+          loanStatus: true,
+          loanType: true,
+          interestRate: true,
+          penaltyRate: true,
+          term: true,
+          paymentFrequency: true,
+        }
+      });
+
+      if (!loan) throw new NotFoundException(`Préstamo con ID ${loanId} no encontrado`);
+
+      // 2️⃣ Buscar status CANCELLED (case-insensitive)
+      const cancelledStatus = await tx.loanStatus.findFirst({
+        where: { name: { equals: 'CANCELLED', mode: 'insensitive' } }
+      });
+
+      if (!cancelledStatus) throw new NotFoundException(`Status "CANCELLED" no encontrado`);
+
+      // 3️⃣ Validar si ya está cancelado
+      if (loan.loanStatusId === cancelledStatus.id && loan.isActive === false) {
+        throw new BadRequestException('Este crédito ya está cancelado');
+      }
+
+      // 4️⃣ Actualizar préstamo
+      const updatedLoan = await tx.loan.update({
+        where: { id: loanId },
+        data: {
+          loanStatusId: cancelledStatus.id,
+          isActive: false
+        },
+        include: {
+          customer: {
+            include: {
+              typeDocumentIdentification: true,
+              gender: true,
+              zone: true,
+              user: true
+            }
+          },
+          loanStatus: true,
+          loanType: true,
+          interestRate: true,
+          penaltyRate: true,
+          term: true,
+          paymentFrequency: true,
+        }
+      });
+
+      // 5️⃣ Obtener cambios y mapear como en create
+      const loanPlain = this.convertLoanToPlain(updatedLoan);
+      const loanChanges = await this.changesService.getChanges('loan', updatedLoan.id);
+
+      let customerWithTimestamps = loanPlain.customer;
+      if (loanPlain.customer?.id) {
+        try {
+          const custChanges = await this.changesService.getChanges('customer', loanPlain.customer.id);
+          customerWithTimestamps = {
+            ...loanPlain.customer,
+            createdAtTimestamp: custChanges.create?.timestamp,
+            updatedAtTimestamp: custChanges.lastUpdate?.timestamp || custChanges.create?.timestamp,
+          };
+        } catch {}
+      }
+
+      const mappedLoan = this._mapLoan(loanPlain, loanChanges);
+      mappedLoan.customer = {
+        ...customerWithTimestamps,
+        typeDocumentIdentificationName: customerWithTimestamps.typeDocumentIdentification?.name,
+        typeDocumentIdentificationCode: customerWithTimestamps.typeDocumentIdentification?.code,
+        genderName: customerWithTimestamps.gender?.name,
+        zoneName: customerWithTimestamps.zone?.name,
+        zoneCode: customerWithTimestamps.zone?.code,
+        email: customerWithTimestamps.user.email
+      };
+
+      return mappedLoan;
+    });
+  }
+
   // ---------- SOFT DELETE ----------
   async softDelete(id: number) {
     const existing = await this.prisma.loan.findUnique({ where: { id } });
@@ -945,69 +1038,6 @@ export class LoansService {
         updatedAt: (entity as any).updatedAt || now,
       };
     }
-  }
-
-  private detectChanges(existing: any, dto: UpdateLoanDto): Partial<UpdateLoanDto> {
-    const changes: Partial<UpdateLoanDto> = {};
-
-    // Función mejorada para comparar Decimal
-    const compareDecimal = (oldVal: any, newVal: any): boolean => {
-      if (newVal === undefined) return false;
-      if (oldVal == null && newVal == null) return false;
-      if (oldVal == null || newVal == null) return true;
-
-      // Convertir ambos a número para comparar
-      const oldNum = typeof oldVal === 'object' && 'toNumber' in oldVal ?
-        oldVal.toNumber() : Number(oldVal);
-      const newNum = Number(newVal);
-
-      return oldNum !== newNum;
-    };
-
-    // Campos escalares
-    if (compareDecimal(existing.remainingBalance, dto.remainingBalance)) {
-      changes.remainingBalance = dto.remainingBalance;
-    }
-
-    // Fechas - comparar como strings ISO para evitar problemas de timezone
-    if (dto.nextDueDate !== undefined) {
-      const oldDate = existing.nextDueDate ?
-        existing.nextDueDate.toISOString().split('T')[0] : null;
-      const newDate = dto.nextDueDate ?
-        new Date(dto.nextDueDate).toISOString().split('T')[0] : null;
-
-      if (oldDate !== newDate) {
-        changes.nextDueDate = dto.nextDueDate;
-      }
-    }
-
-    // Booleanos
-    if (dto.isActive !== undefined && dto.isActive !== existing.isActive) {
-      changes.isActive = dto.isActive;
-    }
-
-    // Relaciones - comparar números directamente
-    if (dto.loanStatusId !== undefined && dto.loanStatusId !== existing.loanStatusId) {
-      changes.loanStatusId = dto.loanStatusId;
-    }
-
-    if (dto.paymentFrequencyId !== undefined && dto.paymentFrequencyId !== existing.paymentFrequencyId) {
-      changes.paymentFrequencyId = dto.paymentFrequencyId;
-    }
-
-    if (dto.loanTypeId !== undefined && dto.loanTypeId !== existing.loanTypeId) {
-      changes.loanTypeId = dto.loanTypeId;
-    }
-
-    if (dto.interestRateId !== undefined && dto.interestRateId !== existing.interestRateId) {
-      changes.interestRateId = dto.interestRateId;
-    }
-
-    if (dto.termId !== undefined && dto.termId !== existing.termId) {
-      changes.termId = dto.termId;
-    }
-
-    return changes;
   }
 
   private convertLoanToPlain(obj: any): any {

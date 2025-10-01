@@ -1,86 +1,52 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { Expose, Transform } from 'class-transformer';
-import { format } from 'date-fns/format';
+import { Expose } from 'class-transformer';
 
-/**
- * DTO para la respuesta de empresa
- * Contiene la información completa de una empresa del sistema
- * Utilizado para mostrar los datos corporativos configurados
- */
 export class ResponseCompanyDto {
-    @ApiProperty({
-        description: 'Identificador único de la empresa',
-        example: 1,
-        type: 'integer'
-    })
-    @Expose()
-    id: number;
+  @ApiProperty({ example: 1, description: 'ID único de la empresa' })
+  @Expose()
+  id: number;
 
-    @ApiProperty({
-        description: 'Nombre de la empresa',
-        example: 'Mi Gestor Financiero S.A.S',
-        type: 'string'
-    })
-    @Expose()
-    name: string;
+  @ApiProperty({ example: 'Mi Gestor Financiero S.A.S', description: 'Razón social de la empresa' })
+  @Expose()
+  name: string;
 
-    @ApiProperty({
-        description: 'Número de identificación tributaria (NIT)',
-        example: '900123456-7',
-        type: 'string'
-    })
-    @Expose()
-    identificationNumber: string;
+  @ApiProperty({ example: '900123456', description: 'Número de identificación tributaria' })
+  @Expose()
+  nit: string;
 
-    @ApiProperty({
-        description: 'Dirección física de la empresa',
-        example: 'Calle 72 #10-50, Oficina 301, Bogotá D.C.',
-        type: 'string'
-    })
-    @Expose()
-    address: string;
+  @ApiProperty({ example: 7, description: 'Dígito de verificación del NIT' })
+  @Expose()
+  verificationDigit: number;
 
-    @ApiProperty({
-        description: 'Número de teléfono de contacto',
-        example: '+57 1 234 5678',
-        type: 'string'
-    })
-    @Expose()
-    phone: string;
+  @ApiProperty({ example: '+57 1 234 5678', description: 'Teléfono de contacto' })
+  @Expose()
+  phone: string;
 
-    @ApiProperty({
-        description: 'Correo electrónico corporativo',
-        example: 'contacto@migestorfinanciero.com',
-        type: 'string',
-        format: 'email'
-    })
-    @Expose()
-    email: string;
+  @ApiProperty({ example: 'contacto@migestorfinanciero.com', description: 'Email de contacto' })
+  @Expose()
+  email: string;
 
-    @ApiProperty({
-        description: 'URL del logo de la empresa',
-        example: 'logos/logo.png',
-        type: 'string',
-        required: false
-    })
-    @Expose()
-    logoUrl?: string;
+  @ApiProperty({ example: 'Calle 72 #10-50, Oficina 301, Bogotá D.C.', description: 'Dirección física' })
+  @Expose()
+  address: string;
 
-    @ApiProperty({
-        description: 'Fecha de creación del registro',
-        example: '2024-01-01 10:00:00',
-        type: 'string'
-    })
-    @Expose()
-    @Transform(({ value }) => (value ? format(new Date(value), 'yyyy-MM-dd HH:mm:ss') : value), { toPlainOnly: true })
-    createdAt: Date;
+  @ApiProperty({ example: 'logos/logo.png', description: 'Ruta del archivo de logo' })
+  @Expose()
+  logoUrl: string;
 
-    @ApiProperty({
-        description: 'Fecha de última actualización',
-        example: '2024-01-15 14:30:00',
-        type: 'string'
-    })
-    @Expose()
-    @Transform(({ value }) => (value ? format(new Date(value), 'yyyy-MM-dd HH:mm:ss') : value), { toPlainOnly: true })
-    updatedAt: Date;
+  @ApiProperty({
+    example: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==',
+    description: 'Logo de la empresa en formato base64',
+    required: false
+  })
+  @Expose()
+  logoBase64: string | null;
+
+  @ApiProperty({ example: '2024-01-01T10:00:00.000Z', description: 'Fecha de creación' })
+  @Expose()
+  createdAt: string;
+
+  @ApiProperty({ example: '2024-01-15T14:30:00.000Z', description: 'Fecha de última actualización' })
+  @Expose()
+  updatedAt: string;
 }

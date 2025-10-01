@@ -29,6 +29,7 @@ import { AmortizationsModule } from '@modules/amortizations/amortizations.module
 import { PaymentMethodsModule } from './modules/payment-methods/payment-methods.module';
 import { PrometheusModule } from '@willsoto/nestjs-prometheus';
 import { CollectionRoutesModule } from './modules/collection-routes/collection-routes.module';
+import { NotesModule } from './modules/notes/notes.module';
 
 @Module({
   imports: [
@@ -62,7 +63,8 @@ import { CollectionRoutesModule } from './modules/collection-routes/collection-r
     CompaniesModule,
     AmortizationsModule,
     PaymentMethodsModule,
-    CollectionRoutesModule
+    CollectionRoutesModule,
+    NotesModule
   ],
   controllers: [AppController],
   providers: [AppService],

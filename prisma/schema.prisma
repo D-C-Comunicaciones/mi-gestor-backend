@@ -124,6 +124,7 @@ model User {
   // Relación para pagos registrados por este usuario (audit)
   paymentsRecorded Payment[]  @relation("PaymentsRecordedByUser")
   discountsCreated Discount[] @relation("DiscountsCreatedByUser")
+  notes      Note[]     // Notas creadas por este usuario
 
   @@index([email])
   @@index([roleId])
@@ -403,6 +404,18 @@ model Loan {
   @@index([startDate])
   @@index([isActive])
   @@map("loans")
+}
+
+model Note {
+  id        Int      @id @default(autoincrement()) // PK nota
+  modelId   Int      // ID del registro al que se asocia la nota
+  model     String   // Nombre del modelo al que se asocia la nota (ej: "loan", "customer")
+  content   String   // Contenido de la nota
+  createdBy Int      @default(0) // FK al usuario que creó la nota
+  user      User     @relation(fields: [createdBy], references: [id]) // Relación a User
+  createdAt DateTime @default(now()) // Fecha de creación
+  @@index([createdBy, model, modelId, createdAt])
+  @@map("notes")
 }
 
 /// -------------------------------------

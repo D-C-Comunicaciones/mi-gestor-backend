@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Query, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import { LoansService } from './loans.service';
 import { CreateLoanDto, UpdateLoanDto, ResponseOverdueLoanDto, LoanPaginationDto } from './dto';
 import { PaginationDto } from '@common/dto';
@@ -19,6 +19,9 @@ import { plainToInstance } from 'class-transformer';
 import { ResponseLoanDto } from './dto';
 import { ResponseLoanWithInstallmentsDto } from './dto/response-loan-by-customer.dto';
 import { RefinanceLoanDto } from './dto';
+import { NotesService } from '@modules/notes/notes.service';
+import { ResponseNoteDto } from '@modules/notes/dto';
+import { Request } from 'express';
 
 @ApiTags('Loans')
 @ApiBearerAuth()
@@ -26,7 +29,10 @@ import { RefinanceLoanDto } from './dto';
 @Controller('loans')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class LoansController {
-  constructor(private readonly loansService: LoansService) { }
+  constructor(
+    private readonly loansService: LoansService,
+    private readonly notesService: NotesService
+  ) { }
 
   @Get()
   @Permissions('view.loans')
@@ -80,7 +86,7 @@ export class LoansController {
       }
     }
   })
-  @ApiNotFoundResponse({ 
+  @ApiNotFoundResponse({
     description: 'No existen registros',
     examples: {
       'no-records': {
@@ -99,7 +105,7 @@ export class LoansController {
       }
     }
   })
-  @ApiUnauthorizedResponse({ 
+  @ApiUnauthorizedResponse({
     description: 'No autenticado',
     examples: {
       'missing-token': {
@@ -120,7 +126,7 @@ export class LoansController {
       }
     }
   })
-  @ApiForbiddenResponse({ 
+  @ApiForbiddenResponse({
     description: 'Sin permiso view.loans',
     examples: {
       'insufficient-permissions': {
@@ -175,9 +181,9 @@ export class LoansController {
 
   @Get('overdue')
   @Permissions('view.loans')
-  @ApiOperation({ 
-    summary: 'Obtener préstamos en mora', 
-    description: 'Retorna lista paginada de préstamos que tienen cuotas en mora con información del cliente y detalles de las cuotas vencidas.' 
+  @ApiOperation({
+    summary: 'Obtener préstamos en mora',
+    description: 'Retorna lista paginada de préstamos que tienen cuotas en mora con información del cliente y detalles de las cuotas vencidas.'
   })
   @ApiQuery({ name: 'page', required: false, schema: { type: 'integer', example: 1, description: 'Número de página' } })
   @ApiQuery({ name: 'limit', required: false, schema: { type: 'integer', example: 10, description: 'Elementos por página' } })
@@ -235,7 +241,7 @@ export class LoansController {
       }
     }
   })
-  @ApiNotFoundResponse({ 
+  @ApiNotFoundResponse({
     description: 'No se encontraron préstamos en mora',
     examples: {
       'no-overdue-loans': {
@@ -381,7 +387,7 @@ export class LoansController {
       }
     }
   })
-  @ApiNotFoundResponse({ 
+  @ApiNotFoundResponse({
     description: 'Préstamo no encontrado',
     examples: {
       'loan-not-found': {
@@ -565,7 +571,7 @@ export class LoansController {
       }
     }
   })
-  @ApiBadRequestResponse({ 
+  @ApiBadRequestResponse({
     description: 'Validación / lógica',
     examples: {
       'validation-error': {
@@ -877,7 +883,7 @@ export class LoansController {
       }
     }
   })
-  @ApiBadRequestResponse({ 
+  @ApiBadRequestResponse({
     description: 'Validación / lógica',
     examples: {
       'cannot-refinance': {
@@ -901,7 +907,7 @@ export class LoansController {
       }
     }
   })
-  @ApiNotFoundResponse({ 
+  @ApiNotFoundResponse({
     description: 'Préstamo a refinanciar no encontrado',
     examples: {
       'loan-not-found': {
@@ -1040,7 +1046,7 @@ export class LoansController {
       }
     }
   })
-  @ApiNotFoundResponse({ 
+  @ApiNotFoundResponse({
     description: 'Cliente no encontrado',
     examples: {
       'customer-not-found': {
@@ -1101,4 +1107,149 @@ export class LoansController {
     };
   }
 
+  @Patch(':id/cancel')
+  @Permissions('cancel.loans')
+  @ApiOperation({ 
+    summary: 'Cancelar préstamo', 
+    description: 'Cancela un préstamo activo cambiando su estado a cancelado. Esta acción es irreversible y marca el préstamo como inactivo.'
+  })
+  @ApiParam({ 
+    name: 'id', 
+    type: Number, 
+    description: 'ID único del préstamo a cancelar', 
+    example: 16 
+  })
+  @ApiOkResponse({
+    description: 'Préstamo cancelado exitosamente',
+    examples: {
+      'success': {
+        summary: 'Préstamo cancelado exitosamente',
+        value: {
+          message: 'Crédito cancelado correctamente',
+          loan: {
+            id: 16,
+            customerId: 1,
+            loanAmount: '1000000.00',
+            remainingBalance: '500000.00',
+            loanStatusId: 6,
+            loanStatusName: 'Cancelado',
+            isActive: false,
+            canceledAt: '2024-01-20T14:45:00.000Z',
+            updatedAt: '2024-01-20T14:45:00.000Z',
+            customer: {
+              id: 1,
+              firstName: 'Juan',
+              lastName: 'Pérez',
+              documentNumber: '12345678'
+            }
+          }
+        }
+      }
+    }
+  })
+  @ApiBadRequestResponse({
+    description: 'Préstamo no se puede cancelar',
+    examples: {
+      'already-inactive': {
+        summary: 'Préstamo ya inactivo',
+        value: {
+          statusCode: 400,
+          message: 'No se puede cancelar un préstamo que ya está inactivo',
+          error: 'Bad Request'
+        }
+      },
+      'already-canceled': {
+        summary: 'Préstamo ya cancelado',
+        value: {
+          statusCode: 400,
+          message: 'El préstamo ya se encuentra cancelado',
+          error: 'Bad Request'
+        }
+      },
+      'loan-completed': {
+        summary: 'Préstamo completamente pagado',
+        value: {
+          statusCode: 400,
+          message: 'No se puede cancelar un préstamo que ya está completamente pagado',
+          error: 'Bad Request'
+        }
+      }
+    }
+  })
+  @ApiNotFoundResponse({
+    description: 'Préstamo no encontrado',
+    examples: {
+      'loan-not-found': {
+        summary: 'Préstamo no encontrado',
+        value: {
+          statusCode: 404,
+          message: 'Préstamo con ID 16 no encontrado',
+          error: 'Not Found'
+        }
+      }
+    }
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado - Token de acceso requerido o inválido',
+    examples: {
+      'missing-token': {
+        summary: 'Token faltante',
+        value: {
+          statusCode: 401,
+          message: 'Token de acceso requerido',
+          error: 'Unauthorized'
+        }
+      },
+      'invalid-token': {
+        summary: 'Token inválido o expirado',
+        value: {
+          statusCode: 401,
+          message: 'Token de acceso inválido o expirado',
+          error: 'Unauthorized'
+        }
+      }
+    }
+  })
+  @ApiForbiddenResponse({
+    description: 'Acceso prohibido - Sin permisos para cancelar préstamos',
+    examples: {
+      'insufficient-permissions': {
+        summary: 'Sin permisos para cancelar préstamos',
+        value: {
+          statusCode: 403,
+          message: 'No tienes permisos para cancelar préstamos',
+          error: 'Forbidden'
+        }
+      }
+    }
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor',
+    examples: {
+      'server-error': {
+        summary: 'Error interno del servidor',
+        value: {
+          statusCode: 500,
+          message: 'Error interno del servidor al cancelar el préstamo',
+          error: 'Internal Server Error'
+        }
+      },
+      'database-error': {
+        summary: 'Error de base de datos',
+        value: {
+          statusCode: 500,
+          message: 'Error de base de datos al actualizar el estado del préstamo',
+          error: 'Internal Server Error'
+        }
+      }
+    }
+  })
+  async cancelLoan(@Param('id', ParseIntPipe) id: number): Promise <LoanResponse>  {
+    const rawLoan = await this.loansService.cancelLoan(id);
+    const loan = plainToInstance(ResponseLoanDto, rawLoan, { excludeExtraneousValues: true });
+    return {
+      customMessage: 'Crédito cancelado correctamente',
+      loan
+    };
+  }
 }

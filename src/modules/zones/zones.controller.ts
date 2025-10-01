@@ -165,11 +165,10 @@ export class ZonesController {
     }
   })
   async create(@Body() createZoneDto: CreateZoneDto): Promise<ZoneResponse> {
-    const rawZone = await this.zonesService.create(createZoneDto);
-    const zone = plainToInstance(ResponseZoneDto, rawZone, { excludeExtraneousValues: true });
+    const result = await this.zonesService.create(createZoneDto);
     return {
-      customMessage: 'Zona creada correctamente',
-      zone,
+      customMessage: result.message,
+      zone: result.zone,
     };
   }
 
@@ -284,11 +283,10 @@ export class ZonesController {
     }
   })
   async findAll(): Promise<ZoneListResponse> {
-    const rawZones = await this.zonesService.findAll();
-    const zones = plainToInstance(ResponseZoneDto, rawZones, { excludeExtraneousValues: true });
+    const result = await this.zonesService.findAll();
     return {
-      customMessage: 'Listado de zonas',
-      zones,
+      customMessage: result.message,
+      zones: result.zones,
     };
   }
 
@@ -376,11 +374,10 @@ export class ZonesController {
     }
   })
   async findOne(@Param('id', ParseIntPipe) id: number): Promise<ZoneResponse> {
-    const rawZone = await this.zonesService.findOne(id);
-    const zone = plainToInstance(ResponseZoneDto, rawZone, { excludeExtraneousValues: true });
+    const result = await this.zonesService.findOne(id);
     return {
-      customMessage: 'Zona obtenida correctamente',
-      zone,
+      customMessage: result.message,
+      zone: result.zone,
     };
   }
 
@@ -541,11 +538,10 @@ export class ZonesController {
     }
   })
   async update(@Param('id', ParseIntPipe) id: number, @Body() updateZoneDto: UpdateZoneDto): Promise<ZoneResponse> {
-    const rawZone = await this.zonesService.update(id, updateZoneDto);
-    const zone = plainToInstance(ResponseZoneDto, rawZone, { excludeExtraneousValues: true });
+    const result = await this.zonesService.update(id, updateZoneDto);
     return {
-      customMessage: 'Zona actualizada correctamente',
-      zone,
+      customMessage: result.message,
+      zone: result.zone,
     };
   }
 

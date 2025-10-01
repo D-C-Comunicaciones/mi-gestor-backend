@@ -67,46 +67,39 @@ export class CompaniesController {
   @Get()
   @Permissions('view.companies')
   @ApiOperation({ 
-    summary: 'Listar empresas', 
-    description: 'Obtiene la lista completa de empresas registradas en el sistema con toda su información corporativa.' 
+    summary: 'Obtener empresa del sistema', 
+    description: 'Obtiene la información de la empresa registrada en el sistema (singleton). Incluye el logo en formato base64 para su uso directo en la interfaz.' 
   })
   @ApiOkResponse({
-    description: 'Lista de empresas obtenida correctamente',
+    description: 'Información de la empresa obtenida correctamente',
     type: SwaggerCompanyListResponse,
-    schema: {
-      type: 'object',
-      properties: {
-        message: { type: 'string', example: 'Listado de empresas' },
-        code: { type: 'number', example: 200 },
-        status: { type: 'string', example: 'success' },
-        data: {
-          properties: {
-            companies: {
-              type: 'array',
-              items: { $ref: getSchemaPath(ResponseCompanyDto) }
-            }
-          }
-        }
-      }
-    },
     examples: {
-      'listado-exitoso': {
-        summary: 'Listado obtenido exitosamente',
+      'empresa-con-logo': {
+        summary: 'Empresa con logo en base64',
         value: {
-          customMessage: 'Listado de empresas',
+          customMessage: 'Información de la empresa',
           companies: [
             {
               id: 1,
               name: 'Mi Gestor Financiero S.A.S',
-              identificationNumber: '900123456-7',
+              nit: '900123456',
+              verificationDigit: 7,
               address: 'Calle 72 #10-50, Oficina 301, Bogotá D.C.',
               phone: '+57 1 234 5678',
               email: 'contacto@migestorfinanciero.com',
               logoUrl: 'logos/logo.png',
-              createdAt: '2024-01-01 10:00:00',
-              updatedAt: '2024-01-15 14:30:00'
+              logoBase64: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==',
+              createdAt: '2024-01-01T10:00:00.000Z',
+              updatedAt: '2024-01-15T14:30:00.000Z'
             }
           ]
+        }
+      },
+      'sin-empresa': {
+        summary: 'No hay empresa registrada',
+        value: {
+          customMessage: 'No hay empresa registrada en el sistema',
+          companies: []
         }
       }
     }
@@ -157,12 +150,11 @@ export class CompaniesController {
   async findAll(): Promise<CompanyListResponse> {
     this.logger.log('📋 Consultando listado de empresas');
     
-    const rawCompanies = await this.companiesService.findAll();
-    const companies = plainToInstance(ResponseCompanyDto, rawCompanies);
+    const result = await this.companiesService.findAll();
     
     return {
-      customMessage: 'Listado de empresas',
-      companies
+      customMessage: result.message,
+      companies: result.companies
     };
   }
 
@@ -170,7 +162,7 @@ export class CompaniesController {
   @Permissions('view.companies')
   @ApiOperation({ 
     summary: 'Obtener empresa por ID', 
-    description: 'Obtiene los detalles completos de una empresa específica incluyendo logo e información de contacto.' 
+    description: 'Obtiene los detalles de la empresa por su ID. Incluye el logo en formato base64 para su uso directo en la interfaz.' 
   })
   @ApiParam({ 
     name: 'id', 
@@ -181,15 +173,23 @@ export class CompaniesController {
   @ApiOkResponse({
     description: 'Empresa encontrada correctamente',
     type: SwaggerCompanyResponse,
-    schema: {
-      type: 'object',
-      properties: {
-        message: { type: 'string', example: 'Detalle de la empresa' },
-        code: { type: 'number', example: 200 },
-        status: { type: 'string', example: 'success' },
-        data: {
-          properties: {
-            company: { $ref: getSchemaPath(ResponseCompanyDto) }
+    examples: {
+      'empresa-encontrada': {
+        summary: 'Empresa encontrada con logo',
+        value: {
+          customMessage: 'Detalle de la empresa',
+          company: {
+            id: 1,
+            name: 'Mi Gestor Financiero S.A.S',
+            nit: '900123456',
+            verificationDigit: 7,
+            address: 'Calle 72 #10-50, Oficina 301, Bogotá D.C.',
+            phone: '+57 1 234 5678',
+            email: 'contacto@migestorfinanciero.com',
+            logoUrl: 'logos/logo.png',
+            logoBase64: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==',
+            createdAt: '2024-01-01T10:00:00.000Z',
+            updatedAt: '2024-01-15T14:30:00.000Z'
           }
         }
       }
@@ -252,22 +252,21 @@ export class CompaniesController {
   async findOne(@Param('id', ParseIntPipe) id: number): Promise<CompanyResponse> {
     this.logger.log(`🔍 Consultando empresa con ID: ${id}`);
     
-    const rawCompany = await this.companiesService.findOne(id);
-    const company = plainToInstance(ResponseCompanyDto, rawCompany);
+    const result = await this.companiesService.findOne(id);
     
     return {
-      customMessage: 'Detalle de la empresa',
-      company
+      customMessage: result.message,
+      company: result.company
     };
   }
 
   @Post()
   @Permissions('create.companies')
-  @ApiConsumes('multipart/form-data')
   @ApiOperation({ 
-    summary: 'Crear empresa', 
-    description: 'Registra una nueva empresa en el sistema con información corporativa completa. Permite subir un logo como parte del registro.' 
+    summary: 'Crear o actualizar empresa', 
+    description: 'Registra o actualiza la empresa del sistema (singleton). Si ya existe una empresa, la actualiza automáticamente. Si no existe, la crea. El logo se procesa y se retorna en base64.' 
   })
+  @ApiConsumes('multipart/form-data')
   @ApiBody({
     description: 'Datos de la empresa a crear (multipart/form-data para incluir logo)',
     schema: {
@@ -298,23 +297,44 @@ export class CompaniesController {
     }),
   }))
   @ApiCreatedResponse({
-    description: 'Empresa creada exitosamente',
+    description: 'Empresa creada o actualizada exitosamente',
     type: SwaggerCompanyResponse,
     examples: {
       'empresa-creada': {
-        summary: 'Empresa creada exitosamente',
+        summary: 'Nueva empresa creada',
         value: {
           customMessage: 'Empresa creada exitosamente',
           company: {
             id: 1,
             name: 'Mi Gestor Financiero S.A.S',
-            identificationNumber: '900123456-7',
+            nit: '900123456',
+            verificationDigit: 7,
             address: 'Calle 72 #10-50, Oficina 301, Bogotá D.C.',
             phone: '+57 1 234 5678',
             email: 'contacto@migestorfinanciero.com',
             logoUrl: 'logos/logo.png',
-            createdAt: '2024-01-01 10:00:00',
-            updatedAt: '2024-01-01 10:00:00'
+            logoBase64: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==',
+            createdAt: '2024-01-01T10:00:00.000Z',
+            updatedAt: '2024-01-01T10:00:00.000Z'
+          }
+        }
+      },
+      'empresa-actualizada': {
+        summary: 'Empresa existente actualizada',
+        value: {
+          customMessage: 'Empresa actualizada exitosamente (ya existía en el sistema)',
+          company: {
+            id: 1,
+            name: 'Mi Gestor Financiero Actualizado S.A.S',
+            nit: '900123456',
+            verificationDigit: 7,
+            address: 'Nueva dirección actualizada',
+            phone: '+57 1 234 5678',
+            email: 'contacto@migestorfinanciero.com',
+            logoUrl: 'logos/logo.jpg',
+            logoBase64: 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD...',
+            createdAt: '2024-01-01T10:00:00.000Z',
+            updatedAt: '2024-01-15T16:45:00.000Z'
           }
         }
       }
@@ -401,24 +421,21 @@ export class CompaniesController {
     @Body() data: CreateCompanyDto,
     @UploadedFile() file: Express.Multer.File,
   ): Promise<CompanyResponse> {
-    this.logger.log(`🏢 Creando nueva empresa: ${data.name}`);
+    this.logger.log(`🏢 Procesando empresa (crear/actualizar): ${data.name}`);
     
-    const logoUrl = file ? `logos/logo${extname(file.originalname)}` : undefined;
-    const rawCompany = await this.companiesService.create(data, file);
-    const company = plainToInstance(ResponseCompanyDto, rawCompany);
+    const result = await this.companiesService.create(data, file);
     
     return {
-      customMessage: 'Empresa creada exitosamente',
-      company
+      customMessage: result.message,
+      company: result.company
     };
   }
 
   @Patch(':id')
   @Permissions('update.companies')
-  @ApiConsumes('multipart/form-data')
   @ApiOperation({ 
     summary: 'Actualizar empresa', 
-    description: 'Actualiza los datos de una empresa existente. Solo se actualizan los campos proporcionados (actualización parcial). Permite cambiar el logo subiendo un nuevo archivo.' 
+    description: 'Actualiza los datos de la empresa existente. Solo se actualizan los campos proporcionados. El logo se procesa y retorna en base64.' 
   })
   @ApiParam({ 
     name: 'id', 
@@ -465,39 +482,9 @@ export class CompaniesController {
           company: {
             id: 1,
             name: 'Mi Gestor Financiero Actualizado S.A.S',
-            identificationNumber: '900123456-7',
+            nit: '900123456',
+            verificationDigit: 7,
             address: 'Carrera 15 #93-40, Torre Empresarial, Piso 12',
-            phone: '+57 1 987 6543',
-            email: 'nuevo@migestorfinanciero.com',
-            logoUrl: 'logos/logo.jpg',
-            createdAt: '2024-01-01 10:00:00',
-            updatedAt: '2024-01-15 16:45:00'
-          }
-        }
-      }
-    }
-  })
-  @ApiBadRequestResponse({
-    description: 'Datos inválidos o sin cambios',
-    schema: {
-      type: 'object',
-      properties: {
-        message: { type: 'string' },
-        code: { type: 'number', example: 400 },
-        status: { type: 'string', example: 'error' }
-      },
-      examples: {
-        'sin-cambios': {
-          summary: 'No se detectaron cambios',
-          value: {
-            message: 'No se detectaron cambios para actualizar',
-            code: 400,
-            status: 'error'
-          }
-        },
-        'nit-duplicado': {
-          summary: 'NIT ya existe',
-          value: {
             message: 'El NIT ya está registrado por otra empresa',
             code: 400,
             status: 'error'
@@ -556,12 +543,11 @@ export class CompaniesController {
   ): Promise<CompanyResponse> {
     this.logger.log(`🔧 Actualizando empresa con ID: ${id}`);
     
-    const rawCompany = await this.companiesService.update(id, data, file);
-    const company = plainToInstance(ResponseCompanyDto, rawCompany);
+    const result = await this.companiesService.update(id, data, file);
     
     return {
-      customMessage: 'Empresa actualizada exitosamente',
-      company
+      customMessage: result.message,
+      company: result.company
     };
   }
 }
