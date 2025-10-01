@@ -140,7 +140,6 @@ export class CollectorsController {
     const collectorsArray = Array.isArray(rawCollectors) ? rawCollectors : [rawCollectors];
 
     if (collectorsArray.length === 0) {
-      res.status(404);
       return {
         customMessage: 'No existen registros',
         collectors: [],

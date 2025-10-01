@@ -353,7 +353,6 @@ export class DiscountsController {
     const { discounts, meta } = await this.discountsService.findAll(paginationDto);
 
     if (discounts.length === 0) {
-      res.status(404);
       return {
         customMessage: 'No existen registros',
         discounts: [],

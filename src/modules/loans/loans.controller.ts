@@ -322,7 +322,6 @@ export class LoansController {
     const { overdueLoans, meta } = await this.loansService.getOverdueLoans(queryDto);
 
     if (overdueLoans.length === 0) {
-      res.status(404);
       return {
         customMessage: 'No se encontraron préstamos en mora',
         overdueLoans: [],

@@ -1006,7 +1006,6 @@ export class ReportsController {
 
       // Validar si hay datos en el reporte
       if (!reportData.collections || reportData.collections.length === 0) {
-        res.status(404);
         return {
           customMessage: `No se encontraron recaudos en el período ${reportData.metadata.period}`,
           collectionReport: []

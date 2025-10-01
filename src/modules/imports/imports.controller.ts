@@ -181,7 +181,6 @@ export class ImportsController {
     const { Imports, meta } = await this.importsService.findAllCustomersImports(rolePaginationDto);
 
     if (Imports.length === 0) {
-      res.status(404);
       return {
         customMessage: 'No existen registros',
         customersImports: [],

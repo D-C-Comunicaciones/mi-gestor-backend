@@ -140,7 +140,6 @@ export class CustomersController {
         const { customers, meta } = await this.customersService.findAll(paginationDto);
 
         if (customers.length === 0) {
-            res.status(404);
             return {
                 customMessage: 'No existen registros',
                 customers: [],

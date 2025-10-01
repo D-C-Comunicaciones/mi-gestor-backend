@@ -32,6 +32,7 @@ export class CollectionsService {
   constructor(private readonly prisma: PrismaService) { }
 
   async create(dto: CreateCollectionDto, req) {
+
     const user = req['user'];
     if (!user?.userId) {
       throw new BadRequestException('Usuario no autenticado');
@@ -165,7 +166,8 @@ export class CollectionsService {
           loanId: loan.id,
           amount: dto.amount,
           paymentTypeId: 1,
-          paymentMethodId: 1,
+          paymentMethodId: dto.paymentMethodId || 1, // Por defecto 'efectivo' si no se provee
+          paymentDate: new Date(),
           recordedByUserId: user.userId,
         },
       });
