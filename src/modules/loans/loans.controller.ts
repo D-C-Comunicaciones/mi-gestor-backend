@@ -31,7 +31,6 @@ import { Request } from 'express';
 export class LoansController {
   constructor(
     private readonly loansService: LoansService,
-    private readonly notesService: NotesService
   ) { }
 
   @Get()

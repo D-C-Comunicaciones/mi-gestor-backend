@@ -303,7 +303,7 @@ export class InstallmentsService {
     return updatedInstallment;
   }
 
-  /** Cálculo de la cuota según tipo de crédito */
+  /** Cálculo de la cuota según tipo de crédito con redondeo de centavos */
   private async calculateAndCreateInstallment(
     loan: any,
     sequence: number,
@@ -330,31 +330,51 @@ export class InstallmentsService {
 
         const remainingBalance = loanAmountDecimal.minus(paidCapital);
         const remainingInstallments = termOrGrace - (sequence - 1);
+        
         if (remainingInstallments <= 0) {
           this.logger.warn(`Crédito ${loan.id}: no hay más cuotas por calcular (remainingInstallments=${remainingInstallments})`);
           return;
         }
 
-        const monthlyRate = interestRateNormalized;
-        const temp = monthlyRate.plus(1).pow(remainingInstallments);
-        const factor = monthlyRate.times(temp).div(temp.minus(1));
-        const fixedPayment = remainingBalance.times(factor);
-
-        interestAmount = remainingBalance.times(monthlyRate);
-        capitalAmount = fixedPayment.minus(interestAmount);
-        totalAmount = fixedPayment;
-
-        if (sequence === termOrGrace) {
+        // 🚀 APLICAR REDONDEO PARA EVITAR CENTAVOS
+        if (remainingInstallments === 1) {
+          // 📌 ÚLTIMA CUOTA: acumular todo el saldo restante para evitar centavos
+          const monthlyRate = interestRateNormalized;
+          interestAmount = remainingBalance.times(monthlyRate);
           capitalAmount = remainingBalance;
           totalAmount = capitalAmount.plus(interestAmount);
+          
+          this.logger.log(`🔧 Última cuota ajustada para loanId=${loan.id}: capital=${capitalAmount.toString()}, interest=${interestAmount.toString()}, total=${totalAmount.toString()}`);
+        } else {
+          // 📌 CUOTAS INTERMEDIAS: redondear hacia abajo para evitar centavos
+          const monthlyRate = interestRateNormalized;
+          const temp = monthlyRate.plus(1).pow(remainingInstallments);
+          const factor = monthlyRate.times(temp).div(temp.minus(1));
+          const theoreticalPayment = remainingBalance.times(factor);
+          
+          // 🔄 Redondear el pago total hacia abajo (sin centavos)
+          const roundedPayment = new Prisma.Decimal(Math.floor(theoreticalPayment.toNumber()));
+          
+          interestAmount = remainingBalance.times(monthlyRate);
+          // 🔄 Redondear interés hacia abajo también
+          interestAmount = new Prisma.Decimal(Math.floor(interestAmount.toNumber()));
+          
+          capitalAmount = roundedPayment.minus(interestAmount);
+          totalAmount = roundedPayment;
+          
+          this.logger.log(`🔧 Cuota redondeada para loanId=${loan.id}, sequence=${sequence}: teórica=${theoreticalPayment.toString()}, redondeada=${roundedPayment.toString()}`);
         }
         break;
       }
 
       case "only_interests": {
-        interestAmount = loanAmountDecimal.times(interestRateNormalized);
+        // 🔄 Para créditos de solo intereses también aplicamos redondeo
+        const theoreticalInterest = loanAmountDecimal.times(interestRateNormalized);
+        interestAmount = new Prisma.Decimal(Math.floor(theoreticalInterest.toNumber()));
         capitalAmount = new Prisma.Decimal(0);
         totalAmount = interestAmount;
+        
+        this.logger.log(`🔧 Interés redondeado para loanId=${loan.id}: teórico=${theoreticalInterest.toString()}, redondeado=${interestAmount.toString()}`);
         break;
       }
 
@@ -381,8 +401,33 @@ export class InstallmentsService {
       include: { status: true },
     });
 
-    this.logger.log(`✅ Cuota creada: loanId=${loan.id}, sequence=${sequence}, dueDate=${dueDate.toISOString()}, totalAmount=${totalAmount.toNumber()}`);
+    this.logger.log(`✅ Cuota creada con redondeo: loanId=${loan.id}, sequence=${sequence}, capital=${capitalAmount.toNumber()}, interest=${interestAmount.toNumber()}, total=${totalAmount.toNumber()}`);
     return installment;
+  }
+
+  /**
+   * 💰 Método auxiliar para aplicar tolerancia de centavos en pagos
+   * Se puede usar en el módulo de collections para validar pagos
+   */
+  public applyPaymentTolerance(expectedAmount: Prisma.Decimal, paidAmount: Prisma.Decimal, tolerance: number = 1): {
+    isFullyPaid: boolean;
+    remainingAmount: Prisma.Decimal;
+  } {
+    const difference = expectedAmount.minus(paidAmount).abs();
+    const toleranceDecimal = new Prisma.Decimal(tolerance);
+    
+    if (difference.lte(toleranceDecimal)) {
+      this.logger.log(`💰 Pago dentro de tolerancia: esperado=${expectedAmount.toString()}, pagado=${paidAmount.toString()}, diferencia=${difference.toString()}`);
+      return {
+        isFullyPaid: true,
+        remainingAmount: new Prisma.Decimal(0)
+      };
+    }
+    
+    return {
+      isFullyPaid: false,
+      remainingAmount: expectedAmount.minus(paidAmount)
+    };
   }
 
   /** ⏱️ Incrementador de fechas según frecuencia */

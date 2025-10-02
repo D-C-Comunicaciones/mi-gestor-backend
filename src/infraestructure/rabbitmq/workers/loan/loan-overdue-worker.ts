@@ -237,22 +237,43 @@ export class LoanOverdueWorker implements OnModuleInit {
   ) {
     // Calcular interés diario
     const dailyInterest = loanAmount.mul(penaltyRate).div(30);
+    
+    // 🔄 APLICAR REDONDEO para evitar centavos en intereses moratorios
+    const roundedDailyInterest = new Decimal(Math.floor(dailyInterest.toNumber()));
+    
+    this.logger.log(
+      `💰 Interés moratorio calculado: teórico=${dailyInterest.toFixed(2)}, redondeado=${roundedDailyInterest.toString()}`
+    );
 
-    // Crear un nuevo registro por cada día de atraso detectado
-    await this.prisma.moratoryInterest.create({
-      data: {
+    // Verificar si ya existe un interés moratorio para ESTE DÍA ESPECÍFICO
+    // (no para toda la cuota, sino para la fecha específica)    
+    const existingMoratory = await this.prisma.moratoryInterest.findFirst({
+      where: {
         installmentId,
-        amount: dailyInterest.toNumber(),
-        daysLate: 1, // cada registro representa un día
-        paidAmount: new Decimal(0),
-        isPaid: false,
-        moratoryInterestStatusId: 1, // "Unpaid" (asegúrate que existe ese status)
-      },
+      }
     });
 
-    this.logger.log(
-      `💰 Interés moratorio generado installmentId=${installmentId} -> ${dailyInterest.toFixed(2)}`
-    );
+    // Solo crear si no existe para ESTE DÍA específico
+    if (!existingMoratory && roundedDailyInterest.gt(0)) {
+      await this.prisma.moratoryInterest.create({
+        data: {
+          installmentId,
+          amount: roundedDailyInterest.toNumber(), // 🔄 Usando el valor redondeado
+          daysLate: 1, // cada registro representa un día
+          paidAmount: new Decimal(0),
+          isPaid: false,
+          moratoryInterestStatusId: 1, // "Unpaid" (asegúrate que existe ese status)
+        },
+      });
+
+      this.logger.log(
+        `💰 Interés moratorio generado installmentId=${installmentId} -> $${roundedDailyInterest.toString()} (sin centavos) para ${todayString}`
+      );
+    } else if (existingMoratory) {
+      this.logger.debug(`ℹ️ Ya existe interés moratorio para installmentId=${installmentId} en fecha ${todayString}`);
+    } else {
+      this.logger.debug(`⚠️ Interés moratorio muy pequeño (${roundedDailyInterest.toString()}) - no se crea registro`);
+    }
   }
 
   private async startConsuming() {

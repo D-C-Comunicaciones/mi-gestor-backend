@@ -3,9 +3,11 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '@infraestructure/prisma/prisma.service';
 import { ChangesService } from '@modules/changes/changes.service';
 import { InstallmentsService } from '@modules/installments/installments.service';
-import { CreateLoanDto, UpdateLoanDto, RefinanceLoanDto, LoanPaginationDto } from './dto';
+import { CreateLoanDto, RefinanceLoanDto, LoanPaginationDto } from './dto';
 import { differenceInDays, format } from 'date-fns';
 import { PaginationDto } from '@common/dto';
+import { LoanStrategyFactory } from './strategies/factories';
+import { TranslationService } from '@modules/translations/translations.service';
 
 @Injectable()
 export class LoansService {
@@ -13,63 +15,38 @@ export class LoansService {
     private readonly prisma: PrismaService,
     private readonly changesService: ChangesService,
     private readonly installmentsService: InstallmentsService,
+    private readonly loanStrategyFactory: LoanStrategyFactory,
+    private readonly translationService: TranslationService
   ) { }
 
-  // ---------- CREATE ----------
+  // ---------- CREATE (REFACTORIZADO) ----------
   async create(dto: CreateLoanDto) {
     await this.ensureRefs(dto);
 
     const { responseLoan, firstInstallment } = await this.prisma.$transaction(async tx => {
-      // 1️⃣ Validaciones y obtención de referencias
+      // 1️⃣ Obtener el tipo de crédito
       const loanType = await tx.loanType.findUnique({
         where: { id: dto.loanTypeId },
         select: { id: true, name: true },
       });
       if (!loanType) throw new BadRequestException('Tipo de crédito no encontrado');
 
+      // 2️⃣ Validar frecuencia de pago
       const freq = await tx.paymentFrequency.findUnique({
         where: { id: dto.paymentFrequencyId },
       });
       if (!freq) throw new BadRequestException('Frecuencia no encontrada');
 
-      // 2️⃣ Validación específica por tipo de crédito
-      let termId: number | undefined,
-        termValue: number | null = null;
-      let gracePeriodId: number | undefined,
-        gracePeriodMonths: number | null = null,
-        graceEndDate: Date | null = null;
+      // 3️⃣ Obtener estrategia para el tipo de crédito
+      const strategy = this.loanStrategyFactory.getStrategy(loanType.name);
 
-      if (loanType.name === 'fixed_fees') {
-        if (dto.gracePeriodId) {
-          throw new BadRequestException('Periodo de Gracia no debe ser proporcionado para créditos de cuotas fijas');
-        }
-        if (dto.termId) {
-          const term = await tx.term.findUnique({ where: { id: dto.termId } });
-          if (!term) throw new BadRequestException(`Término con ID ${dto.termId} no encontrado`);
-          termId = term.id;
-          termValue = term.value;
-        } else {
-          termValue = 12;
-          termId = (await tx.term.create({ data: { value: termValue } })).id;
-        }
-      } else if (loanType.name === 'only_interests') {
-        if (dto.termId) {
-          throw new BadRequestException('# de cuotas no debe ser proporcionado para créditos de solo intereses');
-        }
-        if (!dto.gracePeriodId) {
-          throw new BadRequestException('GracePeriodId requerido para créditos de solo intereses');
-        }
-        const gp = await tx.gracePeriod.findUnique({ where: { id: dto.gracePeriodId } });
-        if (!gp) throw new BadRequestException(`GracePeriod con ID ${dto.gracePeriodId} no encontrado`);
-        gracePeriodId = gp.id;
-        gracePeriodMonths = gp.days / 30;
-        graceEndDate = new Date();
-        graceEndDate.setDate(graceEndDate.getDate() + gp.days);
-      } else {
-        throw new BadRequestException(`Tipo de crédito no soportado: ${loanType.name}`);
-      }
+      // 4️⃣ Validar DTO específico del tipo de crédito
+      await strategy.validateDto(dto);
 
-      // 3️⃣ Crear préstamo
+      // 5️⃣ Preparar datos específicos del tipo de crédito
+      const loanData = await strategy.prepareLoanData(dto, tx);
+
+      // 6️⃣ Crear préstamo
       const loan = await tx.loan.create({
         data: {
           customerId: dto.customerId,
@@ -77,9 +54,9 @@ export class LoansService {
           remainingBalance: new Prisma.Decimal(dto.loanAmount ?? 0),
           interestRateId: dto.interestRateId,
           penaltyRateId: dto.penaltyRateId,
-          termId,
-          gracePeriodId,
-          graceEndDate,
+          termId: loanData.termId,
+          gracePeriodId: loanData.gracePeriodId,
+          graceEndDate: loanData.graceEndDate,
           paymentFrequencyId: dto.paymentFrequencyId,
           loanTypeId: loanType.id,
           loanStatusId: 1, // ACTIVO
@@ -105,12 +82,15 @@ export class LoansService {
         },
       });
 
-      // 4️⃣ Crear primera cuota
+      // 7️⃣ Crear primera cuota
       const firstInst = await this.installmentsService.createFirstInstallment(
-        tx, loan, { termValue, gracePeriod: gracePeriodMonths }
+        tx, loan, { 
+          termValue: loanData.termValue, 
+          gracePeriod: loanData.gracePeriodMonths 
+        }
       );
 
-      // 5️⃣ Obtener timestamps del firstInstallment
+      // 8️⃣ Procesar timestamps y mapear como antes...
       let firstInstallmentWithTimestamps = firstInst;
       if (firstInst?.id) {
         try {
@@ -125,7 +105,7 @@ export class LoansService {
         }
       }
 
-      // 6️⃣ Actualizar nextDueDate
+      // 9️⃣ Actualizar nextDueDate
       const loanUpdated = await tx.loan.update({
         where: { id: loan.id },
         data: { nextDueDate: firstInst.dueDate },
@@ -147,11 +127,10 @@ export class LoansService {
         },
       });
 
-      // 7️⃣ Convertir a plain object
+      // 🔟 Resto del mapeo igual que antes...
       const loanPlain = this.convertLoanToPlain(loanUpdated);
       const loanChanges = await this.changesService.getChanges('loan', loanUpdated.id);
 
-      // 8️⃣ Obtener timestamps del customer
       let customerWithTimestamps = loanPlain.customer;
       if (loanPlain.customer?.id) {
         try {
@@ -166,11 +145,9 @@ export class LoansService {
         }
       }
 
-      // 9️⃣ Mapear loan y adjuntar customer
       const mappedLoan = this._mapLoan(loanPlain, loanChanges);
       mappedLoan.customer = {
         ...customerWithTimestamps,
-        // reconstruir para el DTO
         typeDocumentIdentificationName: customerWithTimestamps.typeDocumentIdentification?.name,
         typeDocumentIdentificationCode: customerWithTimestamps.typeDocumentIdentification?.code,
         genderName: customerWithTimestamps.gender?.name,
@@ -179,7 +156,6 @@ export class LoansService {
         email: customerWithTimestamps.user.email
       };
 
-      // 🔟 Transformar firstInstallment
       const plainFirstInst = this.convertLoanToPlain(firstInstallmentWithTimestamps);
       const mappedFirstInst = plainFirstInst && { ...plainFirstInst };
 
@@ -464,28 +440,77 @@ export class LoansService {
     return mappedLoan;
   }
 
-    /**
+  /**
    * Obtiene préstamos con cuotas en mora
    */
   async getOverdueLoans(queryDto: PaginationDto) {
     const { page = 1, limit = 10 } = queryDto;
 
-    // Construir filtros
-    const where: any = {
-      isActive: true,
-      installments: {
-        some: {
-          isActive: true,
-          isPaid: false,
-          status: { name: { contains: 'Overdue' } },
-        },
-      },
-    };
+    // 🔍 Primero, vamos a verificar qué estados existen en la base de datos
+    console.log('🔍 Verificando estados disponibles...');
+    
+    const allLoanStatuses = await this.prisma.loanStatus.findMany();
+    console.log('📋 Estados de préstamo disponibles:', allLoanStatuses.map(s => ({ id: s.id, name: s.name })));
+    
+    const allInstallmentStatuses = await this.prisma.installmentStatus.findMany();
+    console.log('📋 Estados de cuota disponibles:', allInstallmentStatuses.map(s => ({ id: s.id, name: s.name })));
+    
+    const allMoratoryStatuses = await this.prisma.moratoryInterestStatus.findMany();
+    console.log('📋 Estados de moratoria disponibles:', allMoratoryStatuses.map(s => ({ id: s.id, name: s.name })));
 
-    // Obtener total de registros
-    const total = await this.prisma.loan.count({ where });
+    // 🔍 Buscar el estado 'Overdue' para préstamos
+    const overdueLoanStatus = await this.prisma.loanStatus.findFirst({
+      where: { name: { equals: 'Overdue', mode: 'insensitive' } }
+    });
+    console.log('🎯 Estado de préstamo "Overdue" encontrado:', overdueLoanStatus);
+
+    // 🔍 Buscar el estado 'Overdue Paid' para cuotas
+    const overdueInstallmentStatus = await this.prisma.installmentStatus.findFirst({
+      where: { name: { equals: 'Overdue Paid', mode: 'insensitive' } }
+    });
+    console.log('🎯 Estado de cuota "Overdue Paid" encontrado:', overdueInstallmentStatus);
+
+    // 🔍 Buscar el estado 'Unpaid' para intereses moratorios
+    const unpaidMoratoryStatus = await this.prisma.moratoryInterestStatus.findFirst({
+      where: { name: { equals: 'Unpaid', mode: 'insensitive' } }
+    });
+    console.log('🎯 Estado de moratoria "Unpaid" encontrado:', unpaidMoratoryStatus);
+
+    // 🔍 Verificar qué préstamos activos existen
+    const activeLoans = await this.prisma.loan.findMany({
+      where: { isActive: true },
+      select: { id: true, loanStatusId: true, loanStatus: { select: { name: true } } }
+    });
+    console.log('💰 Préstamos activos:', activeLoans);
+
+    // 🔍 Si no encontramos el estado exacto, vamos a buscar con alternativas
+    let finalWhere: any = { isActive: true };
+
+    if (overdueLoanStatus) {
+      finalWhere.loanStatusId = overdueLoanStatus.id;
+      console.log('✅ Usando filtro por loanStatusId:', overdueLoanStatus.id);
+    } else {
+      // Buscar por nombre que contenga "overdue" o "mora"
+      const alternativeLoanStatus = allLoanStatuses.find(s => 
+        s.name.toLowerCase().includes('overdue') || 
+        s.name.toLowerCase().includes('mora')
+      );
+      
+      if (alternativeLoanStatus) {
+        finalWhere.loanStatusId = alternativeLoanStatus.id;
+        console.log('🔄 Usando estado alternativo de préstamo:', alternativeLoanStatus);
+      } else {
+        console.log('❌ No se encontró estado de préstamo en mora');
+        // Sin filtro de estado, buscar todos los préstamos activos
+      }
+    }
+
+    // 🔍 Verificar cuántos préstamos coinciden con nuestro filtro
+    const total = await this.prisma.loan.count({ where: finalWhere });
+    console.log('📊 Total de préstamos que coinciden con el filtro:', total);
 
     if (total === 0) {
+      console.log('❌ No se encontraron préstamos que coincidan con los criterios');
       return {
         overdueLoans: [],
         meta: {
@@ -503,9 +528,30 @@ export class LoansService {
       throw new BadRequestException(`La página #${page} no existe`);
     }
 
-    // Obtener préstamos con cuotas en mora
+    // 🔍 Obtener préstamos con información detallada
+    let installmentWhere: any = { isActive: true };
+    
+    if (overdueInstallmentStatus) {
+      installmentWhere.statusId = overdueInstallmentStatus.id;
+      console.log('✅ Filtrando cuotas por statusId:', overdueInstallmentStatus.id);
+    } else {
+      // Buscar estados alternativos de cuotas
+      const alternativeInstallmentStatus = allInstallmentStatuses.find(s => 
+        s.name.toLowerCase().includes('overdue') || 
+        s.name.toLowerCase().includes('mora')
+      );
+      
+      if (alternativeInstallmentStatus) {
+        installmentWhere.statusId = alternativeInstallmentStatus.id;
+        console.log('🔄 Usando estado alternativo de cuota:', alternativeInstallmentStatus);
+      } else {
+        console.log('⚠️ No se aplica filtro específico de estado de cuota');
+        // Sin filtro específico, obtener todas las cuotas activas
+      }
+    }
+
     const loans = await this.prisma.loan.findMany({
-      where,
+      where: finalWhere,
       include: {
         customer: {
           include: {
@@ -530,14 +576,13 @@ export class LoansService {
         loanType: true,
         loanStatus: true,
         installments: {
-          where: {
-            isActive: true,
-            isPaid: false,
-            status: { name: { contains: 'Overdue' } },
-          },
+          where: installmentWhere,
           include: {
             status: true,
             moratoryInterests: {
+              where: unpaidMoratoryStatus ? { 
+                moratoryInterestStatusId: unpaidMoratoryStatus.id 
+              } : { isPaid: false }, // Fallback a isPaid si no encontramos el estado
               include: {
                 moratoryInterestStatus: true
               },
@@ -552,92 +597,88 @@ export class LoansService {
       take: limit,
     });
 
+    console.log('📋 Préstamos encontrados:', loans.length);
+    loans.forEach(loan => {
+      console.log(`💰 Préstamo ${loan.id}: estado=${loan.loanStatus.name}, cuotas=${loan.installments.length}`);
+      loan.installments.forEach(inst => {
+        console.log(`  📄 Cuota ${inst.id}: estado=${inst.status.name}, moratorias=${inst.moratoryInterests.length}`);
+      });
+    });
+
     // Mapear resultados
     const overdueLoans = loans.map((loan) => {
-      const overdueInstallments = loan.installments.map((installment) => {
+      // Procesar todas las cuotas del crédito que están en estado 'Overdue Paid'
+      const allInstallments = loan.installments.map((installment) => {
         const capitalAmount = Number(installment.capitalAmount);
         const interestAmount = Number(installment.interestAmount);
         const totalAmount = Number(installment.totalAmount);
         const paidAmount = Number(installment.paidAmount);
         const pendingAmount = totalAmount - paidAmount;
 
-        // 📌 Filtrar solo intereses moratorios NO pagados y calcular totales
-        const unpaidMoras = installment.moratoryInterests.filter(mora => !mora.isPaid);
-        
-        const lateFeeAmount = unpaidMoras.reduce((sum, mora) => {
-          const moraAmount = Number(mora.amount);
-          const moraPaidAmount = Number(mora.paidAmount);
-          const pendingMoraAmount = moraAmount - moraPaidAmount;
-          return sum + Math.max(pendingMoraAmount, 0); // Solo el monto pendiente
-        }, 0);
+        // 📌 Agrupar y totalizar todos los intereses moratorios por installmentId
+        let totalMoratoryAmount = 0;
+        let totalDaysLate = 0;
+        let totalMoratoryRecords = 0;
 
-        const totalDaysLate = unpaidMoras.reduce((sum, mora) => {
-          return sum + (mora.daysLate || 0);
-        }, 0);
+        if (installment.moratoryInterests && installment.moratoryInterests.length > 0) {
+          // Sumar todos los registros de moratoria para esta cuota
+          totalMoratoryAmount = installment.moratoryInterests.reduce((sum, mora) => {
+            return sum + Number(mora.amount);
+          }, 0);
 
-        // Total adeudado (pendiente de la cuota + mora pendiente)
-        const totalOwed = pendingAmount + lateFeeAmount;
+          totalDaysLate = installment.moratoryInterests.reduce((sum, mora) => {
+            return sum + (mora.daysLate || 0);
+          }, 0);
+
+          totalMoratoryRecords = installment.moratoryInterests.length;
+        }
+
+        // Total adeudado (pendiente de la cuota + mora total)
+        const totalOwed = pendingAmount + totalMoratoryAmount;
 
         return {
           id: installment.id,
           sequence: installment.sequence,
           dueDate: installment.dueDate.toISOString().split('T')[0],
-          daysLate: totalDaysLate,
           capitalAmount: capitalAmount.toFixed(2),
           interestAmount: interestAmount.toFixed(2),
           totalAmount: totalAmount.toFixed(2),
           paidAmount: paidAmount.toFixed(2),
           pendingAmount: pendingAmount.toFixed(2),
-          lateFeeAmount: lateFeeAmount.toFixed(2),
-          totalOwed: totalOwed.toFixed(2),
-          statusName: this.translateInstallmentStatus(installment.status.name),
+          statusName: this.translationService.translateInstallmentStatus(installment.status.name),
+          isPaid: installment.isPaid,
 
-          // 🔥 Solo mostrar intereses moratorios NO pagados con monto pendiente
-          moratoryInterests: unpaidMoras
-            .map((m) => {
-              const moraAmount = Number(m.amount);
-              const moraPaidAmount = Number(m.paidAmount);
-              const pendingMoraAmount = moraAmount - moraPaidAmount;
-              
-              return {
-                id: m.id,
-                amount: moraAmount.toFixed(2),
-                paidAmount: moraPaidAmount.toFixed(2),
-                pendingAmount: Math.max(pendingMoraAmount, 0).toFixed(2),
-                daysLate: m.daysLate,
-                paidAt: m.paidAt,
-                isPaid: m.isPaid,
-                statusId: m.moratoryInterestStatusId,
-                statusName: m.moratoryInterestStatus?.name || 'unknown'
-              };
-            })
-            .filter(m => Number(m.pendingAmount) > 0), // Solo mostrar los que tienen monto pendiente
+          // 📊 Interés moratorio totalizado para esta cuota
+          moratoryInterestSummary: {
+            totalAmount: totalMoratoryAmount.toFixed(2),
+            totalDaysLate: totalDaysLate,
+            totalRecords: totalMoratoryRecords,
+            hasMoratory: totalMoratoryRecords > 0
+          },
 
-          // 📊 Resumen de moratorios para esta cuota
-          moratoryInterestsSummary: {
-            totalUnpaidCount: unpaidMoras.length,
-            totalPaidCount: installment.moratoryInterests.filter(m => m.isPaid).length,
-            totalUnpaidAmount: lateFeeAmount.toFixed(2),
-            totalDaysLate: totalDaysLate
-          }
+          // Total que debe esta cuota (cuota pendiente + mora)
+          totalOwed: totalOwed.toFixed(2)
         };
       });
 
-      // Calcular totales del préstamo (solo cuotas con mora pendiente)
-      const installmentsWithPendingMora = overdueInstallments.filter(inst => Number(inst.totalOwed) > Number(inst.pendingAmount));
-      
-      const totalDaysLate = overdueInstallments.reduce(
-        (sum, inst) => sum + inst.daysLate,
-        0,
+      // Filtrar solo las cuotas que tienen mora
+      const installmentsWithMoratory = allInstallments.filter(
+        inst => inst.moratoryInterestSummary.hasMoratory
       );
-      
-      const totalAmountOwed = overdueInstallments.reduce(
-        (sum, inst) => sum + Number(inst.totalOwed),
+
+      // Calcular totales del préstamo
+      const totalDaysLateAccumulated = allInstallments.reduce(
+        (sum, inst) => sum + inst.moratoryInterestSummary.totalDaysLate,
         0,
       );
 
-      const totalLateFeeAmount = overdueInstallments.reduce(
-        (sum, inst) => sum + Number(inst.lateFeeAmount),
+      const totalMoratoryAmountAccumulated = allInstallments.reduce(
+        (sum, inst) => sum + Number(inst.moratoryInterestSummary.totalAmount),
+        0,
+      );
+
+      const totalAmountOwed = allInstallments.reduce(
+        (sum, inst) => sum + Number(inst.totalOwed),
         0,
       );
 
@@ -645,12 +686,11 @@ export class LoansService {
         loanId: loan.id,
         loanAmount: Number(loan.loanAmount).toFixed(2),
         remainingBalance: Number(loan.remainingBalance).toFixed(2),
-        loanTypeName: this.translateLoanType(loan.loanType.name),
+        loanTypeName: this.translationService .translateLoanType(loan.loanType.name),
+        loanStatusName: this.translationService.translateLoanStatus(loan.loanStatus.name),
         startDate: loan.startDate.toISOString().split('T')[0],
-        totalDaysLate,
-        totalAmountOwed: totalAmountOwed.toFixed(2),
-        totalLateFeeAmount: totalLateFeeAmount.toFixed(2),
-        installmentsWithMora: installmentsWithPendingMora.length,
+        
+        // 📊 Información del cliente
         customer: {
           id: loan.customer.id,
           name: `${loan.customer.firstName} ${loan.customer.lastName}`,
@@ -669,15 +709,19 @@ export class LoansService {
             } : null
           } : null
         },
-        overdueInstallments,
-        // 📊 Resumen general del préstamo
+
+        // 🔥 Cuotas en estado 'Overdue Paid' con interés moratorio
+        overdueInstallments: allInstallments, // Todas las cuotas filtradas por estado
+
+        // 📊 Resumen total del préstamo
         loanMoratorySummary: {
-          totalInstallmentsInMora: overdueInstallments.length,
-          totalInstallmentsWithPendingMora: installmentsWithPendingMora.length,
-          totalUnpaidMoratoryAmount: totalLateFeeAmount.toFixed(2),
-          totalDaysLateAccumulated: totalDaysLate,
-          averageDaysLatePerInstallment: overdueInstallments.length > 0 
-            ? Math.round(totalDaysLate / overdueInstallments.length) 
+          totalInstallments: allInstallments.length,
+          totalInstallmentsWithMoratory: installmentsWithMoratory.length,
+          totalMoratoryAmount: totalMoratoryAmountAccumulated.toFixed(2),
+          totalDaysLateAccumulated: totalDaysLateAccumulated,
+          totalAmountOwed: totalAmountOwed.toFixed(2),
+          averageDaysLatePerInstallment: allInstallments.length > 0 
+            ? Math.round(totalDaysLateAccumulated / allInstallments.length) 
             : 0
         }
       };
@@ -694,120 +738,6 @@ export class LoansService {
       },
     };
   }
-
-  // // ---------- UPDATE ----------
-  // async update(id: number, dto: UpdateLoanDto) {
-  //   const existing = await this.prisma.loan.findUnique({
-  //     where: { id },
-  //     include: {
-  //       interestRate: true,
-  //       term: true,
-  //       paymentFrequency: true,
-  //       loanType: true,
-  //       loanStatus: true,
-  //     }
-  //   });
-
-  //   if (!existing) throw new NotFoundException('Préstamo no encontrado');
-
-  //   const detected = this.detectChanges(existing, dto);
-  //   if (!Object.keys(detected).length) throw new BadRequestException('No se detectaron cambios.');
-
-  //   const data: Prisma.LoanUpdateInput = {};
-  //   const changes: any = [];
-
-  //   // Campos escalares
-  //   if (detected.remainingBalance !== undefined) {
-  //     data.remainingBalance = new Prisma.Decimal(detected.remainingBalance);
-  //     changes.push({
-  //       field: 'remainingBalance',
-  //       old: existing.remainingBalance?.toNumber?.(),
-  //       new: detected.remainingBalance
-  //     });
-  //   }
-
-  //   if (detected.nextDueDate !== undefined) {
-  //     data.nextDueDate = detected.nextDueDate === null ?
-  //       null : new Date(detected.nextDueDate);
-  //     changes.push({
-  //       field: 'nextDueDate',
-  //       old: existing.nextDueDate,
-  //       new: detected.nextDueDate
-  //     });
-  //   }
-
-  //   if (detected.isActive !== undefined) {
-  //     data.isActive = detected.isActive;
-  //     changes.push({
-  //       field: 'isActive',
-  //       old: existing.isActive,
-  //       new: detected.isActive
-  //     });
-  //   }
-
-  //   // Relaciones
-  //   if (detected.loanStatusId !== undefined) {
-  //     data.loanStatus = { connect: { id: detected.loanStatusId } };
-  //     changes.push({
-  //       field: 'loanStatusId',
-  //       old: existing.loanStatusId,
-  //       new: detected.loanStatusId
-  //     });
-  //   }
-
-  //   if (detected.paymentFrequencyId !== undefined) {
-  //     data.paymentFrequency = { connect: { id: detected.paymentFrequencyId } };
-  //     changes.push({
-  //       field: 'paymentFrequencyId',
-  //       old: existing.paymentFrequencyId,
-  //       new: detected.paymentFrequencyId
-  //     });
-  //   }
-
-  //   if (detected.loanTypeId !== undefined) {
-  //     data.loanType = { connect: { id: detected.loanTypeId } };
-  //     changes.push({
-  //       field: 'loanTypeId',
-  //       old: existing.loanTypeId,
-  //       new: detected.loanTypeId
-  //     });
-  //   }
-
-  //   if (detected.interestRateId !== undefined) {
-  //     data.interestRate = { connect: { id: detected.interestRateId } };
-  //     changes.push({
-  //       field: 'interestRateId',
-  //       old: existing.interestRateId,
-  //       new: detected.interestRateId
-  //     });
-  //   }
-
-  //   if (detected.termId !== undefined) {
-  //     data.term = { connect: { id: detected.termId } };
-  //     changes.push({
-  //       field: 'termId',
-  //       old: existing.termId,
-  //       new: detected.termId
-  //     });
-  //   }
-
-  //   const updatedCore = await this.prisma.loan.update({
-  //     where: { id },
-  //     data,
-  //     include: {
-  //       interestRate: true,
-  //       term: true,
-  //       paymentFrequency: true,
-  //       loanType: true,
-  //       loanStatus: true,
-  //     }
-  //   });
-
-  //   const updatedWithTimestamps = await this.appendTimestamps(updatedCore);
-  //   const updated = this.convertLoanToPlain(updatedWithTimestamps);
-
-  //   return { updated, changes };
-  // }
 
   async getLoansByCustomer(documentNumber: number) {
     // 1️⃣ Verificar que el cliente existe
@@ -873,7 +803,7 @@ export class LoansService {
           pendingInstallmentsCount++;
           totalLateFees += lateFee;
           totalDaysLate += daysLate;
-          if (inst.status.name.toLowerCase().includes('overdue'))
+          if (inst.status.name.toLowerCase().includes('Overdue Paid'))
             overdueInstallmentsCount++;
         } else {
           paidInstallmentsCount++;
@@ -1034,53 +964,6 @@ export class LoansService {
     if (!type) throw new BadRequestException('LoanType no encontrada');
   }
 
-  // ✅ Métodos de traducción
-  private translateLoanType(loanTypeName: string): string {
-    const translations = {
-      'fixed_fees': 'Cuotas Fijas',
-      'only_interests': 'Interés Mensual',
-    };
-    return translations[loanTypeName] || loanTypeName;
-  }
-
-  private translatePaymentFrequency(frequencyName: string): string {
-    const translations = {
-      'Minute': 'Minuto',
-      'Weekly': 'Semanal',
-      'Biweekly': 'Quincenal',
-      'Monthly': 'Mensual',
-      'Daily': 'Diario',
-    };
-    return translations[frequencyName] || frequencyName;
-  }
-
-  private translateLoanStatus(statusName: string): string {
-    const translations = {
-      'Up to Date': 'Al día',
-      'Overdue': 'En Mora',
-      'Paid': 'Pagado',
-      'Cancelled': 'Cancelado',
-      'Refinanced': 'Refinanciado',
-      'Outstanding Balance': 'Saldo Pendiente',
-    };
-    return translations[statusName] || statusName;
-  }
-
-  // Método auxiliar para traducir estados de cuotas
-  private translateInstallmentStatus(statusName: string): string {
-    const translations = {
-      'Pending': 'Pendiente',
-      'Paid': 'Pagado',
-      'Overdue': 'En Mora',
-      'Overdue Paid': 'Mora Pagada',
-      'Partial': 'Parcial',
-      'Partial Paid': 'Parcial Pagado',
-      'Late': 'Tardío',
-      'Late Paid': 'Tardío Pagado',
-    };
-    return translations[statusName] || statusName;
-  }
-
   private convertLoanToPlain(obj: any): any {
     // SOLUCIÓN NUCLEAR - Convierte TODOS los Decimals a números
     const jsonString = JSON.stringify(obj, (key, value) => {
@@ -1102,9 +985,9 @@ export class LoansService {
       interestRateValue: loan.interestRate?.value ?? 0,
       penaltyRateValue: loan.penaltyRate?.value ?? 0,
       termValue: loan.term?.value ?? null,
-      paymentFrequencyName: this.translatePaymentFrequency(loan.paymentFrequency?.name || ''), // ✅ Traducido
-      loanTypeName: this.translateLoanType(loan.loanType?.name || ''), // ✅ Traducido
-      loanStatusName: this.translateLoanStatus(loan.loanStatus?.name || ''), // ✅ Traducido
+      paymentFrequencyName: this.translationService.translatePaymentFrequency(loan.paymentFrequency?.name || ''),
+      loanTypeName: this.translationService.translateLoanType(loan.loanType?.name || ''),
+      loanStatusName: this.translationService.translateLoanStatus(loan.loanStatus?.name || ''),
 
       // ✅ Agregar nombre del cliente
       customerName: loan.customer ? `${loan.customer.firstName || ''} ${loan.customer.lastName || ''}`.trim() : '',
