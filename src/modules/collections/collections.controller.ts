@@ -27,18 +27,18 @@ export class CollectionsController {
     description: 'Datos del cobro a registrar',
     examples: {
       'cobro-cuota': {
-        summary: 'Cobro de cuota completa',
-        description: 'Ejemplo de cobro de una cuota completa',
+        summary: 'Cobro aplicado al préstamo',
+        description: 'Ejemplo de cobro que se aplicará a la cuota más reciente del préstamo',
         value: {
-          installmentId: 3,
+          loanId: 2,
           amount: 146763.32
         }
       },
       'cobro-parcial': {
-        summary: 'Cobro parcial de cuota',
+        summary: 'Cobro parcial',
         description: 'Ejemplo de cobro parcial cuando el cliente no puede pagar el total',
         value: {
-          installmentId: 2,
+          loanId: 1,
           amount: 50000
         }
       },
@@ -46,7 +46,7 @@ export class CollectionsController {
         summary: 'Cobro con exceso',
         description: 'Ejemplo de cobro que genera exceso para aplicar a otras cuotas',
         value: {
-          installmentId: 1,
+          loanId: 3,
           amount: 500000
         }
       }

@@ -3,16 +3,29 @@ import { PrismaService } from "@infraestructure/prisma/prisma.service";
 import { RabbitMqService } from "@infraestructure/rabbitmq/rabbitmq.service";
 import { BadRequestException, Injectable, Logger } from "@nestjs/common";
 import { Prisma, Installment } from "@prisma/client";
-import { addDays, addMonths, addWeeks, addSeconds } from "date-fns";
+import { addDays, addSeconds } from "date-fns";
+import { CreditCalculatorFactory } from "./strategies/installments/factories";
+import { DateIncrementerFactory } from "./strategies/dateIncrementer/factories";
+import { BiweeklyIncrementer, DailyIncrementer, MinuteIncrementer, MonthlyIncrementer, WeeklyIncrementer } from "./strategies/dateIncrementer/date-incrementer-strategy";
 
 @Injectable()
 export class InstallmentsService {
   private readonly logger = new Logger(InstallmentsService.name);
+  private readonly dateIncrementerFactory: DateIncrementerFactory;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly rabbitMqService: RabbitMqService,
-  ) { }
+  ) {
+    // Aquí inicializas las estrategias a mano 👇
+    this.dateIncrementerFactory = new DateIncrementerFactory([
+      new DailyIncrementer(),
+      new WeeklyIncrementer(),
+      new BiweeklyIncrementer(),
+      new MonthlyIncrementer(),
+      new MinuteIncrementer(),
+    ]);
+  }
 
   /** Crear primera cuota de un préstamo y publicar mensaje inicial */
   async createFirstInstallment(
@@ -22,60 +35,32 @@ export class InstallmentsService {
   ) {
     if (!loan) throw new BadRequestException("Loan no encontrado");
 
-    const incrementer = this.getDateIncrementer(loan.paymentFrequency.name);
-    const firstDueDate = incrementer(new Date(loan.startDate));
+    const factory = new CreditCalculatorFactory(
+      this.calculateAndCreateInstallment.bind(this),
+      this.dateIncrementerFactory,
+    );
+    const calculator = factory.getCalculator(loan.loanType.name);
 
-    this.logger.log(`📌 Calculando primera cuota para loanId=${loan.id}, dueDate=${firstDueDate.toISOString()}`);
-
-    let installment;
-    let remainingInstallments: number | null = null;
-
-    switch (loan.loanType.name as "fixed_fees" | "only_interests") {
-      case "fixed_fees":
-        if (!options.termValue)
-          throw new BadRequestException("TermValue requerido para crédito fixed_fees");
-
-        remainingInstallments = options.termValue - 1;
-
-        installment = await this.calculateAndCreateInstallment(
-          loan,
-          1,
-          firstDueDate,
-          options.termValue,
-          tx
-        );
-        break;
-
-      case "only_interests":
-        if (!options.gracePeriod)
-          throw new BadRequestException("GracePeriod requerido para crédito only_interests");
-        remainingInstallments = null;
-
-        installment = await this.calculateAndCreateInstallment(
-          loan,
-          1,
-          firstDueDate,
-          options.gracePeriod,
-          tx
-        );
-        break;
-
-      default:
-        throw new BadRequestException(`Tipo de crédito no soportado: ${loan.loanType.name}`);
-    }
+    const { installment, remainingInstallments } =
+      await calculator.createFirstInstallment(tx, loan, options);
 
     // 🔹 Programar la creación de la siguiente cuota
-    const nextDueDate = incrementer(firstDueDate);
-    let createNextDate = this.calculateCreateNextDate(nextDueDate, loan.paymentFrequency.name);
+  const incrementer = this.dateIncrementerFactory.getIncrementer(loan.paymentFrequency.name);      
+    const nextDueDate = incrementer(new Date(installment.dueDate));
+    let createNextDate = this.calculateCreateNextDate(
+      nextDueDate,
+      loan.paymentFrequency.name
+    );
 
-    // Garantizar que createNextDate esté en el futuro
     if (createNextDate <= new Date()) {
-      createNextDate = new Date(Date.now() + 50); // mínimo 50ms
+      createNextDate = new Date(Date.now() + 50);
     }
 
     const delay = createNextDate.getTime() - Date.now();
 
-    this.logger.log(`📨 Próxima cuota de loanId=${loan.id} programada para creación: ${createNextDate.toISOString()}, dueDate real: ${nextDueDate.toISOString()}, delay=${delay}ms`);
+    this.logger.log(
+      `📨 Próxima cuota de loanId=${loan.id} programada para creación: ${createNextDate.toISOString()}, dueDate real: ${nextDueDate.toISOString()}, delay=${delay}ms`
+    );
 
     await this.rabbitMqService.publishWithDelay(
       envs.rabbitMq.loanInstallmentsQueue,
@@ -83,13 +68,16 @@ export class InstallmentsService {
       delay
     );
 
-    // 🔹 Publicar mensaje inicial para monitoreo de interés moratorio con 1 min de delay
+    // 🔹 Publicar mensaje inicial para monitoreo de interés moratorio con 24 horas de delay
     await this.rabbitMqService.publishWithDelay(
       envs.rabbitMq.loanOverdueQueue,
       { loanId: loan.id },
-      24 * 60 * 60 * 1000 // 24 horas en milisegundos
+      24 * 60 * 60 * 1000
     );
-    this.logger.log(`⏱️ Primer mensaje de interés moratorio enviado para loanId=${loan.id}, delay=1min`);
+
+    this.logger.log(
+      `⏱️ Primer mensaje de interés moratorio enviado para loanId=${loan.id}, delay=24h`
+    );
 
     return installment;
   }
@@ -118,7 +106,7 @@ export class InstallmentsService {
       a.sequence > b.sequence ? a : b,
     );
     const nextSequence = lastInstallment.sequence + 1;
-    const incrementer = this.getDateIncrementer(loan.paymentFrequency.name);
+    const incrementer = this.dateIncrementerFactory.getIncrementer(loan.paymentFrequency.name);
     const nextDueDate = incrementer(new Date(lastInstallment.dueDate));
 
     this.logger.log(
@@ -330,38 +318,38 @@ export class InstallmentsService {
 
         const remainingBalance = loanAmountDecimal.minus(paidCapital);
         const remainingInstallments = termOrGrace - (sequence - 1);
-        
+
         if (remainingInstallments <= 0) {
           this.logger.warn(`Crédito ${loan.id}: no hay más cuotas por calcular (remainingInstallments=${remainingInstallments})`);
           return;
         }
 
-        // 🚀 APLICAR REDONDEO PARA EVITAR CENTAVOS
+        const monthlyRate = interestRateNormalized;
+
         if (remainingInstallments === 1) {
-          // 📌 ÚLTIMA CUOTA: acumular todo el saldo restante para evitar centavos
-          const monthlyRate = interestRateNormalized;
-          interestAmount = remainingBalance.times(monthlyRate);
+          // 📌 ÚLTIMA CUOTA: acumular todo lo pendiente y redondear
+          interestAmount = new Prisma.Decimal(
+            Math.round(remainingBalance.times(monthlyRate).toNumber())
+          );
           capitalAmount = remainingBalance;
           totalAmount = capitalAmount.plus(interestAmount);
-          
-          this.logger.log(`🔧 Última cuota ajustada para loanId=${loan.id}: capital=${capitalAmount.toString()}, interest=${interestAmount.toString()}, total=${totalAmount.toString()}`);
+
+          this.logger.log(`🔧 Última cuota AJUSTADA para loanId=${loan.id}: capital=${capitalAmount.toString()}, interest=${interestAmount.toString()}, total=${totalAmount.toString()}`);
         } else {
-          // 📌 CUOTAS INTERMEDIAS: redondear hacia abajo para evitar centavos
-          const monthlyRate = interestRateNormalized;
+          // 📌 CUOTAS INTERMEDIAS: redondeo normal
           const temp = monthlyRate.plus(1).pow(remainingInstallments);
           const factor = monthlyRate.times(temp).div(temp.minus(1));
           const theoreticalPayment = remainingBalance.times(factor);
-          
-          // 🔄 Redondear el pago total hacia abajo (sin centavos)
-          const roundedPayment = new Prisma.Decimal(Math.floor(theoreticalPayment.toNumber()));
-          
-          interestAmount = remainingBalance.times(monthlyRate);
-          // 🔄 Redondear interés hacia abajo también
-          interestAmount = new Prisma.Decimal(Math.floor(interestAmount.toNumber()));
-          
+
+          // 🔄 Redondear al entero más cercano
+          const roundedPayment = new Prisma.Decimal(Math.round(theoreticalPayment.toNumber()));
+
+          interestAmount = new Prisma.Decimal(
+            Math.round(remainingBalance.times(monthlyRate).toNumber())
+          );
           capitalAmount = roundedPayment.minus(interestAmount);
           totalAmount = roundedPayment;
-          
+
           this.logger.log(`🔧 Cuota redondeada para loanId=${loan.id}, sequence=${sequence}: teórica=${theoreticalPayment.toString()}, redondeada=${roundedPayment.toString()}`);
         }
         break;
@@ -370,10 +358,10 @@ export class InstallmentsService {
       case "only_interests": {
         // 🔄 Para créditos de solo intereses también aplicamos redondeo
         const theoreticalInterest = loanAmountDecimal.times(interestRateNormalized);
-        interestAmount = new Prisma.Decimal(Math.floor(theoreticalInterest.toNumber()));
+        interestAmount = new Prisma.Decimal(Math.round(theoreticalInterest.toNumber()));
         capitalAmount = new Prisma.Decimal(0);
         totalAmount = interestAmount;
-        
+
         this.logger.log(`🔧 Interés redondeado para loanId=${loan.id}: teórico=${theoreticalInterest.toString()}, redondeado=${interestAmount.toString()}`);
         break;
       }
@@ -415,7 +403,7 @@ export class InstallmentsService {
   } {
     const difference = expectedAmount.minus(paidAmount).abs();
     const toleranceDecimal = new Prisma.Decimal(tolerance);
-    
+
     if (difference.lte(toleranceDecimal)) {
       this.logger.log(`💰 Pago dentro de tolerancia: esperado=${expectedAmount.toString()}, pagado=${paidAmount.toString()}, diferencia=${difference.toString()}`);
       return {
@@ -423,27 +411,11 @@ export class InstallmentsService {
         remainingAmount: new Prisma.Decimal(0)
       };
     }
-    
+
     return {
       isFullyPaid: false,
       remainingAmount: expectedAmount.minus(paidAmount)
     };
-  }
-
-  /** ⏱️ Incrementador de fechas según frecuencia */
-  private getDateIncrementer(frequencyName: string): (date: Date) => Date {
-    const freq = frequencyName.toUpperCase();
-
-    if (freq.includes("DAILY")) return (date) => addDays(date, 1);
-    if (freq.includes("WEEKLY")) return (date) => addWeeks(date, 1);
-    if (freq.includes("BIWEEKLY")) return (date) => addDays(date, 15);
-    if (freq.includes("MONTHLY")) return (date) => addMonths(date, 1);
-
-    // ✅ Ajuste: MINUTE = cada 60 segundos exactos
-    if (freq.includes("MINUTE")) return (date) => addSeconds(date, 60);
-
-    // fallback → mensual
-    return (date) => addMonths(date, 1);
   }
 
   /** Calcula fecha de creación anticipada según frecuencia */
@@ -473,6 +445,7 @@ export class InstallmentsService {
     );
     return createDate;
   }
+  
   public getNextCreateDate(nextDueDate: Date, frequencyName: string): Date {
     return this.calculateCreateNextDate(nextDueDate, frequencyName);
   }

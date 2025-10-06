@@ -1,12 +1,12 @@
-import type {
-  TDocumentDefinitions,
-} from 'pdfmake/interfaces';
+import type { TDocumentDefinitions, Content } from 'pdfmake/interfaces';
+import sharp from 'sharp';
 
 export interface CollectionReportData {
   reportDate: string;
   startDate: string;
   endDate: string;
-  logoBase64: string;
+  headerLogo: string;
+  watermarkLogo: string;
   summary: {
     globalPerformancePercentage: number;
     totalAssigned: number;
@@ -27,10 +27,10 @@ export interface CollectionReportData {
   };
   collectorSummary: Array<{
     collectorName: string;
-    zoneName: string;
+    collectorRoute: string;
     totalAssigned: number;
     totalCollected: number;
-    collectionsCount: number;
+    totalCollectionsMade: number;
     performancePercentage: number;
     averageCollectionAmount: number;
   }>;
@@ -39,328 +39,253 @@ export interface CollectionReportData {
     loanId: string;
     customerName: string;
     collectorName: string;
-    zoneName: string;
+    collectorRoute: string;
     amount: number;
   }>;
   globalPerformanceChartBase64?: string;
   comparisonChartBase64?: string;
 }
 
-// 🔧 Función auxiliar para estilo de rendimiento
 function getPerformanceStyle(percentage: number): any {
-  if (percentage >= 85) {
-    return { color: '#00aa00', bold: true }; // Verde para alto rendimiento
-  } else if (percentage >= 70) {
-    return { color: '#ffaa00', bold: true }; // Amarillo medio
-  } else {
-    return { color: '#ff6384', bold: true }; // Rojo bajo
-  }
+  if (percentage >= 85) return { color: '#00aa00', bold: true };
+  if (percentage >= 70) return { color: '#ffaa00', bold: true };
+  return { color: '#ff6384', bold: true };
 }
 
+/**
+ * Genera un PNG base64 con texto vertical rotado -90°
+ * @param text Texto que se mostrará vertical
+ * @param height Altura del área disponible en el PDF (ej: pageSize.height - 50)
+ * @param fontSize Tamaño de la fuente (default: 10)
+ */
+export async function getVerticalTextBase64(
+  text: string,
+  height: number,
+  fontSize: number = 10
+): Promise<string> {
+  const yPos = height - 20;
+
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="${height}">
+      <text x="15" y="${yPos}" font-size="${fontSize}" fill="black"
+            transform="rotate(-90, 15, ${yPos})">
+        ${text}
+      </text>
+    </svg>
+  `;
+
+  const svgBuffer = Buffer.from(svg);
+  const pngBuffer = await sharp(svgBuffer).png().toBuffer();
+  return 'data:image/png;base64,' + pngBuffer.toString('base64');
+}
+
+/**
+ * Construye el template del reporte con el texto vertical ya generado
+ */
 export function collectionsReportTemplate(
   data: CollectionReportData,
+  verticalTextBase64?: string
 ): TDocumentDefinitions {
-  const logoContent = data.logoBase64
-    ? { image: data.logoBase64, width: 40, alignment: 'left' as const }
-    : { text: '' };
-
   return {
     content: [
+      // Encabezado
       {
         columns: [
-          logoContent,
+          { width: 100, image: data.headerLogo },
           {
+            width: '*',
             text: 'REPORTE DE RECAUDOS POR COBRADOR',
             style: 'header',
-            alignment: 'center' as const,
+            alignment: 'right' as const,
+            margin: [0, 15, 0, 0],
           },
         ],
-        columnGap: 20,
+        columnGap: 10,
+        margin: [0, 10, 0, 20],
       },
-      {
-        text: `Fecha de reporte: ${data.reportDate}`,
-        alignment: 'right',
-        margin: [0, 0, 0, 10],
-        fontSize: 8,
-      },
-      {
-        text: `Período: ${data.startDate} - ${data.endDate}`,
-        alignment: 'center',
-        margin: [0, 0, 0, 15],
-        fontSize: 10,
-      },
+      { text: `Fecha de reporte: ${data.reportDate}`, alignment: 'right', margin: [0, -10, 0, 10], fontSize: 8 },
+      { text: `Período: ${data.startDate} - ${data.endDate}`, alignment: 'right', margin: [0, 0, 0, 15], fontSize: 10, bold: true },
 
-      // 📌 Resumen Global
+      // RESUMEN GLOBAL
       { text: 'RESUMEN GLOBAL', style: 'subheader', margin: [0, 10, 0, 5] },
       {
         table: {
           headerRows: 1,
           widths: ['25%', '25%', '25%', '25%'],
           body: [
+            ['Total Recaudado', 'Total Asignado', 'Rendimiento Global', 'Cobradores Activos'].map(t => ({ text: t, style: 'tableHeader' })),
             [
-              { text: 'Total Recaudado', style: 'tableHeader' },
-              { text: 'Total Asignado', style: 'tableHeader' },
-              { text: 'Rendimiento Global', style: 'tableHeader' },
-              { text: 'Cobradores Activos', style: 'tableHeader' },
-            ],
-            [
-              {
-                text: `$${data.summary.totalCollected.toLocaleString()}`,
-                alignment: 'center',
-              },
-              {
-                text: `$${data.summary.totalAssigned.toLocaleString()}`,
-                alignment: 'center',
-              },
-              {
-                text: `${data.summary.globalPerformancePercentage.toFixed(1)}%`,
-                alignment: 'center',
-                ...getPerformanceStyle(data.summary.globalPerformancePercentage),
-              },
-              {
-                text: data.summary.activeCollectors.toString(),
-                alignment: 'center',
-              },
-            ],
-          ],
+              { text: `$${data.summary.totalCollected.toLocaleString()}`, alignment: 'center' },
+              { text: `$${data.summary.totalAssigned.toLocaleString()}`, alignment: 'center' },
+              { text: `${data.summary.globalPerformancePercentage.toFixed(1)}%`, alignment: 'center', ...getPerformanceStyle(data.summary.globalPerformancePercentage) },
+              { text: data.summary.activeCollectors.toString(), alignment: 'center' },
+            ]
+          ]
         },
-        layout: 'lightHorizontalLines',
+        layout: 'lightHorizontalLines'
       },
 
-      // 📊 Gráficas
+      // ANÁLISIS VISUAL
       { text: 'ANÁLISIS VISUAL', style: 'subheader', margin: [0, 15, 0, 5] },
       {
         columns: [
           {
             width: '50%',
             stack: [
-              {
-                text: 'Rendimiento Global',
-                alignment: 'center',
-                fontSize: 8,
-              },
+              { text: 'Rendimiento Global', alignment: 'center', fontSize: 8 },
               data.globalPerformanceChartBase64
-                ? {
-                    image: data.globalPerformanceChartBase64,
-                    width: 150,
-                    alignment: 'center',
-                  }
+                ? { image: data.globalPerformanceChartBase64, width: 150, alignment: 'center' }
                 : { text: 'No disponible', alignment: 'center', fontSize: 8 },
             ],
           },
           {
             width: '50%',
             stack: [
-              {
-                text: 'Comparación por Cobrador',
-                alignment: 'center',
-                fontSize: 8,
-              },
+              { text: 'Comparación por Cobrador', alignment: 'center', fontSize: 8 },
               data.comparisonChartBase64
-                ? {
-                    image: data.comparisonChartBase64,
-                    width: 150,
-                    alignment: 'center',
-                  }
+                ? { image: data.comparisonChartBase64, width: 150, alignment: 'center' }
                 : { text: 'No disponible', alignment: 'center', fontSize: 8 },
             ],
           },
         ],
       },
 
-      // 👥 Resumen por Cobrador
-      {
-        text: 'RESUMEN POR COBRADOR',
-        style: 'subheader',
-        margin: [0, 15, 0, 5],
-      },
+      // RESUMEN POR COBRADOR
+      { text: 'RESUMEN POR COBRADOR', style: 'subheader', margin: [0, 15, 0, 5] },
       {
         table: {
           headerRows: 1,
           widths: ['18%', '14%', '14%', '14%', '14%', '13%', '13%'],
           body: [
-            [
-              { text: 'Cobrador', style: 'tableHeader' },
-              { text: 'Zona', style: 'tableHeader' },
-              { text: 'Asignado', style: 'tableHeader' },
-              { text: 'Recaudado', style: 'tableHeader' },
-              { text: 'Rendimiento', style: 'tableHeader' },
-              { text: 'Cobros', style: 'tableHeader' },
-              { text: 'Promedio', style: 'tableHeader' },
-            ],
-            ...data.collectorSummary.map((collector) => [
-              { text: collector.collectorName, fontSize: 8 },
-              { text: collector.zoneName, fontSize: 8 },
-              {
-                text: `$${collector.totalAssigned.toLocaleString()}`,
-                fontSize: 8,
-                alignment: 'right',
-              },
-              {
-                text: `$${collector.totalCollected.toLocaleString()}`,
-                fontSize: 8,
-                alignment: 'right',
-              },
-              {
-                text: `${collector.performancePercentage.toFixed(1)}%`,
-                fontSize: 8,
-                alignment: 'center',
-                ...getPerformanceStyle(collector.performancePercentage),
-              },
-              {
-                text: collector.collectionsCount.toString(),
-                fontSize: 8,
-                alignment: 'center',
-              },
-              {
-                text: `$${collector.averageCollectionAmount.toLocaleString()}`,
-                fontSize: 8,
-                alignment: 'right',
-              },
-            ]),
-          ],
+            ['Cobrador', 'Ruta', 'Asignado', 'Recaudado', 'Rendimiento', 'Cobros', 'Promedio'].map(t => ({ text: t, style: 'tableHeader' })),
+            ...data.collectorSummary.map(c => [
+              { text: c.collectorName, fontSize: 8 },
+              { text: c.collectorRoute, fontSize: 8 },
+              { text: `$${c.totalAssigned.toLocaleString()}`, fontSize: 8, alignment: 'right' },
+              { text: `$${c.totalCollected.toLocaleString()}`, fontSize: 8, alignment: 'right' },
+              { text: `${c.performancePercentage.toFixed(1)}%`, fontSize: 8, alignment: 'center', ...getPerformanceStyle(c.performancePercentage) },
+              { text: c.totalCollectionsMade.toString(), fontSize: 8, alignment: 'center' },
+              { text: `$${c.averageCollectionAmount.toLocaleString()}`, fontSize: 8, alignment: 'right' },
+            ])
+          ]
         },
-        layout: 'lightHorizontalLines',
+        layout: 'lightHorizontalLines'
       },
 
-      // 💵 Detalle de Recaudos
-      {
-        text: 'DETALLE DE RECAUDOS',
-        style: 'subheader',
-        margin: [0, 15, 0, 5],
-      },
+      // DETALLE DE RECAUDOS
+      { text: 'DETALLE DE RECAUDOS', style: 'subheader', margin: [0, 15, 0, 5] },
       {
         table: {
           headerRows: 1,
           widths: ['15%', '10%', '25%', '20%', '15%', '15%'],
           body: [
-            [
-              { text: 'Fecha', style: 'tableHeader' },
-              { text: 'Crédito', style: 'tableHeader' },
-              { text: 'Cliente', style: 'tableHeader' },
-              { text: 'Cobrador', style: 'tableHeader' },
-              { text: 'Zona', style: 'tableHeader' },
-              { text: 'Monto', style: 'tableHeader' },
-            ],
-            ...data.collections.slice(0, 50).map((collection) => [
-              {
-                text: new Date(collection.paymentDate)
-                  .toISOString()
-                  .split('T')[0],
-                fontSize: 8,
-              },
-              { text: collection.loanId, fontSize: 8 },
-              { text: collection.customerName, fontSize: 8 },
-              { text: collection.collectorName, fontSize: 8 },
-              { text: collection.zoneName, fontSize: 8 },
-              {
-                text: `$${collection.amount.toLocaleString()}`,
-                fontSize: 8,
-                alignment: 'right',
-              },
-            ]),
+            ['Fecha', 'Crédito', 'Cliente', 'Cobrador', 'Ruta', 'Monto'].map(t => ({ text: t, style: 'tableHeader' })),
+            ...data.collections.slice(0, 50).map(c => [
+              { text: new Date(c.paymentDate).toISOString().split('T')[0], fontSize: 8 },
+              { text: c.loanId, fontSize: 8 },
+              { text: c.customerName, fontSize: 8 },
+              { text: c.collectorName, fontSize: 8 },
+              { text: c.collectorRoute, fontSize: 8 },
+              { text: `$${c.amount.toLocaleString()}`, fontSize: 8, alignment: 'right' },
+            ])
           ]
         },
-        layout: 'lightHorizontalLines',
+        layout: 'lightHorizontalLines'
       },
 
-      // 🌟 Mejores y Peores Cobradores
+      // DESTACADOS
       { text: 'DESTACADOS', style: 'subheader', margin: [0, 15, 0, 5] },
       {
         columns: [
           {
             width: '50%',
             stack: [
-              {
-                text: 'MEJOR COBRADOR',
-                fontSize: 10,
-                bold: true,
-                color: '#00aa00',
-                margin: [0, 0, 0, 5],
-              },
+              { text: 'MEJOR COBRADOR', fontSize: 10, bold: true, color: '#00aa00', margin: [0, 0, 0, 5] },
               {
                 table: {
                   widths: ['40%', '60%'],
                   body: [
                     ['Nombre:', data.summary.bestCollector.name],
-                    [
-                      'Rendimiento:',
-                      `${data.summary.bestCollector.percentage.toFixed(1)}%`,
-                    ],
-                    [
-                      'Total Recaudado:',
-                      `$${data.summary.bestCollector.collected.toLocaleString()}`,
-                    ],
-                  ],
+                    ['Rendimiento:', `${data.summary.bestCollector.percentage.toFixed(1)}%`],
+                    ['Total Recaudado:', `$${data.summary.bestCollector.collected.toLocaleString()}`],
+                  ]
                 },
-                layout: 'noBorders',
-              },
-            ],
+                layout: 'noBorders'
+              }
+            ]
           },
           {
             width: '50%',
             stack: [
-              {
-                text: 'COBRADOR CON MENOR RENDIMIENTO',
-                fontSize: 10,
-                bold: true,
-                color: '#ff6384',
-                margin: [0, 0, 0, 5],
-              },
+              { text: 'COBRADOR CON MENOR RENDIMIENTO', fontSize: 10, bold: true, color: '#ff6384', margin: [0, 0, 0, 5] },
               {
                 table: {
                   widths: ['40%', '60%'],
                   body: [
                     ['Nombre:', data.summary.worstCollector.name],
-                    [
-                      'Rendimiento:',
-                      `${data.summary.worstCollector.percentage.toFixed(1)}%`,
-                    ],
-                    [
-                      'Total Recaudado:',
-                      `$${data.summary.worstCollector.collected.toLocaleString()}`,
-                    ],
-                  ],
+                    ['Rendimiento:', `${data.summary.worstCollector.percentage.toFixed(1)}%`],
+                    ['Total Recaudado:', `$${data.summary.worstCollector.collected.toLocaleString()}`],
+                  ]
                 },
-                layout: 'noBorders',
-              },
-            ],
-          },
-        ],
-      },
+                layout: 'noBorders'
+              }
+            ]
+          }
+        ]
+      }
     ],
+
     styles: {
-      header: { fontSize: 14, bold: true, color: '#333' },
+      header: { fontSize: 16, bold: true, color: '#333' },
       subheader: { fontSize: 12, bold: true, color: '#333' },
-      tableHeader: {
-        fillColor: '#4bc0c0',
-        color: '#fff',
-        bold: true,
-        fontSize: 8,
-        alignment: 'center',
-      },
+      tableHeader: { fillColor: '#4bc0c0', color: '#fff', bold: true, fontSize: 8, alignment: 'center' },
     },
+
     defaultStyle: { font: 'Helvetica', fontSize: 8 },
-    // 📏 MÁRGENES DE DOCUMENTO OFICIAL
-    pageMargins: [
-      50,  // Izquierdo: 1.77 cm (50 pts)
-      60,  // Superior: 2.12 cm (60 pts) 
-      40,  // Derecho: 1.41 cm (40 pts)
-      50   // Inferior: 1.77 cm (50 pts)
-    ],
-    pageSize: 'LETTER', // Tamaño carta estándar
+    pageMargins: [50, 60, 40, 50],
+    pageSize: 'LETTER',
     pageOrientation: 'portrait',
-    // Configuración de pie de página
-    footer: function(currentPage: number, pageCount: number) {
-      return {
-        text: `Página ${currentPage} de ${pageCount}`,
-        alignment: 'center',
-        fontSize: 8,
-        color: '#666666',
-        margin: [0, 10, 0, 0]
-      };
+
+    // BACKGROUND: logo + texto vertical ya generado
+    background: (currentPage: number, pageSize: { width: number; height: number }): Content[] => {
+      const backgrounds: Content[] = [];
+
+      // Logo
+      if (data.watermarkLogo) {
+        backgrounds.push({
+          image: data.watermarkLogo,
+          width: 300,
+          opacity: 0.08,
+          absolutePosition: {
+            x: (pageSize.width - 300) / 2,
+            y: (pageSize.height - 300) / 2
+          }
+        } as any);
+      }
+
+      // si no viene nada, no dibuja el texto
+      if (verticalTextBase64 && verticalTextBase64.startsWith('data:image/png;base64,')) {
+  backgrounds.push({
+    image: verticalTextBase64,
+    fit: [15, pageSize.height - 50],
+    absolutePosition: {
+      x: pageSize.width - 20,
+      y: 25
+    }
+  });
+}
+
+      return backgrounds;
     },
-    // Metadatos del documento
+
+    footer: (currentPage: number, pageCount: number) => ({
+      text: `Página ${currentPage} de ${pageCount}`,
+      alignment: 'center',
+      fontSize: 8,
+      color: '#666666',
+      margin: [0, 10, 0, 0]
+    }),
+
     info: {
       title: 'Reporte de Recaudos por Cobrador',
       author: 'Sistema de Gestión de Créditos',
@@ -368,6 +293,6 @@ export function collectionsReportTemplate(
       creator: 'MiGestor',
       producer: 'MiGestor PDF Generator',
       creationDate: new Date(),
-    }
+    },
   };
 }

@@ -35,7 +35,8 @@ export class ReportsCollectionsService {
                     co.id as "collectorId",
                     co."documentNumber" as "collectorDocument", 
                     co.phone as "collectorPhone",
-                    STRING_AGG(DISTINCT cr.name, ', ') as "collectorRoutes",
+                    cr.name as "collectorRoute",
+                    cr.id as "collectorRouteId",
                     p.id as "paymentId",
                     p.amount,
                     p."loanId",
@@ -66,11 +67,6 @@ export class ReportsCollectionsService {
                 LEFT JOIN collection_routes cr_customer ON cr_customer.id = c."collectionRouteId"
                 WHERE p."paymentDate" >= ${startDate}::date
                   AND p."paymentDate" <= ${endDate}::date
-                GROUP BY p.id, pa."installmentId", co.id, co."firstName", co."lastName", 
-                         co."documentNumber", co.phone, zcl.id, zcl.name, zcl.code,
-                         c.id, c."firstName", c."lastName", c."documentNumber",
-                         cr_customer.name, i."dueDate", i."isPaid", i."totalAmount",
-                         i."paidAmount", i."paidAt", i."statusId", i.sequence
                 ORDER BY p."paymentDate" ASC
             `;
 
@@ -96,12 +92,12 @@ export class ReportsCollectionsService {
                         totalInstallmentsPending: 0,
                         averageCollectedPerCollector: 0,
                         averageCollectionAmount: 0,
-                        bestPerformanceCollector: { name: 'N/A', percentage: 0, collected: 0, assigned: 0, zone: 'N/A', totalCollectionsMade: 0 },
-                        worstPerformanceCollector: { name: 'N/A', percentage: 0, collected: 0, assigned: 0, zone: 'N/A', totalCollectionsMade: 0 },
-                        mostActiveCollector: { name: 'N/A', totalCollectionsMade: 0, collected: 0, percentage: 0, zone: 'N/A' },
-                        leastActiveCollector: { name: 'N/A', totalCollectionsMade: 0, collected: 0, percentage: 0, zone: 'N/A' },
-                        bestCollector: { name: 'N/A', percentage: 0, collected: 0, zone: 'N/A' },
-                        worstCollector: { name: 'N/A', percentage: 0, collected: 0, zone: 'N/A' },
+                        bestPerformanceCollector: { name: 'N/A', percentage: 0, collected: 0, assigned: 0, route: 'N/A', totalCollectionsMade: 0 },
+                        worstPerformanceCollector: { name: 'N/A', percentage: 0, collected: 0, assigned: 0, route: 'N/A', totalCollectionsMade: 0 },
+                        mostActiveCollector: { name: 'N/A', totalCollectionsMade: 0, collected: 0, percentage: 0, route: 'N/A' },
+                        leastActiveCollector: { name: 'N/A', totalCollectionsMade: 0, collected: 0, percentage: 0, route: 'N/A' },
+                        bestCollector: { name: 'N/A', percentage: 0, collected: 0, route: 'N/A' },
+                        worstCollector: { name: 'N/A', percentage: 0, collected: 0, route: 'N/A' },
                         chartData: {
                             collectorPerformance: [],
                             collectorComparison: [],
@@ -136,7 +132,8 @@ export class ReportsCollectionsService {
                     i.sequence,
                     co.id as "collectorId",
                     co."firstName" || ' ' || co."lastName" as "collectorName",
-                    STRING_AGG(DISTINCT cr.name, ', ') as "collectorRoutes",
+                    cr.name as "collectorRoute",
+                    cr.id as "collectorRouteId",
                     cr_customer.name as "customerRoute",
                     c.id as "customerId",
                     c."firstName" || ' ' || c."lastName" as "customerName",
@@ -152,17 +149,13 @@ export class ReportsCollectionsService {
                   AND i."dueDate" <= ${endDate}::date
                   AND l."isActive" = true
                   AND c."isActive" = true
-                GROUP BY i.id, i."loanId", i."dueDate", i."totalAmount", i."paidAmount",
-                         i."isPaid", i."statusId", i.sequence, co.id, co."firstName",
-                         co."lastName", cr_customer.name, c.id, c."firstName",
-                         c."lastName", l.id
                 ORDER BY i."dueDate" ASC
             `;
 
             const allInstallmentsArray = allInstallmentsData as any[];
             this.logger.log(`Cuotas en período: ${allInstallmentsArray.length}`);
 
-            // 3. Procesar pagos realizados
+            // 3. Procesar pagos realizados con información de ruta específica
             const collections = rawPaymentsArray.map((record: any) => ({
                 paymentId: Number(record.paymentId),
                 paymentDate: record.paymentDate instanceof Date 
@@ -177,8 +170,9 @@ export class ReportsCollectionsService {
                 collectorId: Number(record.collectorId),
                 collectorDocument: record.collectorDocument?.toString() || '',
                 collectorPhone: record.collectorPhone || '',
-                collectorRoutes: record.collectorRoutes || 'Sin rutas asignadas', // Rutas del cobrador
-                customerRoute: record.customerRoute || 'Sin ruta asignada', // Ruta del cliente
+                collectorRoute: record.collectorRoute || 'Sin ruta asignada', // 🎯 Ahora es la ruta específica
+                collectorRouteId: record.collectorRouteId ? Number(record.collectorRouteId) : null,
+                customerRoute: record.customerRoute || 'Sin ruta asignada',
                 loanId: Number(record.loanId),
                 customerId: Number(record.customerId),
                 customerName: record.customerName || 'Sin nombre',
@@ -199,8 +193,8 @@ export class ReportsCollectionsService {
                 installmentSequence: record.installmentSequence ? Number(record.installmentSequence) : null
             }));
 
-            // 4. Calcular asignaciones y recaudos por cobrador
-            const collectorMap = new Map();
+            // 4. Calcular asignaciones y recaudos por cobrador y ruta individual
+            const collectorRouteMap = new Map(); // 🎯 Cambio: mapa por cobrador + ruta
             const globalMetrics = {
                 totalAssignedAmount: 0,
                 totalCollectedAmount: 0,
@@ -208,11 +202,16 @@ export class ReportsCollectionsService {
                 totalInstallmentsPaid: 0
             };
 
-            // Procesar todas las cuotas asignadas por zona/cobrador
+            // Procesar todas las cuotas asignadas por cobrador + ruta específica
             allInstallmentsArray.forEach(installment => {
                 if (!installment.collectorId) return; // Skip si no hay cobrador asignado
 
-                const collectorKey = installment.collectorId;
+                // 🎯 Si no tiene ruta específica, crear una entrada por defecto
+                const routeId = installment.collectorRouteId || 'sin_ruta';
+                const routeName = installment.collectorRoute || 'Sin Ruta Asignada';
+                
+                // 🎯 Crear clave única por cobrador + ruta
+                const collectorRouteKey = `${installment.collectorId}_${routeId}`;
                 const totalAmount = parseFloat(installment.totalAmount.toString());
                 const paidAmount = parseFloat(installment.paidAmount?.toString() || '0');
                 
@@ -224,11 +223,12 @@ export class ReportsCollectionsService {
                 }
                 globalMetrics.totalCollectedAmount += paidAmount;
 
-                if (!collectorMap.has(collectorKey)) {
-                    collectorMap.set(collectorKey, {
+                if (!collectorRouteMap.has(collectorRouteKey)) {
+                    collectorRouteMap.set(collectorRouteKey, {
                         collectorId: installment.collectorId,
                         collectorName: installment.collectorName || 'Sin nombre',
-                        collectorRoutes: installment.collectorRoutes || 'Sin rutas asignadas', // Cambio de zoneName a collectorRoutes
+                        collectorRoute: routeName, // 🎯 Nombre de ruta específica o "Sin Ruta Asignada"
+                        collectorRouteId: routeId,
                         totalAssigned: 0,
                         totalCollected: 0,
                         installmentsAssigned: 0,
@@ -240,57 +240,60 @@ export class ReportsCollectionsService {
                     });
                 }
 
-                const collector = collectorMap.get(collectorKey);
-                collector.totalAssigned += totalAmount;
-                collector.installmentsAssigned += 1;
-                collector.totalCollected += paidAmount;
+                const collectorRoute = collectorRouteMap.get(collectorRouteKey);
+                collectorRoute.totalAssigned += totalAmount;
+                collectorRoute.installmentsAssigned += 1;
+                collectorRoute.totalCollected += paidAmount;
                 
                 if (installment.isPaid) {
-                    collector.installmentsPaid += 1;
+                    collectorRoute.installmentsPaid += 1;
                 }
                 
-                collector.uniqueCustomers.add(installment.customerId);
-                collector.uniqueLoans.add(installment.loanId);
+                collectorRoute.uniqueCustomers.add(installment.customerId);
+                collectorRoute.uniqueLoans.add(installment.loanId);
             });
 
-            // Agregar pagos registrados por cada cobrador y contar cobros realizados
+            // Agregar pagos registrados por cada cobrador+ruta y contar cobros realizados
             collections.forEach(collection => {
-                const collectorKey = collection.collectorId;
-                if (collectorMap.has(collectorKey)) {
-                    const collector = collectorMap.get(collectorKey);
-                    collector.paymentsRegistered += 1;
-                    collector.totalCollectionsMade += 1; // Incrementar contador de cobros
+                const routeId = collection.collectorRouteId || 'sin_ruta';
+                const collectorRouteKey = `${collection.collectorId}_${routeId}`;
+                
+                if (collectorRouteMap.has(collectorRouteKey)) {
+                    const collectorRoute = collectorRouteMap.get(collectorRouteKey);
+                    collectorRoute.paymentsRegistered += 1;
+                    collectorRoute.totalCollectionsMade += 1;
                 }
             });
 
-            // 6. Convertir el Map a Array y calcular métricas finales
-            const collectorSummary = Array.from(collectorMap.values()).map(collector => {
-                const performancePercentage = collector.totalAssigned > 0 
-                    ? (collector.totalCollected / collector.totalAssigned) * 100 
+            // 6. Convertir el Map a Array y calcular métricas finales por ruta individual
+            const collectorSummary = Array.from(collectorRouteMap.values()).map(collectorRoute => {
+                const performancePercentage = collectorRoute.totalAssigned > 0 
+                    ? (collectorRoute.totalCollected / collectorRoute.totalAssigned) * 100 
                     : 0;
                 
-                const collectionEfficiency = collector.installmentsAssigned > 0
-                    ? (collector.installmentsPaid / collector.installmentsAssigned) * 100
+                const collectionEfficiency = collectorRoute.installmentsAssigned > 0
+                    ? (collectorRoute.installmentsPaid / collectorRoute.installmentsAssigned) * 100
                     : 0;
 
                 return {
-                    collectorId: collector.collectorId,
-                    collectorName: collector.collectorName,
-                    collectorRoutes: collector.collectorRoutes, // Cambio de zoneName a collectorRoutes
-                    totalAssigned: Math.round(collector.totalAssigned * 100) / 100,
-                    totalCollected: Math.round(collector.totalCollected * 100) / 100,
-                    totalPending: Math.round((collector.totalAssigned - collector.totalCollected) * 100) / 100,
+                    collectorId: collectorRoute.collectorId,
+                    collectorName: collectorRoute.collectorName,
+                    collectorRoute: collectorRoute.collectorRoute, // 🎯 Ruta específica o "Sin Ruta Asignada"
+                    collectorRouteId: collectorRoute.collectorRouteId,
+                    totalAssigned: Math.round(collectorRoute.totalAssigned * 100) / 100,
+                    totalCollected: Math.round(collectorRoute.totalCollected * 100) / 100,
+                    totalPending: Math.round((collectorRoute.totalAssigned - collectorRoute.totalCollected) * 100) / 100,
                     performancePercentage: Math.round(performancePercentage * 100) / 100,
                     collectionEfficiency: Math.round(collectionEfficiency * 100) / 100,
-                    installmentsAssigned: collector.installmentsAssigned,
-                    installmentsPaid: collector.installmentsPaid,
-                    installmentsPending: collector.installmentsAssigned - collector.installmentsPaid,
-                    paymentsRegistered: collector.paymentsRegistered,
-                    totalCollectionsMade: collector.totalCollectionsMade,
-                    uniqueCustomers: collector.uniqueCustomers.size,
-                    uniqueLoans: collector.uniqueLoans.size,
-                    averageCollectionAmount: collector.paymentsRegistered > 0 
-                        ? Math.round((collector.totalCollected / collector.paymentsRegistered) * 100) / 100 
+                    installmentsAssigned: collectorRoute.installmentsAssigned,
+                    installmentsPaid: collectorRoute.installmentsPaid,
+                    installmentsPending: collectorRoute.installmentsAssigned - collectorRoute.installmentsPaid,
+                    paymentsRegistered: collectorRoute.paymentsRegistered,
+                    totalCollectionsMade: collectorRoute.totalCollectionsMade,
+                    uniqueCustomers: collectorRoute.uniqueCustomers.size,
+                    uniqueLoans: collectorRoute.uniqueLoans.size,
+                    averageCollectionAmount: collectorRoute.paymentsRegistered > 0 
+                        ? Math.round((collectorRoute.totalCollected / collectorRoute.paymentsRegistered) * 100) / 100 
                         : 0
                 };
             }).sort((a, b) => b.totalCollected - a.totalCollected);
@@ -302,7 +305,7 @@ export class ReportsCollectionsService {
 
             // Ordenar cobradores por rendimiento para destacar mejor y peor
             const collectorsByPerformance = [...collectorSummary]
-                .filter(c => c.performancePercentage > 0) // Solo cobradores con actividad
+                .filter(c => c.performancePercentage > 0)
                 .sort((a, b) => b.performancePercentage - a.performancePercentage);
 
             // Ordenar cobradores por número de cobros realizados
@@ -342,14 +345,14 @@ export class ReportsCollectionsService {
                     percentage: bestPerformanceCollector.performancePercentage,
                     collected: bestPerformanceCollector.totalCollected,
                     assigned: bestPerformanceCollector.totalAssigned,
-                    routes: bestPerformanceCollector.collectorRoutes, // Cambio de zone a routes
+                    route: bestPerformanceCollector.collectorRoute, // 🎯 Ruta específica
                     totalCollectionsMade: bestPerformanceCollector.totalCollectionsMade
                 } : { 
                     name: 'N/A', 
                     percentage: 0, 
                     collected: 0, 
                     assigned: 0, 
-                    routes: 'N/A', 
+                    route: 'N/A', 
                     totalCollectionsMade: 0 
                 },
 
@@ -358,14 +361,14 @@ export class ReportsCollectionsService {
                     percentage: worstPerformanceCollector.performancePercentage,
                     collected: worstPerformanceCollector.totalCollected,
                     assigned: worstPerformanceCollector.totalAssigned,
-                    routes: worstPerformanceCollector.collectorRoutes, // Cambio de zone a routes
+                    route: worstPerformanceCollector.collectorRoute, // 🎯 Ruta específica
                     totalCollectionsMade: worstPerformanceCollector.totalCollectionsMade
                 } : { 
                     name: 'N/A', 
                     percentage: 0, 
                     collected: 0, 
                     assigned: 0, 
-                    routes: 'N/A', 
+                    route: 'N/A', 
                     totalCollectionsMade: 0 
                 },
 
@@ -375,13 +378,13 @@ export class ReportsCollectionsService {
                     totalCollectionsMade: mostActiveCollector.totalCollectionsMade,
                     collected: mostActiveCollector.totalCollected,
                     percentage: mostActiveCollector.performancePercentage,
-                    routes: mostActiveCollector.collectorRoutes // Cambio de zone a routes
+                    route: mostActiveCollector.collectorRoute // 🎯 Ruta específica
                 } : { 
                     name: 'N/A', 
                     totalCollectionsMade: 0, 
                     collected: 0, 
                     percentage: 0, 
-                    routes: 'N/A' 
+                    route: 'N/A' 
                 },
 
                 leastActiveCollector: leastActiveCollector ? {
@@ -389,13 +392,13 @@ export class ReportsCollectionsService {
                     totalCollectionsMade: leastActiveCollector.totalCollectionsMade,
                     collected: leastActiveCollector.totalCollected,
                     percentage: leastActiveCollector.performancePercentage,
-                    routes: leastActiveCollector.collectorRoutes // Cambio de zone a routes
+                    route: leastActiveCollector.collectorRoute // 🎯 Ruta específica
                 } : { 
                     name: 'N/A', 
                     totalCollectionsMade: 0, 
                     collected: 0, 
                     percentage: 0, 
-                    routes: 'N/A' 
+                    route: 'N/A' 
                 },
 
                 // MANTENER COMPATIBILIDAD CON CÓDIGO EXISTENTE
@@ -403,28 +406,28 @@ export class ReportsCollectionsService {
                     name: bestPerformanceCollector.collectorName,
                     percentage: bestPerformanceCollector.performancePercentage,
                     collected: bestPerformanceCollector.totalCollected,
-                    routes: bestPerformanceCollector.collectorRoutes // Cambio de zone a routes
-                } : { name: 'N/A', percentage: 0, collected: 0, routes: 'N/A' },
+                    route: bestPerformanceCollector.collectorRoute // 🎯 Ruta específica
+                } : { name: 'N/A', percentage: 0, collected: 0, route: 'N/A' },
 
                 worstCollector: worstPerformanceCollector ? {
                     name: worstPerformanceCollector.collectorName,
                     percentage: worstPerformanceCollector.performancePercentage,
                     collected: worstPerformanceCollector.totalCollected,
-                    routes: worstPerformanceCollector.collectorRoutes // Cambio de zone a routes
-                } : { name: 'N/A', percentage: 0, collected: 0, routes: 'N/A' },
+                    route: worstPerformanceCollector.collectorRoute // 🎯 Ruta específica
+                } : { name: 'N/A', percentage: 0, collected: 0, route: 'N/A' },
 
-                // Datos para gráficas (actualizado con rutas en lugar de zonas)
+                // Datos para gráficas (actualizado con rutas específicas)
                 chartData: {
                     collectorPerformance: collectorSummary.map(c => ({
                         collectorName: c.collectorName,
                         percentage: c.performancePercentage,
                         collected: c.totalCollected,
                         assigned: c.totalAssigned,
-                        routes: c.collectorRoutes, // Cambio de zone a routes
+                        route: c.collectorRoute, // 🎯 Ruta específica
                         totalCollectionsMade: c.totalCollectionsMade
                     })),
                     collectorComparison: collectorSummary.map(c => ({
-                        name: c.collectorName.split(' ')[0],
+                        name: `${c.collectorName.split(' ')[0]} (${c.collectorRoute})`, // 🎯 Incluir ruta en el nombre
                         collected: c.totalCollected,
                         assigned: c.totalAssigned,
                         pending: c.totalPending,
@@ -432,7 +435,7 @@ export class ReportsCollectionsService {
                         totalCollectionsMade: c.totalCollectionsMade
                     })),
                     collectorActivity: collectorsByCollections.map(c => ({
-                        name: c.collectorName.split(' ')[0],
+                        name: `${c.collectorName.split(' ')[0]} (${c.collectorRoute})`, // 🎯 Incluir ruta en el nombre
                         totalCollectionsMade: c.totalCollectionsMade,
                         collected: c.totalCollected,
                         percentage: c.performancePercentage
@@ -446,20 +449,12 @@ export class ReportsCollectionsService {
                 }
             };
 
-            // Log para debugging (actualizado)
-            this.logger.log(`Métricas globales:`);
-            this.logger.log(`- Total asignado: $${summary.totalAssigned}`);
-            this.logger.log(`- Total recaudado: $${summary.totalCollected}`);
-            this.logger.log(`- Rendimiento global: ${summary.globalPerformancePercentage}%`);
-            this.logger.log(`\nDestacados por RENDIMIENTO:`);
-            this.logger.log(`- MEJOR: ${summary.bestPerformanceCollector.name} (${summary.bestPerformanceCollector.percentage}%) - Rutas: ${summary.bestPerformanceCollector.routes} - ${summary.bestPerformanceCollector.totalCollectionsMade} cobros`);
-            this.logger.log(`- PEOR: ${summary.worstPerformanceCollector.name} (${summary.worstPerformanceCollector.percentage}%) - Rutas: ${summary.worstPerformanceCollector.routes} - ${summary.worstPerformanceCollector.totalCollectionsMade} cobros`);
-            this.logger.log(`\nDestacados por ACTIVIDAD:`);
-            this.logger.log(`- MÁS ACTIVO: ${summary.mostActiveCollector.name} (${summary.mostActiveCollector.totalCollectionsMade} cobros) - ${summary.mostActiveCollector.percentage}% - Rutas: ${summary.mostActiveCollector.routes}`);
-            this.logger.log(`- MENOS ACTIVO: ${summary.leastActiveCollector.name} (${summary.leastActiveCollector.totalCollectionsMade} cobros) - ${summary.leastActiveCollector.percentage}% - Rutas: ${summary.leastActiveCollector.routes}`);
-            this.logger.log(`\nResumen por cobrador:`);
-            collectorSummary.forEach(c => {
-                this.logger.log(`- ${c.collectorName} (Rutas: ${c.collectorRoutes}): ${c.performancePercentage}% - $${c.totalCollected}/$${c.totalAssigned} - ${c.totalCollectionsMade} cobros`);
+            // Log para debugging mejorado
+            this.logger.log(`\n🔍 DEBUGGING DETALLADO:`);
+            this.logger.log(`Total de asignaciones cobrador+ruta: ${collectorSummary.length}`);
+            this.logger.log(`\nDETALLE POR COBRADOR Y RUTA:`);
+            collectorSummary.forEach((c, index) => {
+                this.logger.log(`${index + 1}. Cobrador: "${c.collectorName}" | Ruta: "${c.collectorRoute}" | Rendimiento: ${c.performancePercentage}% | Recaudado: $${c.totalCollected} | Asignado: $${c.totalAssigned} | Cobros: ${c.totalCollectionsMade}`);
             });
 
             // 7. Preparar respuesta final
@@ -473,12 +468,13 @@ export class ReportsCollectionsService {
                     totalRecords: collections.length,
                     generatedAt: new Date().toISOString().split('T')[0],
                     period: `${startDate} al ${endDate}`,
-                    totalCollectors: collectorSummary.length,
+                    totalCollectors: new Set(collectorSummary.map(c => c.collectorId)).size, // 🎯 Contar cobradores únicos
+                    totalRouteAssignments: collectorSummary.length, // 🎯 Total de asignaciones cobrador+ruta
                     activeCollectors: collectorSummary.filter(c => c.paymentsRegistered > 0).length
                 }
             };
 
-            this.logger.log(`Reporte consultado exitosamente: ${collections.length} recaudos de ${collectorSummary.length} cobradores`);
+            this.logger.log(`Reporte consultado exitosamente: ${collections.length} recaudos de ${new Set(collectorSummary.map(c => c.collectorId)).size} cobradores en ${collectorSummary.length} asignaciones de ruta`);
             
             return reportData;
 

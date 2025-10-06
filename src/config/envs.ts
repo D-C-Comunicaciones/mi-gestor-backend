@@ -4,6 +4,9 @@ import * as joi from 'joi';
 interface EnvVars {
     // APP NAME
     APP_NAME: string;
+
+    APP_LOCALE: string;
+
     // APP VERSION
     APP_VERSION: string;
     // APP DESCRIPTION
@@ -49,10 +52,13 @@ const envVarsSchema = joi.object({
     // APP NAME
     APP_NAME: joi.string().default('MyApp'),
 
+    APP_LOCALE: joi.string().default('es-CO'),
+
     // APP VERSION
     APP_VERSION: joi.string().default('1.0'),
+
     // APP DESCRIPTION
-    APP_DESCRIPTION: joi.string().default('E-DUCATIVE'),
+    APP_DESCRIPTION: joi.string().default('nestJS API'),
 
     // APP ENVIRONMENT
     APP_ENVIRONMENT: joi.string().valid('development', 'production', 'test').default('development'),
@@ -100,6 +106,10 @@ const envVars: EnvVars = value;
 export const envs = {
     // APP NAME
     appName: envVars.APP_NAME,
+
+    // APP LOCALE
+    appLocale: envVars.APP_LOCALE,
+
     // APP VERSION
     appVersion: envVars.APP_VERSION,
     // APP DESCRIPTION

@@ -780,15 +780,7 @@ export class ReportsController {
         summary: 'No hay préstamos en el período',
         value: {
           statusCode: 404,
-          message: 'No se encontraron préstamos con pagos en el rango de fechas especificado',
-          error: 'Not Found'
-        }
-      },
-      'no-payments-found': {
-        summary: 'No se encontraron pagos',
-        value: {
-          statusCode: 404,
-          message: 'No se registraron pagos de intereses en el período especificado',
+          message: 'No se encontraron préstamos con pagos en el período especificado',
           error: 'Not Found'
         }
       }
@@ -816,165 +808,10 @@ export class ReportsController {
     }
   })
   @ApiForbiddenResponse({
-    description: 'Acceso prohibido - Sin permisos para ver reportes de intereses',
+    description: 'Acceso prohibido - Sin permisos para ver reportes',
     examples: {
       'insufficient-permissions': {
-        summary: 'Sin permisos para ver reportes de intereses',
-        value: {
-          statusCode: 403,
-          message: 'No tienes permisos para ver los reportes de intereses',
-          error: 'Forbidden'
-        }
-      }
-    }
-  })
-  @ApiInternalServerErrorResponse({
-    description: 'Error interno del servidor',
-    examples: {
-      'server-error': {
-        summary: 'Error interno del servidor',
-        value: {
-          statusCode: 500,
-          message: 'Error interno del servidor al generar el reporte de intereses',
-          error: 'Internal Server Error'
-        }
-      },
-      'calculation-error': {
-        summary: 'Error en cálculos de intereses',
-        value: {
-          statusCode: 500,
-          message: 'Error al calcular los totales de intereses y moratorias',
-          error: 'Internal Server Error'
-        }
-      }
-    }
-  })
-  async getLoanInterestSummary(@Query() dto: InterestReportPaginationDto): Promise<any> {
-    const interestSummaryRaw = await this.reportsService.getLoanInterestSummary(dto);
-    return {
-      customMessage: 'Resumen de intereses de créditos obtenido exitosamente',
-      interestSummary: interestSummaryRaw,
-    };
-  }
-
-  // Retornar reporte de recaudos por cobrador en JSON  
-  @Get('collections-report')
-  @Permissions('view.reports')
-  @ApiOperation({
-    summary: 'Obtener reporte de recaudos por cobrador',
-    description: 'Genera un reporte detallado de recaudos por cobrador con totales, promedios y detalle de cada recaudo. Por defecto muestra los últimos 30 días.'
-  })
-  @ApiQuery({
-    name: 'startDate',
-    required: false,
-    type: 'string',
-    format: 'date-time',
-    description: 'Fecha de inicio del reporte (ISO 8601)',
-    example: '2024-01-01T00:00:00.000Z'
-  })
-  @ApiQuery({
-    name: 'endDate',
-    required: false,
-    type: 'string',
-    format: 'date-time',
-    description: 'Fecha de fin del reporte YYYY-MM-DD',
-    example: '2024-01-31'
-  })
-  @ApiOkResponse({
-    description: 'Reporte de recaudos obtenido exitosamente',
-    examples: {
-      'success': {
-        summary: 'Reporte generado exitosamente',
-        value: {
-          customMessage: 'Reporte de recaudos generado correctamente',
-          collectionReport: {
-            summary: {
-              totalCollections: 125,
-              totalAmount: 15000000.00,
-              activeCollectors: 5,
-              uniqueCustomers: 85,
-              averagePerCollector: 3000000.00,
-              averagePerCustomer: 176470.59
-            },
-            collectorSummary: [
-              {
-                id: 1,
-                name: 'Carlos Cobrador',
-                documentNumber: '12345678',
-                zoneName: 'Centro',
-                totalCollections: 35,
-                totalAmount: 5250000.00
-              },
-              {
-                id: 2,
-                name: 'Ana Cobradora',
-                documentNumber: '87654321',
-                zoneName: 'Norte',
-                totalCollections: 28,
-                totalAmount: 4200000.00
-              }
-            ],
-            details: [
-              {
-                paymentId: 25,
-                paymentDate: '2024-01-15 14:30:00',
-                amount: 146763.32,
-                customerName: 'Juan Pérez García',
-                customerDocument: '87654321',
-                collectorName: 'Carlos Cobrador',
-                loanId: 2,
-                zoneName: 'Centro'
-              }
-            ]
-          }
-        }
-      }
-    }
-  })
-  @ApiNotFoundResponse({
-    description: 'No se encontraron recaudos en el periodo',
-    examples: {
-      'no-data': {
-        summary: 'Sin datos en el periodo',
-        value: {
-          statusCode: 404,
-          message: 'No se encontraron recaudos en el periodo especificado.',
-          error: 'Not Found'
-        }
-      }
-    }
-  })
-  @ApiBadRequestResponse({
-    description: 'Parámetros de fecha inválidos',
-    examples: {
-      'invalid-date-range': {
-        summary: 'Rango de fechas inválido',
-        value: {
-          statusCode: 400,
-          message: 'La fecha de inicio no puede ser posterior a la fecha de fin.',
-          error: 'Bad Request'
-        }
-      }
-    }
-  })
-  @ApiUnauthorizedResponse({
-    description: 'No autorizado',
-    examples: {
-      'missing-token': {
-        summary: 'Token faltante',
-        value: {
-          statusCode: 401,
-          message: 'Token de acceso requerido',
-          error: 'Unauthorized'
-        }
-      }
-    }
-  })
-  @ApiForbiddenResponse({
-    description: 'Sin permisos para ver reportes',
-    examples: {
-      'insufficient-permissions': {
-        summary: 'Sin permisos',
+        summary: 'Sin permisos para ver reportes',
         value: {
           statusCode: 403,
           message: 'No tienes permisos para ver los reportes',
@@ -987,7 +824,7 @@ export class ReportsController {
     description: 'Error interno del servidor',
     examples: {
       'server-error': {
-        summary: 'Error interno',
+        summary: 'Error interno del servidor',
         value: {
           statusCode: 500,
           message: 'Error interno del servidor al generar el reporte',
@@ -996,99 +833,111 @@ export class ReportsController {
       }
     }
   })
-  async getCollectionReport(
-    @Query() dateRangeDto: DateRangeDto,
-    @Res({ passthrough: true }) res: Response
-  ): Promise<CollectionReportResponse> {
-    try {
-      // Obtener datos del reporte directamente
-      const reportData = await this.reportsCollectionsService.getCollectionsReportData(dateRangeDto);
+  async getInterestValuesSummary(@Query() dto: InterestReportPaginationDto) {
+    const { startDate, endDate, page, limit, loanStatusName } = dto;
 
-      // Validar si hay datos en el reporte
-      if (!reportData.collections || reportData.collections.length === 0) {
-        return {
-          customMessage: `No se encontraron recaudos en el período ${reportData.metadata.period}`,
-          collectionReport: []
-        };
-      }
-
-      this.logger.log(`Generando reporte con ${reportData.collections.length} registros para el período ${reportData.metadata.period}`);
-
-      const collectionReport = plainToInstance(ResponseCollectionReportDto, reportData, {
-        excludeExtraneousValues: true,
-      });
-
-      return {
-        customMessage: 'Reporte de recaudos generado correctamente',
-        collectionReport,
-      };
-
-    } catch (error) {
-      this.logger.error(`Error al generar reporte de recaudos: ${error.message}`);
-      throw error;
+    // Validar formato de fechas
+    if (startDate && !/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
+      throw new BadRequestException('startDate debe tener formato YYYY-MM-DD');
     }
+    if (endDate && !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
+      throw new BadRequestException('endDate debe tener formato YYYY-MM-DD');
+    }
+
+    // Validar rango de fechas
+    if (startDate && endDate && new Date(startDate) > new Date(endDate)) {
+      throw new BadRequestException('endDate debe ser posterior a startDate');
+    }
+
+    // Validar rango de fechas no mayor a 1 año
+    if (startDate && endDate) {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      const diffInMs = Math.abs(end.getTime() - start.getTime());
+      const diffInDays = Math.ceil(diffInMs / (1000 * 60 * 60 * 24));
+      if (diffInDays > 365) {
+        throw new BadRequestException('El rango de fechas no puede ser mayor a 1 año');
+      }
+    }
+
+    // Validar parámetros de paginación
+    if (page && (page <= 0 || !Number.isInteger(page))) {
+      throw new BadRequestException('page debe ser un número positivo');
+    }
+    if (limit && (limit <= 0 || limit > 100 || !Number.isInteger(limit))) {
+      throw new BadRequestException('limit debe estar entre 1 y 100');
+    }
+
+    const interestSummaryRaw = await this.reportsService.getLoanInterestSummary(dto);
+    const interestSummary = plainToInstance(ResponseCollectionReportDto, interestSummaryRaw);
+
+    return {
+      customMessage: 'Resumen de intereses de créditos obtenido exitosamente',
+      interestSummary,
+    };
   }
 
-  @Get('collection-report/export/:format')
-  @Permissions('export.reports')
+  @Get('collections-report/debug')
+  @Permissions('view.reports')
   @ApiOperation({
-    summary: 'Exportar reporte de recaudos',
-    description: 'Exporta el reporte de recaudos por cobrador en formato Excel o PDF con gráficas y tablas'
-  })
-  @ApiParam({
-    name: 'format',
-    enum: ['xlsx', 'pdf'],
-    description: 'Formato de exportación',
-    example: 'pdf'
-  })
-  @ApiQuery({
-    name: 'startDate',
-    required: false,
-    type: 'string',
-    format: 'date-time',
-    description: 'Fecha de inicio del reporte',
-    example: '2024-01-01T00:00:00.000Z'
-  })
-  @ApiQuery({
-    name: 'endDate',
-    required: false,
-    type: 'string',
-    format: 'date-time',
-    description: 'Fecha de fin del reporte',
-    example: '2024-01-31T23:59:59.999Z'
+    summary: 'Debug del reporte de cobros - Solo para desarrollo',
+    description: 'Endpoint temporal para verificar la estructura de datos del reporte de cobros'
   })
   @ApiOkResponse({
-    description: 'Archivo generado exitosamente',
-    schema: {
-      type: 'string',
-      format: 'binary',
-    },
-    headers: {
-      'Content-Disposition': {
-        description: 'Nombre del archivo',
-        schema: { type: 'string', example: 'attachment; filename="reporte-recaudos.pdf"' }
-      },
-      'Content-Type': {
-        description: 'Tipo de contenido',
-        schema: { type: 'string', example: 'application/pdf' }
+    description: 'Información de debug obtenida exitosamente',
+    examples: {
+      'success': {
+        summary: 'Debug ejecutado exitosamente',
+        value: {
+          message: 'Debug del reporte de cobros',
+          totalCollectorRouteAssignments: 5,
+          uniqueCollectors: 3,
+          sampleData: [
+            {
+              collectorId: 1,
+              collectorName: 'Juan Pérez',
+              collectorRoute: 'Ruta Centro',
+              collectorRouteId: 1,
+              totalAssigned: 500000,
+              totalCollected: 450000,
+              performancePercentage: 90,
+              totalCollectionsMade: 15
+            },
+            {
+              collectorId: 1,
+              collectorName: 'Juan Pérez',
+              collectorRoute: 'Ruta Norte',
+              collectorRouteId: 2,
+              totalAssigned: 300000,
+              totalCollected: 270000,
+              performancePercentage: 90,
+              totalCollectionsMade: 8
+            }
+          ],
+          expectedFrontendStructure: {
+            note: "El frontend debe usar 'collectorRoute' para mostrar el nombre de la ruta, NO 'zoneName'",
+            correctField: "collectorRoute",
+            incorrectField: "zoneName (obsoleto)"
+          }
+        }
       }
     }
   })
   @ApiBadRequestResponse({
-    description: 'Formato no soportado',
+    description: 'Parámetros inválidos',
     examples: {
-      'invalid-format': {
-        summary: 'Formato inválido',
+      'invalid-dates': {
+        summary: 'Fechas inválidas',
         value: {
           statusCode: 400,
-          message: 'Formato de exportación "doc" no soportado.',
+          message: 'Formato de fecha inválido',
           error: 'Bad Request'
         }
       }
     }
   })
   @ApiUnauthorizedResponse({
-    description: 'No autorizado',
+    description: 'No autorizado - Token de acceso requerido o inválido',
     examples: {
       'missing-token': {
         summary: 'Token faltante',
@@ -1101,82 +950,54 @@ export class ReportsController {
     }
   })
   @ApiForbiddenResponse({
-    description: 'Sin permisos para exportar reportes',
+    description: 'Acceso prohibido - Sin permisos para ver reportes',
     examples: {
       'insufficient-permissions': {
-        summary: 'Sin permisos',
+        summary: 'Sin permisos para ver reportes',
         value: {
           statusCode: 403,
-          message: 'No tienes permisos para exportar reportes',
+          message: 'No tienes permisos para ver los reportes',
           error: 'Forbidden'
         }
       }
     }
   })
   @ApiInternalServerErrorResponse({
-    description: 'Error al generar archivo',
+    description: 'Error interno del servidor',
     examples: {
-      'export-error': {
-        summary: 'Error en exportación',
+      'server-error': {
+        summary: 'Error interno del servidor',
         value: {
           statusCode: 500,
-          message: 'Error interno del servidor al generar el archivo',
+          message: 'Error interno del servidor al generar el debug',
           error: 'Internal Server Error'
         }
       }
     }
   })
-  /**
-   * Genera reporte de recaudos (PDF o Excel)
-   * Ejemplo:
-   *   GET /reports/collections?startDate=2025-09-01&endDate=2025-09-29&format=pdf
-   */
-  @Get()
-  async exportCollections(
-    @Query() dto: DateRangeDto,
-    @Query('format') format: 'pdf' | 'xlsx' = 'pdf',
-    @Res() res: Response,
-  ) {
-    if (!dto.startDate || !dto.endDate) {
-      throw new BadRequestException('Debes enviar startDate y endDate');
-    }
-    if (!['pdf', 'xlsx'].includes(format)) {
-      throw new BadRequestException('Formato inválido, use pdf o xlsx');
-    }
-
-    try {
-      // Obtener los datos del reporte directamente
-      const reportData = await this.reportsCollectionsService.getCollectionsReportData(dto);
-      
-      // Validar si hay datos para exportar
-      if (!reportData.collections || reportData.collections.length === 0) {
-        res.status(404).json({
-          statusCode: 404,
-          message: `No se encontraron recaudos para exportar en el período ${reportData.metadata.period}`,
-          error: 'Not Found'
-        });
-        return;
+  async getCollectionsReportDebug(@Query() dto: DateRangeDto) {
+    const reportData = await this.reportsCollectionsService.getCollectionsReportData(dto);
+    
+    // Retornar solo la información de depuración
+    return {
+      message: 'Debug del reporte de cobros',
+      totalCollectorRouteAssignments: reportData.collectorSummary.length,
+      uniqueCollectors: new Set(reportData.collectorSummary.map(c => c.collectorId)).size,
+      sampleData: reportData.collectorSummary.slice(0, 5).map(c => ({
+        collectorId: c.collectorId,
+        collectorName: c.collectorName,
+        collectorRoute: c.collectorRoute,
+        collectorRouteId: c.collectorRouteId,
+        totalAssigned: c.totalAssigned,
+        totalCollected: c.totalCollected,
+        performancePercentage: c.performancePercentage,
+        totalCollectionsMade: c.totalCollectionsMade
+      })),
+      expectedFrontendStructure: {
+        note: "El frontend debe usar 'collectorRoute' para mostrar el nombre de la ruta, NO 'zoneName'",
+        correctField: "collectorRoute",
+        incorrectField: "zoneName (obsoleto)"
       }
-
-      // Generar el archivo según el formato
-      let buffer: Buffer;
-      if (format === 'pdf') {
-        buffer = await this.reportsExporterService.generateCollectionReportPdf(reportData);
-      } else {
-        buffer = await this.reportsExporterService.generateCollectionReportExcel(reportData);
-      }
-
-      res.setHeader(
-        'Content-Type',
-        format === 'pdf'
-          ? 'application/pdf'
-          : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      );
-      res.setHeader('Content-Disposition', `attachment; filename=collections-report.${format}`);
-      res.send(buffer);
-
-    } catch (error) {
-      throw error;
-    }
+    };
   }
 }

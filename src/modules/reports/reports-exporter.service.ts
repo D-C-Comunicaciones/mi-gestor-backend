@@ -9,6 +9,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { join } from 'path';
 import { collectionsReportTemplate, CollectionReportData } from '../../assets/reports/templates/collections-report.template';
+import { envs } from '@config/envs';
 
 Chart.register(...registerables);
 
@@ -61,72 +62,88 @@ export class ReportsExporterService {
     /**
      * Genera reporte de recaudos en PDF usando plantilla
      */
-    async generateCollectionReportPdf(data: any): Promise<Buffer> {
-        this.logger.log('Generando reporte de recaudos en PDF');
+    async generateCollectionReportPdf(reportData: any): Promise<Buffer> {
+        try {
+            // 🎯 Generar gráficas antes de crear el template
+            let globalPerformanceChartBase64 = '';
+            let comparisonChartBase64 = '';
 
-        // Validar que data tenga la estructura esperada
-        if (!data || typeof data !== 'object') {
-            throw new Error('Los datos del reporte son inválidos o están vacíos');
-        }
+            try {
+                const globalChartBuffer = await this.generateGlobalPerformanceChart(reportData);
+                globalPerformanceChartBase64 = `data:image/png;base64,${globalChartBuffer.toString('base64')}`;
+            } catch (error) {
+                this.logger.warn('Error generando gráfica de rendimiento global:', error.message);
+            }
 
-        // Validar y sanitizar datos
-        const sanitizedData = this.sanitizeCollectionData(data);
+            try {
+                const comparisonChartBuffer = await this.generateCollectorComparisonChart(reportData);
+                comparisonChartBase64 = `data:image/png;base64,${comparisonChartBuffer.toString('base64')}`;
+            } catch (error) {
+                this.logger.warn('Error generando gráfica de comparación:', error.message);
+            }
 
-        // Generar gráficas
-        const globalChartBuffer = await this.generateGlobalPerformanceChart(sanitizedData);
-        const globalChartBase64 = `data:image/png;base64,${globalChartBuffer.toString('base64')}`;
-
-        const comparisonChartBuffer = await this.generateCollectorComparisonChart(sanitizedData);
-        const comparisonChartBase64 = `data:image/png;base64,${comparisonChartBuffer.toString('base64')}`;
-
-        // Preparar datos para la plantilla
-        const templateData: CollectionReportData = {
-            reportDate: this.getReportDate(),
-            startDate: data.startDate || 'N/A',
-            endDate: data.endDate || 'N/A',
-            logoBase64: await this.loadLogoBase64(),
-            summary: {
-                globalPerformancePercentage: this.sanitizeNumber(sanitizedData.summary?.globalPerformancePercentage),
-                totalAssigned: this.sanitizeNumber(sanitizedData.summary?.totalAssigned),
-                totalCollected: this.sanitizeNumber(sanitizedData.summary?.totalCollected),
-                totalCollections: this.sanitizeNumber(sanitizedData.summary?.totalCollections),
-                activeCollectors: this.sanitizeNumber(sanitizedData.summary?.activeCollectors),
-                averageCollectedPerCollector: this.sanitizeNumber(sanitizedData.summary?.averageCollectedPerCollector),
-                bestCollector: {
-                    name: sanitizedData.summary?.bestCollector?.name || 'N/A',
-                    percentage: this.sanitizeNumber(sanitizedData.summary?.bestCollector?.percentage),
-                    collected: this.sanitizeNumber(sanitizedData.summary?.bestCollector?.collected)
+            // 🎯 Mapear los datos para que coincidan con la interfaz del template
+            const templateData: CollectionReportData = {
+                reportDate: new Date().toLocaleDateString(envs.appLocale),
+                startDate: reportData.startDate,
+                endDate: reportData.endDate,
+                headerLogo: this.getLogosBase64().headerLogo,
+                watermarkLogo: this.getLogosBase64().watermarkLogo,
+                globalPerformanceChartBase64, // 🎯 Agregar gráfica de rendimiento global
+                comparisonChartBase64, // 🎯 Agregar gráfica de comparación
+                summary: {
+                    globalPerformancePercentage: reportData.summary.globalPerformancePercentage,
+                    totalAssigned: reportData.summary.totalAssigned,
+                    totalCollected: reportData.summary.totalCollected,
+                    totalCollections: reportData.summary.totalCollections,
+                    activeCollectors: reportData.summary.activeCollectors,
+                    averageCollectedPerCollector: reportData.summary.averageCollectedPerCollector,
+                    bestCollector: {
+                        name: reportData.summary.bestCollector.name,
+                        percentage: reportData.summary.bestCollector.percentage,
+                        collected: reportData.summary.bestCollector.collected,
+                    },
+                    worstCollector: {
+                        name: reportData.summary.worstCollector.name,
+                        percentage: reportData.summary.worstCollector.percentage,
+                        collected: reportData.summary.worstCollector.collected,
+                    },
                 },
-                worstCollector: {
-                    name: sanitizedData.summary?.worstCollector?.name || 'N/A',
-                    percentage: this.sanitizeNumber(sanitizedData.summary?.worstCollector?.percentage),
-                    collected: this.sanitizeNumber(sanitizedData.summary?.worstCollector?.collected)
-                }
-            },
-            collectorSummary: (sanitizedData.collectorSummary || []).map(collector => ({
-                collectorName: collector.collectorName || 'N/A',
-                zoneName: collector.zoneName || 'N/A',
-                totalAssigned: this.sanitizeNumber(collector.totalAssigned),
-                totalCollected: this.sanitizeNumber(collector.totalCollected),
-                collectionsCount: this.sanitizeNumber(collector.collectionsCount),
-                performancePercentage: this.sanitizeNumber(collector.performancePercentage),
-                averageCollectionAmount: this.sanitizeNumber(collector.averageCollectionAmount)
-            })),
-            collections: (sanitizedData.collections || []).map(collection => ({
-                paymentDate: collection.paymentDate || 'N/A',
-                loanId: collection.loanId?.toString() || 'N/A',
-                customerName: collection.customerName || 'N/A',
-                collectorName: collection.collectorName || 'N/A',
-                zoneName: collection.zoneName || 'N/A',
-                amount: this.sanitizeNumber(collection.amount)
-            })),
-            globalPerformanceChartBase64: globalChartBase64,
-            comparisonChartBase64: comparisonChartBase64
-        };
+                // 🎯 Mapear collectorSummary con los campos correctos
+                collectorSummary: reportData.collectorSummary.map((collector: any) => ({
+                    collectorName: collector.collectorName,
+                    collectorRoute: collector.collectorRoute, // 🎯 Usar collectorRoute
+                    totalAssigned: collector.totalAssigned,
+                    totalCollected: collector.totalCollected,
+                    totalCollectionsMade: collector.totalCollectionsMade, // 🎯 Usar totalCollectionsMade
+                    performancePercentage: collector.performancePercentage,
+                    averageCollectionAmount: collector.averageCollectionAmount,
+                })),
+                // 🎯 Mapear collections con los campos correctos
+                collections: reportData.collections.map((collection: any) => ({
+                    paymentDate: collection.paymentDate,
+                    loanId: collection.loanId.toString(),
+                    customerName: collection.customerName,
+                    collectorName: collection.collectorName,
+                    collectorRoute: collection.collectorRoute, // 🎯 Usar collectorRoute
+                    amount: collection.amount,
+                })),
+            };
 
-        // Generar PDF usando la plantilla
-        const docDefinition = collectionsReportTemplate(templateData);
-        return this.createPdfBuffer(docDefinition);
+            const docDefinition = collectionsReportTemplate(templateData);
+            const pdfDoc = this.printer.createPdfKitDocument(docDefinition);
+
+            return new Promise((resolve, reject) => {
+                const chunks: Buffer[] = [];
+                pdfDoc.on('data', (chunk) => chunks.push(chunk));
+                pdfDoc.on('end', () => resolve(Buffer.concat(chunks)));
+                pdfDoc.on('error', reject);
+                pdfDoc.end();
+            });
+        } catch (error) {
+            this.logger.error('Error generando PDF de reporte de cobros:', error);
+            throw new Error(`Error al generar PDF: ${error.message}`);
+        }
     }
 
     /**
@@ -261,149 +278,168 @@ export class ReportsExporterService {
     // MÉTODOS AUXILIARES PARA COLLECTIONS
     // -----------------------------------------------------------
 
-    private sanitizeCollectionData(data: any): any {
-        // Asegurar que siempre tenemos las propiedades básicas
-        const defaultData = {
-            collectorSummary: [],
-            summary: {
-                totalAssigned: 0,
-                totalCollected: 0,
-                totalCollections: 0,
-                globalPerformancePercentage: 0,
-                activeCollectors: 0,
-                averageCollectedPerCollector: 0,
-                bestCollector: { name: 'N/A', percentage: 0, collected: 0 },
-                worstCollector: { name: 'N/A', percentage: 0, collected: 0 }
-            },
-            collections: []
-        };
-
-        // Combinar datos por defecto con datos recibidos
-        const mergedData = { ...defaultData, ...data };
-
-        const sanitizedCollectorSummary = (mergedData.collectorSummary || []).map(collector => ({
-            ...collector,
-            totalAssigned: this.sanitizeNumber(collector.totalAssigned),
-            totalCollected: this.sanitizeNumber(collector.totalCollected),
-            collectionsCount: this.sanitizeNumber(collector.collectionsCount || collector.totalCollectionsMade || collector.paymentsRegistered),
-            performancePercentage: this.sanitizeNumber(collector.performancePercentage),
-            averageCollectionAmount: this.sanitizeNumber(collector.averageCollectionAmount),
-            collectorName: collector.collectorName || 'Sin Nombre',
-            zoneName: collector.zoneName || 'Sin Zona'
-        }));
-
-        const sanitizedSummary = {
-            ...defaultData.summary,
-            ...mergedData.summary,
-            totalAssigned: this.sanitizeNumber(mergedData.summary?.totalAssigned),
-            totalCollected: this.sanitizeNumber(mergedData.summary?.totalCollected),
-            totalCollections: this.sanitizeNumber(mergedData.summary?.totalCollections),
-            globalPerformancePercentage: this.sanitizeNumber(mergedData.summary?.globalPerformancePercentage),
-            activeCollectors: this.sanitizeNumber(mergedData.summary?.activeCollectors),
-            averageCollectedPerCollector: this.sanitizeNumber(mergedData.summary?.averageCollectedPerCollector),
-            bestCollector: mergedData.summary?.bestCollector || defaultData.summary.bestCollector,
-            worstCollector: mergedData.summary?.worstCollector || defaultData.summary.worstCollector
-        };
-
-        return {
-            ...mergedData,
-            collectorSummary: sanitizedCollectorSummary,
-            summary: sanitizedSummary,
-            collections: mergedData.collections || []
-        };
-    }
-
     private async generateGlobalPerformanceChart(data: any): Promise<Buffer> {
-        const canvas = createCanvas(400, 300);
-        const summary = data.summary || {};
+        try {
+            const canvas = createCanvas(400, 300);
+            const summary = data.summary || {};
 
-        const globalPerformance = this.sanitizeNumber(summary.globalPerformancePercentage);
-        const target = 85;
+            const globalPerformance = this.sanitizeNumber(summary.globalPerformancePercentage);
+            const remaining = Math.max(0, 100 - globalPerformance);
 
-        new Chart(canvas as any, {
-            type: 'doughnut',
-            data: {
-                labels: ['Rendimiento Actual', 'Por Alcanzar'],
-                datasets: [{
-                    data: [globalPerformance, Math.max(0, target - globalPerformance)],
-                    backgroundColor: [
-                        globalPerformance >= target ? '#00aa00' : globalPerformance >= 70 ? '#ffaa00' : '#ff6384',
-                        '#e0e0e0'
-                    ],
-                }],
-            },
-            options: {
-                plugins: {
-                    title: { display: true, text: `Rendimiento Global: ${globalPerformance}%` },
-                    legend: { display: true }
+            this.logger.log(`Generando gráfica de rendimiento global: ${globalPerformance}%`);
+
+            new Chart(canvas as any, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Rendimiento Actual', 'Por Alcanzar'],
+                    datasets: [{
+                        data: [globalPerformance, remaining],
+                        backgroundColor: [
+                            globalPerformance >= 85 ? '#00aa00' : globalPerformance >= 70 ? '#ffaa00' : '#ff6384',
+                            '#e0e0e0'
+                        ],
+                        borderWidth: 2,
+                        borderColor: '#ffffff'
+                    }],
+                },
+                options: {
+                    responsive: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: `Rendimiento Global: ${globalPerformance.toFixed(1)}%`,
+                            font: { size: 16, weight: 'bold' }
+                        },
+                        legend: {
+                            display: true,
+                            position: 'bottom'
+                        }
+                    }
                 }
-            }
-        });
-        return canvas.toBuffer('image/png');
+            });
+
+            return canvas.toBuffer('image/png');
+        } catch (error) {
+            this.logger.error('Error en generateGlobalPerformanceChart:', error);
+            throw error;
+        }
     }
 
     private async generateCollectorComparisonChart(data: any): Promise<Buffer> {
-        const canvas = createCanvas(400, 300);
-        const collectorSummary = data.collectorSummary || [];
+        try {
+            const canvas = createCanvas(500, 300);
+            const collectorSummary = data.collectorSummary || [];
 
-        if (!collectorSummary || collectorSummary.length === 0) {
-            return this.createEmptyChart(canvas, 'Comparación de Cobradores: Sin Datos');
-        }
+            if (!collectorSummary || collectorSummary.length === 0) {
+                this.logger.warn('No hay datos de cobradores para la gráfica');
+                return this.createEmptyChart(canvas, 'Comparación de Cobradores: Sin Datos');
+            }
 
-        const labels = collectorSummary.map(c => c.collectorName || 'Sin Nombre');
-        const percentages = collectorSummary.map(c => this.sanitizeNumber(c.performancePercentage));
+            // Tomar solo los primeros 5 cobradores para mejor visualización
+            const topCollectors = collectorSummary.slice(0, 5);
+            const labels = topCollectors.map(c => (c.collectorName || 'Sin Nombre').split(' ')[0]); // Solo primer nombre
+            const percentages = topCollectors.map(c => this.sanitizeNumber(c.performancePercentage));
+            const collected = topCollectors.map(c => this.sanitizeNumber(c.totalCollected));
 
-        new Chart(canvas as any, {
-            type: 'bar',
-            data: {
-                labels,
-                datasets: [{
-                    label: 'Rendimiento (%)',
-                    data: percentages,
-                    backgroundColor: percentages.map(p => p >= 85 ? '#00aa00' : p >= 70 ? '#ffaa00' : '#ff6384'),
-                }],
-            },
-            options: {
-                plugins: {
-                    title: { display: true, text: 'Comparación de Rendimiento entre Cobradores' },
-                    legend: { display: false }
+            this.logger.log(`Generando gráfica de comparación con ${topCollectors.length} cobradores`);
+
+            new Chart(canvas as any, {
+                type: 'bar',
+                data: {
+                    labels,
+                    datasets: [{
+                        label: 'Rendimiento (%)',
+                        data: percentages,
+                        backgroundColor: percentages.map(p =>
+                            p >= 85 ? '#00aa00' : p >= 70 ? '#ffaa00' : '#ff6384'
+                        ),
+                        borderWidth: 1,
+                        borderColor: '#ffffff'
+                    }],
                 },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        max: 100
+                options: {
+                    responsive: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Top 5 - Rendimiento por Cobrador',
+                            font: { size: 14, weight: 'bold' }
+                        },
+                        legend: { display: false }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100,
+                            ticks: {
+                                callback: function (value) {
+                                    return value + '%';
+                                }
+                            }
+                        },
+                        x: {
+                            ticks: {
+                                maxRotation: 45,
+                                minRotation: 45
+                            }
+                        }
                     }
                 }
-            }
-        });
-        return canvas.toBuffer('image/png');
+            });
+
+            return canvas.toBuffer('image/png');
+        } catch (error) {
+            this.logger.error('Error en generateCollectorComparisonChart:', error);
+            // En caso de error, crear gráfica vacía
+            return this.createEmptyChart(createCanvas(500, 300), 'Error al generar gráfica');
+        }
     }
 
     private createEmptyChart(canvas: any, title: string): Buffer {
-        new Chart(canvas, {
-            type: 'bar',
-            data: {
-                labels: ['Sin datos'],
-                datasets: [{
-                    label: 'No hay información disponible',
-                    data: [0],
-                    backgroundColor: '#cccccc',
-                }],
-            },
-            options: {
-                plugins: {
-                    title: { display: true, text: title },
-                    legend: { display: false }
+        try {
+            new Chart(canvas, {
+                type: 'bar',
+                data: {
+                    labels: ['Sin datos'],
+                    datasets: [{
+                        label: 'No hay información disponible',
+                        data: [0],
+                        backgroundColor: '#cccccc',
+                    }],
                 },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        max: 1
+                options: {
+                    responsive: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: title,
+                            font: { size: 14 }
+                        },
+                        legend: { display: false }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 1
+                        }
                     }
                 }
-            }
-        });
-        return canvas.toBuffer('image/png');
+            });
+
+            return canvas.toBuffer('image/png');
+        } catch (error) {
+            this.logger.error('Error creando gráfica vacía:', error);
+            // Crear un canvas completamente vacío como fallback
+            const emptyCanvas = createCanvas(400, 300);
+            const ctx = emptyCanvas.getContext('2d');
+            ctx.fillStyle = '#f0f0f0';
+            ctx.fillRect(0, 0, 400, 300);
+            ctx.fillStyle = '#666666';
+            ctx.font = '16px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('Gráfica no disponible', 200, 150);
+            return emptyCanvas.toBuffer('image/png');
+        }
     }
 
     // -----------------------------------------------------------
@@ -430,11 +466,95 @@ export class ReportsExporterService {
         return now.toLocaleDateString('es-CO', { year: 'numeric', month: 'long', day: 'numeric' });
     }
 
-    private async loadLogoBase64(): Promise<string> {
-        const logoPath = path.join(process.cwd(), 'public', 'logo.png');
-        if (!fs.existsSync(logoPath)) return '';
-        const logoBuffer = fs.readFileSync(logoPath);
-        return `data:image/png;base64,${logoBuffer.toString('base64')}`;
+    private getLogosBase64(): { headerLogo: string; watermarkLogo: string } {
+        try {
+            const publicPath = path.join(process.cwd(), 'public/logos');
+            const logoExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.svg'];
+
+            let headerLogo: string | null = null;
+            let watermarkLogo: string | null = null;
+
+            for (const ext of logoExtensions) {
+                const logoPath = path.join(publicPath, `logo${ext}`);
+                if (!headerLogo && fs.existsSync(logoPath)) {
+                    this.logger.log(`Logo encontrado: ${logoPath}`);
+                    headerLogo = this.encodeImage(logoPath, ext);
+                }
+
+                const defaultLogoPath = path.join(publicPath, `defaultLogo${ext}`);
+                if (!watermarkLogo && fs.existsSync(defaultLogoPath)) {
+                    this.logger.log(`Logo por defecto encontrado: ${defaultLogoPath}`);
+                    watermarkLogo = this.encodeImage(defaultLogoPath, ext);
+                }
+
+                // Si ya encontramos ambos, podemos salir del loop
+                if (headerLogo && watermarkLogo) break;
+            }
+
+            // ⚠️ Fallbacks si no se encontró algo
+            if (!headerLogo) {
+                this.logger.warn('No se encontró logo, se usará defaultLogo como headerLogo');
+                headerLogo = watermarkLogo ?? this.getFallbackSvg();
+            }
+
+            if (!watermarkLogo) {
+                this.logger.warn('No se encontró defaultLogo, se usará fallback');
+                watermarkLogo = this.getFallbackSvg();
+            }
+
+            return {
+                headerLogo,
+                watermarkLogo,
+            };
+        } catch (error) {
+            this.logger.error('Error al cargar logos:', error);
+            const fallback = this.getFallbackSvg();
+            return {
+                headerLogo: fallback,
+                watermarkLogo: fallback,
+            };
+        }
+    }
+
+    private encodeImage(filePath: string, ext: string): string {
+        const lowerExt = ext.toLowerCase();
+
+        if (lowerExt === '.svg') {
+            // SVG se lee como texto
+            const svgContent = fs.readFileSync(filePath, 'utf8');
+            return `data:image/svg+xml;base64,${Buffer.from(svgContent).toString('base64')}`;
+        }
+
+        // Otros formatos binarios
+        const buffer = fs.readFileSync(filePath);
+        const mimeType = this.getMimeType(lowerExt);
+        return `data:${mimeType};base64,${buffer.toString('base64')}`;
+    }
+
+    private getFallbackSvg(): string {
+        const fallbackSvg = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="80" height="80">
+            <rect width="100%" height="100%" fill="lightgray"/>
+            <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-size="10" fill="black">
+                SIN LOGO
+            </text>
+            </svg>
+        `;
+        return `data:image/svg+xml;base64,${Buffer.from(fallbackSvg).toString('base64')}`;
+    }
+
+    private getMimeType(extension: string): string {
+        const mimeTypes: { [key: string]: string } = {
+            '.png': 'image/png',
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.gif': 'image/gif',
+            '.bmp': 'image/bmp',
+            '.webp': 'image/webp',
+            '.svg': 'image/svg+xml'
+        };
+
+        return mimeTypes[extension] || 'image/png';
     }
 
     private translateStatus(status: string): string {
@@ -466,7 +586,7 @@ export class ReportsExporterService {
         this.logger.log('Generando reporte de intereses en PDF');
 
         const reportDate = this.getReportDate();
-        const logoBase64 = await this.loadLogoBase64();
+        const logoBase64 = await this.getLogosBase64();
         const allDetails = data.details || [];
         const grandTotals = data;
 
@@ -555,7 +675,7 @@ export class ReportsExporterService {
     async generateLoansPdf(data: ResponseLoanSummaryReportDto): Promise<Buffer> {
         this.logger.log('Generando reporte de préstamos en PDF');
 
-        const logoBase64 = await this.loadLogoBase64();
+        const logoBase64 = await this.getLogosBase64();
         const reportDate = this.getReportDate();
 
         const typeBarChartBuffer = await this.generateTypeBarChart(data);

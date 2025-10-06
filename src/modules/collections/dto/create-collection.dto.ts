@@ -1,6 +1,5 @@
-import { IsNumber, IsPositive } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { IsNotEmpty, IsNumber, IsPositive, IsOptional } from 'class-validator';
 
 /**
  * DTO para la creación de un nuevo cobro
@@ -10,33 +9,33 @@ import { Type } from 'class-transformer';
 export class CreateCollectionDto {
 
   @ApiProperty({
-    description: 'ID de la cuota que se está pagando',
-    example: 3,
-    type: 'integer',
-    minimum: 1
+    description: 'ID del préstamo al cual se aplicará el cobro',
+    example: 2,
+    type: 'number'
   })
-  @IsNumber({}, { message: 'El ID de la cuota debe ser un número' })
-  @Type(() => Number)
-  installmentId: number; // <-- ID de la cuota que se está pagando
+  @IsNumber({}, { message: 'El ID del préstamo debe ser un número' })
+  @IsNotEmpty({ message: 'El ID del préstamo es requerido' })
+  @IsPositive({ message: 'El ID del préstamo debe ser un número positivo' })
+  loanId: number;
 
   @ApiProperty({
-    description: 'Monto del pago realizado en pesos colombianos',
+    description: 'Monto del cobro en pesos colombianos',
     example: 146763.32,
-    type: 'number',
-    minimum: 0.01
+    type: 'number'
   })
-  @IsNumber({}, { message: 'El monto debe ser un número válido' })
-  @IsPositive({ message: 'El monto debe ser mayor a cero' })
-  @Type(() => Number)
+  @IsNumber({}, { message: 'El monto debe ser un número' })
+  @IsNotEmpty({ message: 'El monto es requerido' })
+  @IsPositive({ message: 'El monto debe ser un número positivo' })
   amount: number;
 
-  @Type(() => Number)
   @ApiProperty({
-    description: 'ID del método de pago utilizado (opcional, por defecto 1 = efectivo)',
+    description: 'ID del método de pago (opcional, por defecto efectivo)',
     example: 1,
+    type: 'number',
+    required: false
   })
+  @IsOptional()
   @IsNumber({}, { message: 'El ID del método de pago debe ser un número' })
-  @IsPositive({ message: 'El ID del método de pago debe ser mayor a cero' })
-  @Type(() => Number)
+  @IsPositive({ message: 'El ID del método de pago debe ser un número positivo' })
   paymentMethodId?: number; // <-- ID del método de pago (opcional, por defecto 'efectivo' con ID 1)
 }
