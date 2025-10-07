@@ -32,7 +32,7 @@
       "@types/*": ["src/types/*"],
       "@prisma/*": ["src/infraestructure/prisma/*"],
       "@redis/*": ["src/infraestructure/redis/*"],
-      "templates/*": ["src/assets/reports/templates/*"]
+      "@templates/*": ["src/assets/templates/*"]
     }
   },
   "include": ["src/**/*"],

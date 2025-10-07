@@ -9,10 +9,15 @@ interface EnvVars {
 
     // APP VERSION
     APP_VERSION: string;
+
     // APP DESCRIPTION
     APP_DESCRIPTION: string;
+
     // APP ENVIRONMENT
     APP_ENVIRONMENT: 'development' | 'production' | 'test';
+
+    // REPORTS VERTICAL TEXT
+    VERTICAL_TEXT_REPORTS: string;
 
     // DATABASE
     DATABASE_URL: string;
@@ -63,6 +68,9 @@ const envVarsSchema = joi.object({
     // APP ENVIRONMENT
     APP_ENVIRONMENT: joi.string().valid('development', 'production', 'test').default('development'),
 
+    // REPORTS VERTICAL TEXT
+    VERTICAL_TEXT_REPORTS: joi.string().default('Reporte generado por MiGestor Software™  - © 2025 <a href="https://dccomunicacionessas.com" target="_blank">D&C IDEM COMUNICACIONES S.A.S.</a>'),
+
     // DATABASE
     DATABASE_URL: joi.string().uri().required(),
 
@@ -112,6 +120,7 @@ export const envs = {
 
     // APP VERSION
     appVersion: envVars.APP_VERSION,
+
     // APP DESCRIPTION
     appDescription: envVars.APP_DESCRIPTION,
 
@@ -123,6 +132,9 @@ export const envs = {
 
     // ENVIRONMENT
     environment: envVars.APP_ENVIRONMENT,
+
+    // REPORTS VERTICAL TEXT
+    verticalTextReports: envVars.VERTICAL_TEXT_REPORTS,
 
     // JWT - ✅ Usar string consistentemente
     jwtSecret: envVars.JWT_SECRET,

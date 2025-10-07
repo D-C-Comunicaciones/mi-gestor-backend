@@ -8,8 +8,10 @@ import { ResponseLoanSummaryReportDto } from './dto';
 import * as path from 'path';
 import * as fs from 'fs';
 import { join } from 'path';
-import { collectionsReportTemplate, CollectionReportData } from '../../assets/reports/templates/collections-report.template';
 import { envs } from '@config/envs';
+import { CollectionReportData, LoansReportData } from '@templates/reports/interfaces';
+import { collectionsReportTemplate } from '@templates/reports/collections-report.template';
+import { loansReportTemplate } from '@templates/reports/loans-report.template';
 
 Chart.register(...registerables);
 
@@ -30,43 +32,22 @@ const fonts = {
 };
 
 @Injectable()
-export class ReportsExporterService {
-    private readonly logger = new Logger(ReportsExporterService.name);
+export class ReportExporterService {
+    private readonly logger = new Logger(ReportExporterService.name);
     private printer = new PdfPrinter(fonts);
 
     constructor() { }
 
-    // -----------------------------------------------------------
-    // MÉTODOS PRIVADOS PARA PDF
-    // -----------------------------------------------------------
-
-    private createPdf(docDefinition: TDocumentDefinitions): PDFKit.PDFDocument {
-        return this.printer.createPdfKitDocument(docDefinition);
-    }
-
-    private async createPdfBuffer(docDefinition: TDocumentDefinitions): Promise<Buffer> {
-        return new Promise((resolve, reject) => {
-            const pdfDoc = this.createPdf(docDefinition);
-            const chunks: Buffer[] = [];
-            pdfDoc.on('data', chunk => chunks.push(chunk));
-            pdfDoc.on('end', () => resolve(Buffer.concat(chunks)));
-            pdfDoc.on('error', reject);
-            pdfDoc.end();
-        });
-    }
-
-    // -----------------------------------------------------------
-    // MÉTODOS PARA GENERAR ARCHIVOS DE RECAUDOS
-    // -----------------------------------------------------------
-
     /**
      * Genera reporte de recaudos en PDF usando plantilla
      */
-    async generateCollectionReportPdf(reportData: any): Promise<Buffer> {
+    async generateCollectionReportPdf(reportData: CollectionReportData): Promise<Buffer> {
         try {
             // 🎯 Generar gráficas antes de crear el template
             let globalPerformanceChartBase64 = '';
             let comparisonChartBase64 = '';
+            const { headerLogo, watermarkLogo } = this.getLogosBase64();
+            const verticalTextBase64 = await this.getVerticalTextBase64(envs.verticalTextReports, 792);
 
             try {
                 const globalChartBuffer = await this.generateGlobalPerformanceChart(reportData);
@@ -87,8 +68,9 @@ export class ReportsExporterService {
                 reportDate: new Date().toLocaleDateString(envs.appLocale),
                 startDate: reportData.startDate,
                 endDate: reportData.endDate,
-                headerLogo: this.getLogosBase64().headerLogo,
-                watermarkLogo: this.getLogosBase64().watermarkLogo,
+                headerLogo: headerLogo,
+                watermarkLogo: watermarkLogo,
+                verticalTextBase64: verticalTextBase64, // 🎯 Agregar texto vertical
                 globalPerformanceChartBase64, // 🎯 Agregar gráfica de rendimiento global
                 comparisonChartBase64, // 🎯 Agregar gráfica de comparación
                 summary: {
@@ -130,16 +112,20 @@ export class ReportsExporterService {
                 })),
             };
 
-            const docDefinition = collectionsReportTemplate(templateData);
+            const docDefinition = await collectionsReportTemplate(templateData);
             const pdfDoc = this.printer.createPdfKitDocument(docDefinition);
 
             return new Promise((resolve, reject) => {
                 const chunks: Buffer[] = [];
                 pdfDoc.on('data', (chunk) => chunks.push(chunk));
                 pdfDoc.on('end', () => resolve(Buffer.concat(chunks)));
-                pdfDoc.on('error', reject);
+                pdfDoc.on('error', (err) => {
+                    pdfDoc.end();
+                    reject(err);
+                });
                 pdfDoc.end();
             });
+
         } catch (error) {
             this.logger.error('Error generando PDF de reporte de cobros:', error);
             throw new Error(`Error al generar PDF: ${error.message}`);
@@ -274,8 +260,262 @@ export class ReportsExporterService {
         return Buffer.from(buffer);
     }
 
+   async generateLoanReportExcel(reportData: any): Promise<Buffer> {
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet('Reporte de Créditos');
+
+        // Configurar columnas
+        worksheet.columns = [
+            { header: 'ID', key: 'id', width: 10 },
+            { header: 'Fecha', key: 'startDate', width: 12 },
+            { header: 'Cliente', key: 'customerName', width: 30 },
+            { header: 'Documento', key: 'customerDocument', width: 15 },
+            { header: 'Tipo', key: 'creditTypeName', width: 20 },
+            { header: 'Monto', key: 'loanAmount', width: 15 },
+            { header: 'Saldo', key: 'remainingBalance', width: 15 },
+            { header: 'Interés %', key: 'interestRateValue', width: 12 },
+            { header: 'Estado', key: 'loanStatusName', width: 15 },
+        ];
+
+        // Estilo del encabezado
+        worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+        worksheet.getRow(1).fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FF4bc0c0' },
+        };
+        worksheet.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
+
+        // Agregar créditos nuevos
+        if (reportData.newLoansDetails && reportData.newLoansDetails.length > 0) {
+            worksheet.addRow({});
+            const newLoansHeaderRow = worksheet.addRow(['CRÉDITOS NUEVOS']);
+            newLoansHeaderRow.font = { bold: true, size: 14 };
+            newLoansHeaderRow.fill = {
+                type: 'pattern',
+                pattern: 'solid',
+                fgColor: { argb: 'FF00aa00' },
+            };
+
+            reportData.newLoansDetails.forEach((loan: any) => {
+                worksheet.addRow({
+                    id: loan.id,
+                    startDate: loan.startDate,
+                    customerName: loan.customerName,
+                    customerDocument: loan.customerDocument,
+                    creditTypeName: loan.creditTypeName,
+                    loanAmount: loan.loanAmount,
+                    remainingBalance: loan.remainingBalance,
+                    interestRateValue: loan.interestRateValue,
+                    loanStatusName: loan.loanStatusName,
+                });
+            });
+
+            // Totales de créditos nuevos
+            const newLoansTotalRow = worksheet.addRow({
+                id: '',
+                startDate: '',
+                customerName: '',
+                customerDocument: '',
+                creditTypeName: 'TOTAL NUEVOS:',
+                loanAmount: reportData.newLoansTotalAmount,
+                remainingBalance: '',
+                interestRateValue: '',
+                loanStatusName: '',
+            });
+            newLoansTotalRow.font = { bold: true };
+            newLoansTotalRow.fill = {
+                type: 'pattern',
+                pattern: 'solid',
+                fgColor: { argb: 'FFE0F7E0' },
+            };
+        }
+
+        // Agregar créditos refinanciados
+        if (reportData.refinancedLoansDetails && reportData.refinancedLoansDetails.length > 0) {
+            worksheet.addRow({});
+            const refinancedHeaderRow = worksheet.addRow(['CRÉDITOS REFINANCIADOS']);
+            refinancedHeaderRow.font = { bold: true, size: 14 };
+            refinancedHeaderRow.fill = {
+                type: 'pattern',
+                pattern: 'solid',
+                fgColor: { argb: 'FFffaa00' },
+            };
+
+            reportData.refinancedLoansDetails.forEach((loan: any) => {
+                worksheet.addRow({
+                    id: loan.id,
+                    startDate: loan.startDate,
+                    customerName: loan.customerName,
+                    customerDocument: loan.customerDocument,
+                    creditTypeName: loan.creditTypeName,
+                    loanAmount: loan.loanAmount,
+                    remainingBalance: loan.remainingBalance,
+                    interestRateValue: loan.interestRateValue,
+                    loanStatusName: loan.loanStatusName,
+                });
+            });
+
+            // Totales de créditos refinanciados
+            const refinancedTotalRow = worksheet.addRow({
+                id: '',
+                startDate: '',
+                customerName: '',
+                customerDocument: '',
+                creditTypeName: 'TOTAL REFINANCIADOS:',
+                loanAmount: reportData.refinancedLoansTotalAmount,
+                remainingBalance: '',
+                interestRateValue: '',
+                loanStatusName: '',
+            });
+            refinancedTotalRow.font = { bold: true };
+            refinancedTotalRow.fill = {
+                type: 'pattern',
+                pattern: 'solid',
+                fgColor: { argb: 'FFFFE0B2' },
+            };
+        }
+
+        // Resumen global
+        worksheet.addRow({});
+        const summaryHeaderRow = worksheet.addRow(['RESUMEN GLOBAL']);
+        summaryHeaderRow.font = { bold: true, size: 14 };
+        summaryHeaderRow.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FF4bc0c0' },
+        };
+
+        worksheet.addRow({
+            id: 'Total Créditos:',
+            startDate: reportData.summary.totalLoans,
+            customerName: '',
+            customerDocument: '',
+            creditTypeName: '',
+            loanAmount: '',
+            remainingBalance: '',
+            interestRateValue: '',
+            loanStatusName: '',
+        });
+
+        worksheet.addRow({
+            id: 'Monto Total:',
+            startDate: reportData.summary.totalAmount,
+            customerName: '',
+            customerDocument: '',
+            creditTypeName: '',
+            loanAmount: '',
+            remainingBalance: '',
+            interestRateValue: '',
+            loanStatusName: '',
+        });
+
+        worksheet.addRow({
+            id: 'Promedio:',
+            startDate: reportData.summary.averageLoanAmount.toFixed(2),
+            customerName: '',
+            customerDocument: '',
+            creditTypeName: '',
+            loanAmount: '',
+            remainingBalance: '',
+            interestRateValue: '',
+            loanStatusName: '',
+        });
+
+        const buffer = await workbook.xlsx.writeBuffer();
+        return Buffer.from(buffer);
+    }
+
+    async generateLoanReportPdf(reportData: any): Promise<Buffer> {
+        this.logger.log('Generando reporte de préstamos en PDF');
+
+        try {
+            // 🔹 Obtener logos base64
+            let headerLogo = '';
+            let watermarkLogo = '';
+            try {
+                const logos = this.getLogosBase64();
+                headerLogo = logos.headerLogo || '';
+                watermarkLogo = logos.watermarkLogo || '';
+            } catch (err) {
+                this.logger.warn('No se pudieron cargar los logos:', err.message);
+            }
+
+            // 🔹 Generar gráficos en try/catch individual
+            let newLoansChartBase64 = '';
+            let comparisonChartBase64 = '';
+
+            try {
+                const allLoans = [
+                    ...(reportData.newLoansDetails || []),
+                    ...(reportData.refinancedLoansDetails || []),
+                ];
+                
+                if (allLoans.length > 0) {
+                    this.logger.log(`Generando gráfica de distribución por tipo (${allLoans.length} créditos)`);
+                    const newLoansChartBuffer = await this.generateLoanTypeChart(allLoans);
+                    newLoansChartBase64 = `data:image/png;base64,${newLoansChartBuffer.toString('base64')}`;
+                    this.logger.log('✅ Gráfica de distribución generada correctamente');
+                }
+            } catch (err) {
+                this.logger.error('❌ Error generando gráfica de distribución:', err.message);
+            }
+
+            try {
+                const allLoans = [
+                    ...(reportData.newLoansDetails || []),
+                    ...(reportData.refinancedLoansDetails || []),
+                ];
+                this.logger.log(`Generando gráfica comparativa (${allLoans.length} créditos totales)`);
+                const comparisonChartBuffer = await this.generateLoanComparisonChart(allLoans);
+                comparisonChartBase64 = `data:image/png;base64,${comparisonChartBuffer.toString('base64')}`;
+                this.logger.log('✅ Gráfica comparativa generada correctamente');
+            } catch (err) {
+                this.logger.error('❌ Error generando gráfica comparativa:', err.message);
+            }
+
+            // 🔹 Generar texto vertical
+            const verticalTextBase64 = await this.getVerticalTextBase64(envs.verticalTextReports, 792);
+
+            // 🔹 Mapear datos para la plantilla
+            const templateData: LoansReportData = {
+                ...reportData,
+                headerLogo,
+                watermarkLogo,
+                verticalTextBase64,
+                newLoansChartBase64,
+                comparisonChartBase64,
+                reportDate: reportData.metadata?.generatedAt || new Date().toLocaleDateString(),
+            };
+
+            this.logger.log('📄 Generando documento PDF con plantilla...');
+            const docDefinition = await loansReportTemplate(templateData);
+
+            const pdfDoc = this.printer.createPdfKitDocument(docDefinition);
+
+            return new Promise((resolve, reject) => {
+                const chunks: Buffer[] = [];
+                pdfDoc.on('data', (chunk) => chunks.push(chunk));
+                pdfDoc.on('end', () => {
+                    this.logger.log('✅ PDF generado exitosamente');
+                    resolve(Buffer.concat(chunks));
+                });
+                pdfDoc.on('error', (err) => {
+                    pdfDoc.end();
+                    this.logger.error('❌ Error al generar PDF:', err);
+                    reject(err);
+                });
+                pdfDoc.end();
+            });
+
+        } catch (error) {
+            this.logger.error('Error generando PDF de préstamos:', error);
+            throw new Error(`Error al generar PDF: ${error.message}`);
+        }
+    }
+
     // -----------------------------------------------------------
-    // MÉTODOS AUXILIARES PARA COLLECTIONS
+    // MÉTODOS AUXILIARES
     // -----------------------------------------------------------
 
     private async generateGlobalPerformanceChart(data: any): Promise<Buffer> {
@@ -291,7 +531,10 @@ export class ReportsExporterService {
             new Chart(canvas as any, {
                 type: 'doughnut',
                 data: {
-                    labels: ['Rendimiento Actual', 'Por Alcanzar'],
+                    labels: [
+                        `Rendimiento Actual (${globalPerformance.toFixed(1)}%)`,
+                        `Por Alcanzar (${remaining.toFixed(1)}%)`
+                    ],
                     datasets: [{
                         data: [globalPerformance, remaining],
                         backgroundColor: [
@@ -308,11 +551,26 @@ export class ReportsExporterService {
                         title: {
                             display: true,
                             text: `Rendimiento Global: ${globalPerformance.toFixed(1)}%`,
-                            font: { size: 16, weight: 'bold' }
+                            font: { size: 16, weight: 'bold' },
+                            color: '#000000' // ✅ Negro nítido
                         },
                         legend: {
                             display: true,
-                            position: 'bottom'
+                            position: 'bottom',
+                            labels: {
+                                font: { size: 10 },
+                                padding: 8,
+                                color: '#000000' // ✅ Negro nítido
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const label = context.label || '';
+                                    const value = context.parsed;
+                                    return `${label}: ${value.toFixed(1)}%`;
+                                }
+                            }
                         }
                     }
                 }
@@ -363,9 +621,26 @@ export class ReportsExporterService {
                         title: {
                             display: true,
                             text: 'Top 5 - Rendimiento por Cobrador',
-                            font: { size: 14, weight: 'bold' }
+                            font: { size: 14, weight: 'bold' },
+                            color: '#000000' // ✅ Negro nítido
                         },
-                        legend: { display: false }
+                        legend: { 
+                            display: false 
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const collectorName = topCollectors[context.dataIndex].collectorName;
+                                    const percentage = percentages[context.dataIndex];
+                                    const amount = collected[context.dataIndex];
+                                    return [
+                                        `${collectorName}`,
+                                        `Rendimiento: ${percentage.toFixed(1)}%`,
+                                        `Recaudado: $${amount.toLocaleString()}`
+                                    ];
+                                }
+                            }
+                        }
                     },
                     scales: {
                         y: {
@@ -374,13 +649,18 @@ export class ReportsExporterService {
                             ticks: {
                                 callback: function (value) {
                                     return value + '%';
-                                }
+                                },
+                                color: '#000000' // ✅ Negro nítido
+                            },
+                            title: {
+                                display: false
                             }
                         },
                         x: {
                             ticks: {
                                 maxRotation: 45,
-                                minRotation: 45
+                                minRotation: 45,
+                                color: '#000000' // ✅ Negro nítido
                             }
                         }
                     }
@@ -413,14 +693,25 @@ export class ReportsExporterService {
                         title: {
                             display: true,
                             text: title,
-                            font: { size: 14 }
+                            font: { size: 14 },
+                            color: '#000000' // ✅ Negro nítido
                         },
-                        legend: { display: false }
+                        legend: { 
+                            display: false 
+                        }
                     },
                     scales: {
                         y: {
                             beginAtZero: true,
-                            max: 1
+                            max: 1,
+                            ticks: {
+                                color: '#000000' // ✅ Negro nítido
+                            }
+                        },
+                        x: {
+                            ticks: {
+                                color: '#000000' // ✅ Negro nítido
+                            }
                         }
                     }
                 }
@@ -434,7 +725,7 @@ export class ReportsExporterService {
             const ctx = emptyCanvas.getContext('2d');
             ctx.fillStyle = '#f0f0f0';
             ctx.fillRect(0, 0, 400, 300);
-            ctx.fillStyle = '#666666';
+            ctx.fillStyle = '#000000'; // ✅ Negro nítido
             ctx.font = '16px Arial';
             ctx.textAlign = 'center';
             ctx.fillText('Gráfica no disponible', 200, 150);
@@ -442,9 +733,50 @@ export class ReportsExporterService {
         }
     }
 
-    // -----------------------------------------------------------
-    // MÉTODOS AUXILIARES PRIVADOS GENERALES
-    // -----------------------------------------------------------
+    /**
+     * Genera un PNG en base64 con texto vertical rotado -90°
+     */
+
+    async getVerticalTextBase64(
+        text: string,
+        height: number,
+        fontSize: number = 10
+    ): Promise<string> {
+        const start = Date.now();
+
+        try {
+            const escapeXml = (unsafe: string) =>
+                unsafe
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&apos;');
+
+            const safeText = escapeXml(text);
+            const yPos = height / 2 + 25;
+
+            const svg = `
+<svg xmlns="http://www.w3.org/2000/svg" width="40" height="${height}">
+  <text x="20" y="${yPos}" 
+        text-anchor="middle"
+        font-size="${fontSize}" 
+        fill="black"
+        fill-opacity="0.35"
+        font-family="Arial, sans-serif"
+        transform="rotate(90, 20, ${yPos})">
+    ${safeText}
+  </text>
+</svg>`.trim(); // 👈 importante el trim()
+
+
+            return svg;
+
+        } catch (error: any) {
+            console.error('❌ [getVerticalTextBase64] Error generando texto vertical:', error.message);
+            throw error;
+        }
+    }
 
     private sanitizeNumber(value: any): number {
         if (value === null || value === undefined || value === '' || value === 'NaN') {
@@ -459,11 +791,6 @@ export class ReportsExporterService {
         }
 
         return num;
-    }
-
-    private getReportDate(): string {
-        const now = new Date();
-        return now.toLocaleDateString('es-CO', { year: 'numeric', month: 'long', day: 'numeric' });
     }
 
     private getLogosBase64(): { headerLogo: string; watermarkLogo: string } {
@@ -557,728 +884,186 @@ export class ReportsExporterService {
         return mimeTypes[extension] || 'image/png';
     }
 
-    private translateStatus(status: string): string {
-        const statusMap = {
-            'Up to Date': 'Al día',
-            'Overdue': 'En Mora',
-            'Refinanced': 'Refinanciado',
-            'Paid': 'Pagado',
-            'Outstanding Balance': 'Saldo Pendiente',
-            'Created': 'Creada',
-            'Pending': 'Pendiente'
-        };
-        return statusMap[status] || status;
-    }
+    /**
+     * Genera gráfica de tipos de crédito con porcentajes
+     */
+    private async generateLoanTypeChart(loans: any[]): Promise<Buffer> {
+        try {
+            const canvas = createCanvas(450, 300);
+            
+            // Agrupar por tipo de crédito (usar el campo creditTypeName que ya está traducido)
+            const typeCounts: { [key: string]: number } = {};
+            loans.forEach(l => {
+                const type = l.creditTypeName || l.loanTypeName || 'Sin tipo';
+                typeCounts[type] = (typeCounts[type] || 0) + 1;
+            });
 
-    private formatCurrency(amount: number = 0): string {
-        return new Intl.NumberFormat('es-CO', {
-            style: 'currency',
-            currency: 'COP',
-            minimumFractionDigits: 2,
-        }).format(amount);
-    }
+            const labels = Object.keys(typeCounts);
+            const dataCounts = Object.values(typeCounts);
+            const total = dataCounts.reduce((sum, val) => sum + val, 0);
 
-    // -----------------------------------------------------------
-    // MÉTODOS PARA OTROS REPORTES (INTERESES Y PRÉSTAMOS)
-    // -----------------------------------------------------------
+            if (labels.length === 0) {
+                this.logger.warn('No hay datos de tipos de crédito para graficar');
+                return this.createEmptyChart(canvas, 'Sin datos de tipos de crédito');
+            }
 
-    async generateInterestReportPdf(data: any): Promise<Buffer> {
-        this.logger.log('Generando reporte de intereses en PDF');
+            // Calcular porcentajes
+            const percentages = dataCounts.map(count => ((count / total) * 100).toFixed(1));
+            const labelsWithPercentage = labels.map((label, i) => `${label} (${percentages[i]}%)`);
 
-        const reportDate = this.getReportDate();
-        const logoBase64 = await this.getLogosBase64();
-        const allDetails = data.details || [];
-        const grandTotals = data;
+            this.logger.log(`Generando gráfica con ${labels.length} tipos: ${labels.join(', ')}`);
 
-        // Generar Gráficas
-        const collectedVsPendingChartBuffer = await this.generateCollectedVsPendingChart(grandTotals);
-        const collectedVsPendingChartBase64 = `data:image/png;base64,${collectedVsPendingChartBuffer.toString('base64')}`;
-
-        const conceptChartBuffer = await this.generateInterestByConceptPieChart(grandTotals);
-        const conceptChartBase64 = `data:image/png;base64,${conceptChartBuffer.toString('base64')}`;
-
-        const docDefinition: any = {
-            content: [
-                {
-                    columns: [
-                        logoBase64 ? { image: logoBase64, width: 40, alignment: 'left', margin: [0, 0, 0, 0] } : {},
-                        { text: 'REPORTE DE INTERESES RECAUDADOS Y PENDIENTES', style: 'header', alignment: 'center', margin: [0, 10, 0, 0] },
-                    ],
-                    columnGap: 20,
+            new Chart(canvas as any, {
+                type: 'doughnut',
+                data: {
+                    labels: labelsWithPercentage,
+                    datasets: [{
+                        data: dataCounts,
+                        backgroundColor: [
+                            '#4bc0c0',
+                            '#ff6384',
+                            '#36a2eb',
+                            '#ffce56',
+                            '#9966ff',
+                        ],
+                        borderWidth: 2,
+                        borderColor: '#ffffff'
+                    }],
                 },
-                { text: `Fecha de reporte: ${reportDate}`, alignment: 'right', margin: [0, 0, 0, 10], fontSize: 8 },
-
-                // 1. Resumen de Totales
-                { text: '1. Resumen Global de Intereses', style: 'subheader', margin: [0, 10, 0, 5] },
-                this.buildGeneralInterestSummaryTable(grandTotals),
-
-                // 2. Gráficas
-                { text: '2. Análisis de Intereses Recaudados y Pendientes', style: 'subheader', margin: [0, 15, 0, 5] },
-                {
-                    columns: [
-                        {
-                            width: '50%',
-                            stack: [
-                                { text: 'Intereses: Recaudado vs. Pendiente', alignment: 'center', fontSize: 8, margin: [0, 0, 0, 5] },
-                                { image: collectedVsPendingChartBase64, width: 180, alignment: 'center' },
-                            ]
+                options: {
+                    responsive: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Distribución por Tipo de Crédito',
+                            font: { size: 14, weight: 'bold' },
+                            color: '#000000' // ✅ Negro nítido
                         },
-                        {
-                            width: '50%',
-                            stack: [
-                                { text: 'Distribución Interés Normal vs. Moratorio (Recaudado)', alignment: 'center', fontSize: 8, margin: [0, 0, 0, 5] },
-                                { image: conceptChartBase64, width: 180, alignment: 'center' },
-                            ]
+                        legend: {
+                            display: true,
+                            position: 'bottom',
+                            labels: {
+                                font: { size: 10 },
+                                padding: 8,
+                                color: '#000000' // ✅ Negro nítido
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const label = labels[context.dataIndex];
+                                    const value = context.parsed;
+                                    const percentage = percentages[context.dataIndex];
+                                    return `${label}: ${value} (${percentage}%)`;
+                                }
+                            }
                         }
-                    ],
-                    columnGap: 5,
-                    margin: [0, 0, 0, 15]
-                },
-
-                // 3. Detalle de Pagos
-                { text: '3. Detalle de Pagos de Interés en el Periodo', style: 'subheader', margin: [0, 15, 0, 5] },
-                this.buildRecaudoDetailTable(allDetails),
-
-                // Observaciones
-                {
-                    text: 'Observaciones',
-                    style: 'subheader',
-                    margin: [0, 20, 0, 5]
-                },
-                {
-                    text: 'Este reporte solo incluye el desglose de intereses. El Recaudado se calcula sobre la fecha de pago en el periodo. El Pendiente es la deuda acumulada de intereses (normal y moratorio) de cuotas vencidas/creadas.',
-                    fontSize: 8,
-                    italics: true,
-                    margin: [0, 0, 0, 10]
+                    }
                 }
-            ],
-            styles: {
-                header: { fontSize: 14, bold: true, color: '#333', margin: [0, 0, 0, 10] },
-                subheader: { fontSize: 12, bold: true, color: '#333', margin: [0, 10, 0, 5] },
-                tableHeader: { fillColor: '#4bc0c0', color: '#fff', bold: true, fontSize: 8, alignment: 'center' },
-                loanHeader: { fontSize: 10, bold: true, color: '#000080', margin: [0, 8, 0, 2] },
-                totalRow: { fillColor: '#e0e0e0', bold: true, fontSize: 10 }
-            },
-            defaultStyle: {
-                font: 'Roboto',
-                fontSize: 8,
-            },
-            pageMargins: [20, 20, 20, 20],
-        };
+            });
 
-        return this.createPdfBuffer(docDefinition);
+            return canvas.toBuffer('image/png');
+        } catch (error) {
+            this.logger.error('Error en generateLoanTypeChart:', error);
+            return this.createEmptyChart(createCanvas(450, 300), 'Error al generar gráfica');
+        }
     }
 
     /**
-     * Genera reporte de préstamos en PDF
+     * Genera gráfica comparativa de créditos nuevos vs refinanciados con porcentajes
      */
-    async generateLoansPdf(data: ResponseLoanSummaryReportDto): Promise<Buffer> {
-        this.logger.log('Generando reporte de préstamos en PDF');
+    private async generateLoanComparisonChart(loans: any[]): Promise<Buffer> {
+        try {
+            const canvas = createCanvas(500, 300);
+            
+            // Contar nuevos vs refinanciados (usando el campo loanStatusName traducido)
+            const statusCounts: { [key: string]: number } = {
+                'Nuevos': 0,
+                'Refinanciados': 0,
+            };
 
-        const logoBase64 = await this.getLogosBase64();
-        const reportDate = this.getReportDate();
+            loans.forEach(l => {
+                const status = l.loanStatusName || l.loanStatusOriginal || '';
+                if (status.toLowerCase().includes('refinanciado') || status.toLowerCase().includes('refinanced')) {
+                    statusCounts['Refinanciados']++;
+                } else {
+                    statusCounts['Nuevos']++;
+                }
+            });
 
-        const typeBarChartBuffer = await this.generateTypeBarChart(data);
-        const typeBarChartBase64 = `data:image/png;base64,${typeBarChartBuffer.toString('base64')}`;
+            const labels = Object.keys(statusCounts).filter(k => statusCounts[k] > 0);
+            const dataCounts = labels.map(k => statusCounts[k]);
+            const total = dataCounts.reduce((sum, val) => sum + val, 0);
+            const percentages = dataCounts.map(count => ((count / total) * 100).toFixed(1));
 
-        const allLoans = [
-            ...(data.newLoansDetails || []),
-            ...(data.refinancedLoansDetails || [])
-        ];
-        const statusBarChartBuffer = await this.generateStatusBarChart(allLoans);
-        const statusBarChartBase64 = `data:image/png;base64,${statusBarChartBuffer.toString('base64')}`;
+            if (labels.length === 0) {
+                this.logger.warn('No hay datos para comparación');
+                return this.createEmptyChart(canvas, 'Sin datos para comparación');
+            }
 
-        const statusComparisonBarChartBuffer = await this.generateStatusComparisonBarChart(allLoans);
-        const statusComparisonBarChartBase64 = `data:image/png;base64,${statusComparisonBarChartBuffer.toString('base64')}`;
+            this.logger.log(`Generando gráfica comparativa: ${labels.map((l, i) => `${l}: ${dataCounts[i]} (${percentages[i]}%)`).join(', ')}`);
 
-        const docDefinition: any = {
-            content: [
-                {
-                    columns: [
-                        logoBase64 ? { image: logoBase64, width: 60, alignment: 'left', margin: [0, 0, 0, 0] } : {},
-                        { text: 'Resumen de Créditos y Refinanciaciones', style: 'header', alignment: 'center', margin: [0, 10, 0, 0] },
-                    ],
-                    columnGap: 20,
+            new Chart(canvas as any, {
+                type: 'bar',
+                data: {
+                    labels,
+                    datasets: [{
+                        label: 'Cantidad de Créditos',
+                        data: dataCounts,
+                        backgroundColor: [
+                            '#00aa00',
+                            '#ffaa00',
+                        ],
+                        borderWidth: 1,
+                        borderColor: '#ffffff'
+                    }],
                 },
-                { text: `Fecha de corte: ${reportDate}`, alignment: 'right', margin: [0, 0, 0, 10], fontSize: 10 },
-                { image: typeBarChartBase64, width: 220, alignment: 'center', margin: [0, 0, 0, 10] },
-                this.buildSummaryTable(data),
-                { text: 'Cantidad de Créditos por Estado (Al día / En Mora)', style: 'subheader', margin: [0, 15, 0, 5] },
-                { image: statusBarChartBase64, width: 220, alignment: 'center', margin: [0, 0, 0, 10] },
-                { text: 'Comparativa por Estado de Crédito', style: 'subheader', margin: [0, 15, 0, 5] },
-                { image: statusComparisonBarChartBase64, width: 220, alignment: 'center', margin: [0, 0, 0, 10] },
-                { text: 'Detalle de Créditos', style: 'subheader', margin: [0, 15, 0, 5] },
-                this.buildCreditsDetailTable(allLoans),
-                { text: 'Comparativo Global', style: 'subheader', margin: [0, 15, 0, 5] },
-                this.buildGlobalSummaryTable(data),
-                this.buildConsolidatedTable(allLoans),
-                { text: 'Observaciones', style: 'subheader', margin: [0, 20, 0, 5] },
-                { text: 'Este reporte muestra la distribución y estado de los créditos nuevos y refinanciados. Analice las tendencias para identificar oportunidades y riesgos.', fontSize: 11, italics: true, margin: [0, 0, 0, 10] }
-            ],
-            styles: {
-                header: { fontSize: 22, bold: true, color: '#333', margin: [0, 0, 0, 10] },
-                subheader: { fontSize: 16, bold: true, color: '#333', margin: [0, 10, 0, 5] },
-                tableHeader: { fillColor: '#4bc0c0', color: '#fff', bold: true, fontSize: 12, alignment: 'center' },
-            },
-            defaultStyle: { font: 'Roboto', fontSize: 11 },
-            pageMargins: [30, 30, 30, 30],
-        };
-
-        return this.createPdfBuffer(docDefinition);
-    }
-
-    // -----------------------------------------------------------
-    // MÉTODOS PARA EXCEL
-    // -----------------------------------------------------------
-
-    async generateInterestReportExcel(data: any): Promise<Buffer> {
-        const workbook = new ExcelJS.Workbook();
-        const worksheet = workbook.addWorksheet('Resumen Intereses');
-
-        const allDetails = data.details || [];
-
-        // 1. Encabezado y Totales Generales
-        worksheet.getCell('A1').value = 'REPORTE DE INTERESES RECAUDADOS Y PENDIENTES';
-        worksheet.getCell('A1').font = { bold: true, size: 16 };
-        worksheet.mergeCells('A1:H1');
-        worksheet.getCell('A1').alignment = { horizontal: 'center' };
-
-        // Totales Recaudados
-        worksheet.getCell('A3').value = '--- Intereses Recaudados (Periodo del Reporte) ---';
-        worksheet.getCell('A4').value = 'Total Interés Normal Recaudado:';
-        worksheet.getCell('B4').value = data.totalInterestRecaudado || 0;
-        worksheet.getCell('B4').numFmt = '$#,##0.00';
-        worksheet.getCell('A5').value = 'Total Interés Moratorio Recaudado:';
-        worksheet.getCell('B5').value = data.totalMoratorioRecaudado || 0;
-        worksheet.getCell('B5').numFmt = '$#,##0.00';
-        worksheet.getCell('A6').value = 'TOTAL GENERAL RECAUDADO:';
-        worksheet.getCell('B6').value = data.totalGeneralRecaudado || 0;
-        worksheet.getCell('B6').font = { bold: true };
-        worksheet.getCell('B6').numFmt = '$#,##0.00';
-
-        // Totales Pendientes
-        worksheet.getCell('D3').value = '--- Intereses Pendientes por Cobrar (Global) ---';
-        worksheet.getCell('D4').value = 'Total Interés Normal Pendiente:';
-        worksheet.getCell('E4').value = data.totalInterestPendiente || 0;
-        worksheet.getCell('E4').numFmt = '$#,##0.00';
-        worksheet.getCell('D5').value = 'Total Moratorio Pendiente:';
-        worksheet.getCell('E5').value = data.totalMoratorioPendiente || 0;
-        worksheet.getCell('E5').numFmt = '$#,##0.00';
-        worksheet.getCell('D6').value = 'TOTAL GENERAL PENDIENTE:';
-        worksheet.getCell('E6').value = data.totalGeneralPendiente || 0;
-        worksheet.getCell('E6').font = { bold: true };
-        worksheet.getCell('E6').numFmt = '$#,##0.00';
-
-        // 2. Detalle de Pagos
-        let currentRow = 9;
-
-        if (allDetails.length > 0) {
-            worksheet.addTable({
-                name: 'DetailPaymentsTable',
-                ref: `A${currentRow}`,
-                headerRow: true,
-                style: { theme: 'TableStyleMedium2', showRowStripes: true },
-                columns: [
-                    { name: 'Fecha Pago', filterButton: true },
-                    { name: 'ID Crédito', filterButton: true },
-                    { name: 'Cliente', filterButton: true },
-                    { name: 'Cobrador' },
-                    { name: 'Int. Normal Pagado' },
-                    { name: 'Int. Mora Pagado' },
-                    { name: 'TOTAL Recaudado' },
-                ],
-                rows: allDetails.map(l => [
-                    l.paymentDate.split(' ')[0],
-                    l.loanId,
-                    l.customerName,
-                    l.collectorName,
-                    l.appliedToInterest,
-                    l.appliedToLateFee,
-                    l.totalPaid,
-                ]),
-            });
-
-            // Aplicar formato de moneda y ancho
-            worksheet.getTables().forEach(table => {
-                [5, 6, 7].forEach(col => worksheet.getColumn(col).numFmt = '$#,##0.00');
-            });
-
-            worksheet.columns.forEach((column) => {
-                let maxLength = 0;
-                if (typeof column.eachCell === 'function') {
-                    column.eachCell({ includeEmpty: true }, (cell) => {
-                        const columnText = cell.text;
-                        if (columnText) {
-                            maxLength = Math.max(maxLength, columnText.toString().length);
+                options: {
+                    responsive: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Créditos Nuevos vs Refinanciados',
+                            font: { size: 14, weight: 'bold' },
+                            color: '#000000' // ✅ Negro nítido
+                        },
+                        legend: { 
+                            display: false 
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const value = context.parsed.y;
+                                    const percentage = percentages[context.dataIndex];
+                                    return `Cantidad: ${value} (${percentage}%)`;
+                                }
+                            }
                         }
-                    });
-                }
-                column.width = maxLength < 10 ? 10 : maxLength + 2;
-            });
-        }
-
-        const buffer = await workbook.xlsx.writeBuffer();
-        return Buffer.from(buffer);
-    }
-
-    async generateLoansExcel(data: ResponseLoanSummaryReportDto): Promise<Buffer> {
-        const workbook = new ExcelJS.Workbook();
-        const worksheet = workbook.addWorksheet('Resumen Créditos');
-
-        const allLoans = [
-            ...(data.newLoansDetails || []),
-            ...(data.refinancedLoansDetails || [])
-        ];
-
-        // 1. Encabezado
-        worksheet.getCell('A1').value = 'RESUMEN DE CRÉDITOS Y REFINANCIACIONES';
-        worksheet.getCell('A1').font = { bold: true, size: 16 };
-        worksheet.mergeCells('A1:I1');
-        worksheet.getCell('A1').alignment = { horizontal: 'center' };
-
-        // Fecha de corte
-        worksheet.getCell('A3').value = `Fecha de corte: ${this.getReportDate()}`;
-        worksheet.getCell('A3').font = { italic: true, size: 12 };
-        worksheet.mergeCells('A3:I3');
-        worksheet.getCell('A3').alignment = { horizontal: 'right' };
-
-        // 2. Resumen por Tipo de Crédito
-        worksheet.getCell('A5').value = 'RESUMEN POR TIPO DE CRÉDITO';
-        worksheet.getCell('A5').font = { bold: true, size: 14 };
-        worksheet.getCell('A6').value = 'Tipo de Crédito';
-        worksheet.getCell('B6').value = 'Cantidad';
-        worksheet.getCell('C6').value = 'Monto Total';
-        worksheet.getCell('A6:C6').font = { bold: true };
-
-        const newLoansCount = data.numberOfNewLoans || 0;
-        const refinancedLoansCount = data.numberOfRefinancedLoans || 0;
-        const newLoansTotalAmount = data.newLoansTotalAmount || 0;
-        const refinancedLoansTotalAmount = data.refinancedLoansTotalAmount || 0;
-
-        worksheet.addRow(['Créditos Nuevos', newLoansCount, newLoansTotalAmount]);
-        worksheet.addRow(['Créditos Refinanciados', refinancedLoansCount, refinancedLoansTotalAmount]);
-
-        // Totales
-        if (worksheet.lastRow) {
-            worksheet.getCell(`B${worksheet.lastRow.number + 1}`).value = { formula: `SUM(B6:B${worksheet.lastRow.number})`, result: newLoansCount + refinancedLoansCount };
-            worksheet.getCell(`C${worksheet.lastRow.number}`).value = { formula: `SUM(C6:C${worksheet.lastRow.number - 1})`, result: newLoansTotalAmount + refinancedLoansTotalAmount };
-            worksheet.getCell(`B${worksheet.lastRow.number + 1}`).font = { bold: true };
-            worksheet.getCell(`C${worksheet.lastRow.number}`).font = { bold: true };
-        }
-
-        // 3. Detalle de Créditos
-        let currentRow = worksheet.lastRow ? worksheet.lastRow.number + 3 : 9;
-
-        if (allLoans.length > 0) {
-            worksheet.addTable({
-                name: 'CreditsDetailTable',
-                ref: `A${currentRow}`,
-                headerRow: true,
-                style: { theme: 'TableStyleMedium2', showRowStripes: true },
-                columns: [
-                    { name: 'ID' },
-                    { name: 'Cliente' },
-                    { name: 'Documento' },
-                    { name: 'Monto Prestado' },
-                    { name: 'Saldo Restante' },
-                    { name: 'Fecha de Inicio' },
-                    { name: 'Estado' },
-                ],
-                rows: allLoans.map(l => [
-                    l.id,
-                    l.customerName,
-                    l.customerDocument,
-                    this.formatCurrency(l.loanAmount),
-                    this.formatCurrency(l.remainingBalance || 0),
-                    l.startDate,
-                    this.translateStatus(l.loanStatusName),
-                ]),
-            });
-
-            // Aplicar formato de moneda y ancho
-            worksheet.getTables().forEach(table => {
-                [4, 5].forEach(col => worksheet.getColumn(col).numFmt = '$#,##0.00');
-            });
-
-            worksheet.columns.forEach((column) => {
-                let maxLength = 0;
-                if (typeof column.eachCell === 'function') {
-                    column.eachCell({ includeEmpty: true }, (cell) => {
-                        const columnText = cell.text;
-                        if (columnText) {
-                            maxLength = Math.max(maxLength, columnText.toString().length);
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                stepSize: 1,
+                                callback: function(value) {
+                                    return value;
+                                },
+                                color: '#000000' // ✅ Negro nítido
+                            }
+                        },
+                        x: {
+                            ticks: {
+                                color: '#000000' // ✅ Negro nítido
+                            }
                         }
-                    });
+                    }
                 }
-                column.width = maxLength < 10 ? 10 : maxLength + 2;
             });
+
+            return canvas.toBuffer('image/png');
+        } catch (error) {
+            this.logger.error('Error en generateLoanComparisonChart:', error);
+            return this.createEmptyChart(createCanvas(500, 300), 'Error al generar gráfica');
         }
-
-        const buffer = await workbook.xlsx.writeBuffer();
-        return Buffer.from(buffer);
-    }
-
-    // -----------------------------------------------------------
-    // MÉTODOS DE GRÁFICAS Y TABLAS PARA INTERESES Y PRÉSTAMOS
-    // -----------------------------------------------------------
-
-    private buildRecaudoDetailTable(details: any[]) {
-        if (!details.length) return { text: 'No hay registros de recaudos en el periodo.', italics: true, margin: [0, 10, 0, 10] };
-
-        return {
-            table: {
-                headerRows: 1,
-                widths: ['auto', 'auto', 'auto', '*', 'auto', 'auto', 'auto'],
-                body: [
-                    [
-                        { text: 'Fecha Pago', style: 'tableHeader' },
-                        { text: 'ID Crédito', style: 'tableHeader' },
-                        { text: 'Cliente', style: 'tableHeader' },
-                        { text: 'Cobrador', style: 'tableHeader' },
-                        { text: 'Int. Normal', style: 'tableHeader' },
-                        { text: 'Int. Mora', style: 'tableHeader' },
-                        { text: 'TOTAL PAGADO', style: 'tableHeader' },
-                    ],
-                    ...details.map(l => [
-                        l.paymentDate.split(' ')[0],
-                        l.loanId,
-                        l.customerName,
-                        l.collectorName,
-                        this.formatCurrency(l.appliedToInterest),
-                        this.formatCurrency(l.appliedToLateFee),
-                        { text: this.formatCurrency(l.totalPaid), bold: true },
-                    ]),
-                ],
-            },
-            layout: {
-                fillColor: (rowIndex: number) => rowIndex === 0 ? '#4bc0c0' : (rowIndex % 2 === 0 ? '#f3f3f3' : null),
-                hLineWidth: () => 1,
-                vLineWidth: () => 1,
-                hLineColor: () => '#cccccc',
-                vLineColor: () => '#cccccc',
-            },
-            margin: [0, 10, 0, 10],
-        };
-    }
-
-    private async generateCollectedVsPendingChart(data: any): Promise<Buffer> {
-        const canvas = createCanvas(400, 300);
-        const totalCollected = data.totalGeneralRecaudado || 0;
-        const totalPending = data.totalGeneralPendiente || 0;
-
-        new Chart(canvas as any, {
-            type: 'bar',
-            data: {
-                labels: ['Interés Recaudado', 'Interés Pendiente'],
-                datasets: [{
-                    label: 'Monto Total',
-                    data: [totalCollected, totalPending],
-                    backgroundColor: ['#4bc0c0', '#ff6384'],
-                }],
-            },
-            options: {
-                plugins: {
-                    title: { display: true, text: 'Intereses: Recaudado vs. Pendiente' }
-                }
-            }
-        });
-        return canvas.toBuffer('image/png');
-    }
-
-    private async generateInterestByConceptPieChart(data: any): Promise<Buffer> {
-        const canvas = createCanvas(400, 300);
-        new Chart(canvas as any, {
-            type: 'pie',
-            data: {
-                labels: ['Interés Normal Recaudado', 'Interés Moratorio Recaudado'],
-                datasets: [{
-                    data: [data.totalInterestRecaudado || 0, data.totalMoratorioRecaudado || 0],
-                    backgroundColor: ['#4bc0c0', '#ff6384'],
-                }],
-            },
-            options: {
-                plugins: {
-                    title: { display: true, text: 'Distribución de Intereses Recaudados por Concepto' }
-                }
-            }
-        });
-        return canvas.toBuffer('image/png');
-    }
-
-    private buildGeneralInterestSummaryTable(data: any) {
-        return {
-            table: {
-                widths: ['*', 'auto', 'auto'],
-                body: [
-                    [
-                        { text: 'CONCEPTO', style: 'tableHeader' },
-                        { text: 'TOTAL RECAUDADO (Periodo)', style: 'tableHeader' },
-                        { text: 'TOTAL PENDIENTE (Global)', style: 'tableHeader' }
-                    ],
-                    [
-                        { text: 'Interés Corriente', color: '#4bc0c0', bold: true },
-                        { text: this.formatCurrency(data.totalInterestRecaudado), alignment: 'right' },
-                        { text: this.formatCurrency(data.totalInterestPendiente), alignment: 'right' }
-                    ],
-                    [
-                        { text: 'Interés Moratorio', color: '#ff6384', bold: true },
-                        { text: this.formatCurrency(data.totalMoratorioRecaudado), alignment: 'right' },
-                        { text: this.formatCurrency(data.totalMoratorioPendiente), alignment: 'right' }
-                    ],
-                    [
-                        { text: 'TOTAL GENERAL INTERESES', bold: true, style: 'totalRow' },
-                        { text: this.formatCurrency(data.totalGeneralRecaudado), alignment: 'right', bold: true, style: 'totalRow' },
-                        { text: this.formatCurrency(data.totalDeudaPendiente), alignment: 'right', bold: true, style: 'totalRow' }
-                    ]
-                ]
-            },
-            layout: {
-                fillColor: (rowIndex: number) => rowIndex === 0 ? '#4bc0c0' : (rowIndex === 3 ? '#e0e0e0' : (rowIndex % 2 === 0 ? '#f3f3f3' : null)),
-                hLineWidth: () => 1,
-                vLineWidth: () => 1,
-                hLineColor: () => '#cccccc',
-                vLineColor: () => '#cccccc',
-            },
-            margin: [0, 10, 0, 10]
-        };
-    }
-
-    private async generateTypeBarChart(data: ResponseLoanSummaryReportDto): Promise<Buffer> {
-        const canvas = createCanvas(400, 300);
-        new Chart(canvas as any, {
-            type: 'bar',
-            data: {
-                labels: ['Créditos Nuevos', 'Créditos Refinanciados'],
-                datasets: [{
-                    label: 'Cantidad créditos por tipo',
-                    data: [data.numberOfNewLoans || 0, data.numberOfRefinancedLoans || 0],
-                    backgroundColor: ['#4bc0c0', '#9966ff'],
-                }],
-            },
-            options: {
-                plugins: {
-                    title: { display: true, text: 'Cantidad de Créditos por Tipo' }
-                }
-            }
-        });
-        return canvas.toBuffer('image/png');
-    }
-
-    private async generateStatusBarChart(loans: any[]): Promise<Buffer> {
-        const statusCounts: { [key: string]: number } = {};
-        loans.forEach(l => {
-            const translated = this.translateStatus(l.loanStatusName);
-            if (translated === 'Al día' || translated === 'En Mora') {
-                statusCounts[translated] = (statusCounts[translated] || 0) + 1;
-            }
-        });
-        const labels = Object.keys(statusCounts);
-        const dataCounts = Object.values(statusCounts);
-
-        const canvas = createCanvas(400, 300);
-        new Chart(canvas as any, {
-            type: 'bar',
-            data: {
-                labels,
-                datasets: [{
-                    label: 'Cantidad',
-                    data: dataCounts,
-                    backgroundColor: ['#4bc0c0', '#ff6384'],
-                }],
-            },
-            options: {
-                plugins: {
-                    title: { display: true, text: 'Cantidad de Créditos por Estado' }
-                }
-            }
-        });
-        return canvas.toBuffer('image/png');
-    }
-
-    private async generateStatusComparisonBarChart(loans: any[]): Promise<Buffer> {
-        const statusCounts: { [key: string]: number } = {
-            'Al día': 0,
-            'En Mora': 0,
-            'Pagado': 0,
-            'Refinanciado': 0,
-        };
-        loans.forEach(l => {
-            const status = this.translateStatus(l.loanStatusName);
-            if (statusCounts.hasOwnProperty(status)) {
-                statusCounts[status]++;
-            }
-        });
-        const labels = Object.keys(statusCounts);
-        const dataCounts = Object.values(statusCounts);
-
-        const canvas = createCanvas(400, 300);
-        new Chart(canvas as any, {
-            type: 'bar',
-            data: {
-                labels,
-                datasets: [{
-                    label: 'Cantidad',
-                    data: dataCounts,
-                    backgroundColor: ['#4bc0c0', '#ff6384', '#36a2eb', '#9966ff'],
-                }],
-            },
-            options: {
-                plugins: {
-                    title: { display: true, text: 'Comparativa por Estado de Crédito' }
-                }
-            }
-        });
-        return canvas.toBuffer('image/png');
-    }
-
-    private buildSummaryTable(data: ResponseLoanSummaryReportDto) {
-        return {
-            table: {
-                widths: ['*', '*', '*'],
-                body: [
-                    [
-                        { text: 'Tipo', style: 'tableHeader' },
-                        { text: 'Cantidad', style: 'tableHeader' },
-                        { text: 'Monto Total', style: 'tableHeader' }
-                    ],
-                    [
-                        { text: 'Créditos Nuevos', color: '#4bc0c0', bold: true },
-                        { text: data.numberOfNewLoans, alignment: 'center' },
-                        { text: this.formatCurrency(data.newLoansTotalAmount), alignment: 'right' }
-                    ],
-                    [
-                        { text: 'Créditos Refinanciados', color: '#9966ff', bold: true },
-                        { text: data.numberOfRefinancedLoans, alignment: 'center' },
-                        { text: this.formatCurrency(data.refinancedLoansTotalAmount), alignment: 'right' }
-                    ]
-                ]
-            },
-            layout: {
-                fillColor: (rowIndex: number) => rowIndex === 0 ? '#4bc0c0' : (rowIndex % 2 === 0 ? '#f3f3f3' : null),
-                hLineWidth: () => 1,
-                vLineWidth: () => 1,
-                hLineColor: () => '#cccccc',
-                vLineColor: () => '#cccccc',
-            },
-            margin: [0, 10, 0, 10]
-        };
-    }
-
-    private buildCreditsDetailTable(loans: any[] = []) {
-        if (!loans.length) return { text: 'No hay registros', italics: true, margin: [0, 10, 0, 10] };
-        return {
-            table: {
-                headerRows: 1,
-                widths: ['auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'], // ✅ Agregar una columna más
-                body: [
-                    [
-                        { text: 'ID', style: 'tableHeader' },
-                        { text: 'Cliente', style: 'tableHeader' },
-                        { text: 'Documento', style: 'tableHeader' },
-                        { text: 'Monto Prestado', style: 'tableHeader' }, // ✅ Cambio de nombre
-                        { text: 'Saldo Restante', style: 'tableHeader' }, // ✅ Nueva columna
-                        { text: 'Fecha de Inicio', style: 'tableHeader' },
-                        { text: 'Estado', style: 'tableHeader' },
-                        { text: 'Tasa Interés (%)', style: 'tableHeader' },
-                        { text: 'Tasa Mora (%)', style: 'tableHeader' }
-                    ],
-                    ...loans.map(l => [
-                        l.id,
-                        l.customerName || '',
-                        l.customerDocument || '',
-                        this.formatCurrency(l.loanAmount),
-                        this.formatCurrency(l.remainingBalance || 0), // ✅ Nueva columna
-                        l.startDate,
-                        this.translateStatus(l.loanStatusName),
-                        l.interestRateValue ?? '',
-                        l.penaltyRateValue ?? ''
-                    ]),
-                ],
-            },
-            layout: {
-                fillColor: (rowIndex: number) => rowIndex === 0 ? '#4bc0c0' : (rowIndex % 2 === 0 ? '#f3f3f3' : null),
-                hLineWidth: () => 1,
-                vLineWidth: () => 1,
-                hLineColor: () => '#cccccc',
-                vLineColor: () => '#cccccc',
-            },
-            margin: [0, 10, 0, 10],
-        };
-    }
-
-    private buildConsolidatedTable(loans: any[] = []) {
-        const summary: { [key: string]: { cantidad: number, monto: number } } = {};
-        loans.forEach(l => {
-            const estado = this.translateStatus(l.loanStatusName);
-            const tipo = (l.loanStatusName === 'Refinanced' || l.isRefinanced) ? 'Refinanciado' : 'Nuevo';
-            const key = `${estado} - ${tipo}`;
-            if (!summary[key]) summary[key] = { cantidad: 0, monto: 0 };
-            summary[key].cantidad += 1;
-            summary[key].monto += l.loanAmount || 0;
-        });
-        const body = [
-            [
-                { text: 'Estado y Tipo', style: 'tableHeader' },
-                { text: 'Cantidad', style: 'tableHeader' },
-                { text: 'Monto Total', style: 'tableHeader' }
-            ],
-            ...Object.entries(summary).map(([key, val]) => [
-                key,
-                val.cantidad,
-                this.formatCurrency(val.monto)
-            ])
-        ];
-        return {
-            table: {
-                widths: ['*', '*', '*'],
-                body
-            },
-            layout: {
-                fillColor: (rowIndex: number) => rowIndex === 0 ? '#4bc0c0' : (rowIndex % 2 === 0 ? '#f3f3f3' : null),
-                hLineWidth: () => 1,
-                vLineWidth: () => 1,
-                hLineColor: () => '#cccccc',
-                vLineColor: () => '#cccccc',
-            },
-            margin: [0, 10, 0, 10]
-        };
-    }
-
-    private buildGlobalSummaryTable(data: ResponseLoanSummaryReportDto) {
-        return {
-            table: {
-                widths: ['*', '*', '*'],
-                body: [
-                    [
-                        { text: 'Tipo', style: 'tableHeader' },
-                        { text: 'Cantidad', style: 'tableHeader' },
-                        { text: 'Monto Total', style: 'tableHeader' }
-                    ],
-                    [
-                        { text: 'Créditos Nuevos', color: '#4bc0c0', bold: true },
-                        { text: data.numberOfNewLoans, alignment: 'center' },
-                        { text: this.formatCurrency(data.newLoansTotalAmount), alignment: 'right' }
-                    ],
-                    [
-                        { text: 'Créditos Refinanciados', color: '#9966ff', bold: true },
-                        { text: data.numberOfRefinancedLoans, alignment: 'center' },
-                        { text: this.formatCurrency(data.refinancedLoansTotalAmount), alignment: 'right' }
-                    ],
-                    [
-                        { text: 'Total General', bold: true },
-                        { text: (data.numberOfNewLoans || 0) + (data.numberOfRefinancedLoans || 0), alignment: 'center', bold: true },
-                        { text: this.formatCurrency((data.newLoansTotalAmount || 0) + (data.refinancedLoansTotalAmount || 0)), alignment: 'right', bold: true }
-                    ]
-                ]
-            },
-            layout: {
-                fillColor: (rowIndex: number) => rowIndex === 0 ? '#4bc0c0' : (rowIndex % 2 === 0 ? '#f3f3f3' : null),
-                hLineWidth: () => 1,
-                vLineWidth: () => 1,
-                hLineColor: () => '#cccccc',
-                vLineColor: () => '#cccccc',
-            },
-            margin: [0, 10, 0, 10]
-        };
     }
 }

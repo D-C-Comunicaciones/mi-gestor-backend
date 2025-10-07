@@ -3,8 +3,8 @@ import { DateRangeDto } from '@common/dto';
 import { PrismaService } from '@infraestructure/prisma/prisma.service';
 
 @Injectable()
-export class ReportsCollectionsService {
-    private readonly logger = new Logger(ReportsCollectionsService.name);
+export class ReportCollectionService {
+    private readonly logger = new Logger(ReportCollectionService.name);
 
     constructor(private readonly prisma: PrismaService) {}
 

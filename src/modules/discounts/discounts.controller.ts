@@ -30,22 +30,22 @@ export class DiscountsController {
     examples: {
       'descuento-buen-pago': {
         summary: 'Descuento por buen comportamiento',
-        description: 'Ejemplo de descuento por buen comportamiento de pago',
+        description: 'Ejemplo de descuento por buen comportamiento de pago aplicado a un crédito',
         value: {
           amount: 88100,
           discountTypeId: 1,
           description: "Descuento por buen comportamiento de pago a cuota, para que pague",
-          moratoryId: 1
+          loanId: 1
         }
       },
       'descuento-promocional': {
         summary: 'Descuento promocional',
-        description: 'Ejemplo de descuento promocional estándar',
+        description: 'Ejemplo de descuento promocional estándar sobre un crédito',
         value: {
           amount: 50000,
           discountTypeId: 2,
           description: "Descuento promocional del mes de diciembre",
-          moratoryId: 2
+          loanId: 2
         }
       }
     }
@@ -56,31 +56,35 @@ export class DiscountsController {
       'success': {
         summary: 'Descuento creado exitosamente',
         value: {
-          customMessage: 'Descuento creado exitosamente',
-          responseDiscount: {
-            id: 1,
-            amount: 88100,
-            discountTypeId: 1,
-            description: 'Descuento por buen comportamiento de pago a cuota, para que pague. DESCRIPCIÓN APLICADA POR EL SISTEMA: descuento de 88100 aplicado a interés moratorio ID 1, generado por: 5 - admin@migestor.com',
-            moratoryId: 1,
-            createdAt: '2024-01-15T10:30:00.000Z',
-            updatedAt: '2024-01-15T10:30:00.000Z'
-          }
+          message: 'Descuento creado exitosamente',
+          responseDiscount: [
+            {
+              id: 1,
+              amount: "15000",
+              discountTypeId: 1,
+              description: "Descuento por buen comportamiento de pago a cuota, para que pague. DESCRIPCIÓN APLICADA POR EL SISTEMA: descuento de 15000 aplicado a interés moratorio ID 4 (cuota 1), generado por: 1 - admin@dcmigestor.co",
+              moratoryId: 4,
+              installmentId: 14,
+              loanId: 3,
+              isActive: true,
+              createdAt: "2025-10-07T00:00:00.000Z"
+            }
+          ]
         }
       }
     }
   })
   @ApiBadRequestResponse({
-    description: 'Datos de entrada inválidos',
+    description: 'Datos de entrada inválidos o error de lógica de negocio',
     examples: {
       'validation-error': {
         summary: 'Errores de validación',
         value: {
           statusCode: 400,
           message: [
-            'El monto debe ser un número positivo',
+            'El monto del descuento debe ser mayor a cero',
             'La descripción es requerida',
-            'El ID de la moratoria debe ser un número positivo'
+            'El ID del préstamo debe ser un número positivo'
           ],
           error: 'Bad Request'
         }
@@ -89,7 +93,7 @@ export class DiscountsController {
         summary: 'Error de lógica de negocio',
         value: {
           statusCode: 400,
-          message: 'El descuento (100000) no puede ser mayor al interés moratorio existente (50000)',
+          message: 'El monto del descuento (100000) no puede ser mayor al total de intereses moratorios pendientes (50000) para este préstamo',
           error: 'Bad Request'
         }
       }
@@ -106,7 +110,7 @@ export class DiscountsController {
             'El monto debe ser un número',
             'La descripción es requerida',
             'El ID del tipo de descuento debe ser un número positivo',
-            'El ID de la moratoria es requerido'
+            'El ID del préstamo es requerido'
           ],
           error: 'Unprocessable Entity'
         }
@@ -163,14 +167,13 @@ export class DiscountsController {
   async create(@Body() createDiscountDto: CreateDiscountDto, @Req() req: Request) {
     const discount = await this.discountsService.create(createDiscountDto, req);
 
-    // discount ya convertido y formateado por el servicio, 
-    // solo falta aplicar el DTO de respuesta
+    // discount ya convertido y formateado por el servicio
     const responseDiscount = plainToInstance(ResponseDiscountDto, discount, {
       excludeExtraneousValues: true
     });
 
     return {
-      customMessage: "Descuento creado exitosamente",
+      message: "Descuento creado exitosamente",
       responseDiscount
     }
   }

@@ -1,51 +1,9 @@
 import type { TDocumentDefinitions, Content } from 'pdfmake/interfaces';
-import sharp from 'sharp';
+import { CollectionReportData } from './interfaces';
 
-export interface CollectionReportData {
-  reportDate: string;
-  startDate: string;
-  endDate: string;
-  headerLogo: string;
-  watermarkLogo: string;
-  summary: {
-    globalPerformancePercentage: number;
-    totalAssigned: number;
-    totalCollected: number;
-    totalCollections: number;
-    activeCollectors: number;
-    averageCollectedPerCollector: number;
-    bestCollector: {
-      name: string;
-      percentage: number;
-      collected: number;
-    };
-    worstCollector: {
-      name: string;
-      percentage: number;
-      collected: number;
-    };
-  };
-  collectorSummary: Array<{
-    collectorName: string;
-    collectorRoute: string;
-    totalAssigned: number;
-    totalCollected: number;
-    totalCollectionsMade: number;
-    performancePercentage: number;
-    averageCollectionAmount: number;
-  }>;
-  collections: Array<{
-    paymentDate: string;
-    loanId: string;
-    customerName: string;
-    collectorName: string;
-    collectorRoute: string;
-    amount: number;
-  }>;
-  globalPerformanceChartBase64?: string;
-  comparisonChartBase64?: string;
-}
-
+/**
+ * Aplica color al texto dependiendo del rendimiento
+ */
 function getPerformanceStyle(percentage: number): any {
   if (percentage >= 85) return { color: '#00aa00', bold: true };
   if (percentage >= 70) return { color: '#ffaa00', bold: true };
@@ -53,42 +11,19 @@ function getPerformanceStyle(percentage: number): any {
 }
 
 /**
- * Genera un PNG base64 con texto vertical rotado -90°
- * @param text Texto que se mostrará vertical
- * @param height Altura del área disponible en el PDF (ej: pageSize.height - 50)
- * @param fontSize Tamaño de la fuente (default: 10)
+ * Construye el template del reporte PDF.
+ * El texto vertical debe generarse antes de llamar a esta función:
+ *
+ * const verticalTextBase64 = await getVerticalTextBase64('CONFIDENCIAL - MI GESTOR', 792);
+ * const docDefinition = await collectionsReportTemplate(data, verticalTextBase64);
  */
-export async function getVerticalTextBase64(
-  text: string,
-  height: number,
-  fontSize: number = 10
-): Promise<string> {
-  const yPos = height - 20;
+export async function collectionsReportTemplate(
+  data: CollectionReportData
+): Promise<TDocumentDefinitions> {
 
-  const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="${height}">
-      <text x="15" y="${yPos}" font-size="${fontSize}" fill="black"
-            transform="rotate(-90, 15, ${yPos})">
-        ${text}
-      </text>
-    </svg>
-  `;
-
-  const svgBuffer = Buffer.from(svg);
-  const pngBuffer = await sharp(svgBuffer).png().toBuffer();
-  return 'data:image/png;base64,' + pngBuffer.toString('base64');
-}
-
-/**
- * Construye el template del reporte con el texto vertical ya generado
- */
-export function collectionsReportTemplate(
-  data: CollectionReportData,
-  verticalTextBase64?: string
-): TDocumentDefinitions {
   return {
     content: [
-      // Encabezado
+      // ENCABEZADO
       {
         columns: [
           { width: 100, image: data.headerLogo },
@@ -246,11 +181,11 @@ export function collectionsReportTemplate(
     pageSize: 'LETTER',
     pageOrientation: 'portrait',
 
-    // BACKGROUND: logo + texto vertical ya generado
+    // FONDO (logo + texto vertical)
     background: (currentPage: number, pageSize: { width: number; height: number }): Content[] => {
       const backgrounds: Content[] = [];
 
-      // Logo
+      // Logo de marca de agua
       if (data.watermarkLogo) {
         backgrounds.push({
           image: data.watermarkLogo,
@@ -263,15 +198,16 @@ export function collectionsReportTemplate(
         } as any);
       }
 
-      // si no viene nada, no dibuja el texto
-      if (verticalTextBase64 && verticalTextBase64.startsWith('data:image/png;base64,')) {
+      // Texto vertical confidencial
+if (data.verticalTextBase64) {
   backgrounds.push({
-    image: verticalTextBase64,
-    fit: [15, pageSize.height - 50],
+    svg: data.verticalTextBase64,
+    width: 100,              // ancho del área del SVG
+    height: pageSize.height, // altura total de la página
     absolutePosition: {
-      x: pageSize.width - 20,
-      y: 25
-    }
+      x: pageSize.width - 40, // mueve más a la derecha (antes estaba -60)
+      y: 0                     // mantiene en la parte superior
+    },
   });
 }
 

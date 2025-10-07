@@ -42,8 +42,8 @@ export class CreateDiscountDto {
     example: 1,
     type: 'number'
   })
-  @IsNumber({}, { message: 'El ID de la moratoria debe ser un número' })
-  @IsNotEmpty({ message: 'El ID de la moratoria es requerido' })
-  @IsPositive({ message: 'El ID de la moratoria debe ser un número positivo' })
-  moratoryId: number;
+  @IsNumber({}, { message: 'El ID del crédito debe ser un número' })
+  @IsNotEmpty({ message: 'El ID del crédito es requerido' })
+  @IsPositive({ message: 'El ID del crédito debe ser un número positivo' })
+  loanId: number;
 } 

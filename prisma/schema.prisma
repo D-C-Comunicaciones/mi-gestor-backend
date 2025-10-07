@@ -331,6 +331,7 @@ model MoratoryInterest {
   paidAt       DateTime? @db.Date
   paidAmount  Decimal @default(0) @db.Decimal(20, 2)
   isPaid      Boolean @default(false)
+  isDiscounted Boolean @default(false)
   moratoryInterestStatusId Int @default(1)
   moratoryInterestStatus  MoratoryInterestStatus @relation(fields: [moratoryInterestStatusId], references: [id])
   installment Installment @relation(fields: [installmentId], references: [id])
@@ -490,10 +491,7 @@ model Payment {
   loan   Loan @relation(fields: [loanId], references: [id])
 
   amount              Decimal   @db.Decimal(20, 2)
-  appliedToCapital    Decimal   @default(0) @db.Decimal(20, 2)
-  appliedToInterest   Decimal   @default(0) @db.Decimal(20, 2)
-  appliedToLateFee    Decimal   @default(0) @db.Decimal(20, 2)
-  
+    
   paymentTypeId Int
   paymentType   PaymentType @relation(fields: [paymentTypeId], references: [id])
 
@@ -638,13 +636,11 @@ model Discount {
 
   description  String?
   amount       Decimal? @db.Decimal(20, 2)
-  percentageId Int?
 
-  createdAt       DateTime            @default(now())
+  createdAt       DateTime            @db.Date @default(now())
   createdBy       Int?
   createdByUser   User?               @relation("DiscountsCreatedByUser", fields: [createdBy], references: [id])
   discountType    DiscountType        @relation(fields: [discountTypeId], references: [id])
-  percentageValue PercentageDiscount? @relation(fields: [percentageId], references: [id])
   isActive        Boolean             @default(true)
 
   @@index([loanId])
@@ -660,16 +656,6 @@ model DiscountType {
   discounts   Discount[]
 
   @@map("discount_types")
-}
-
-model PercentageDiscount {
-  id        Int        @id @default(autoincrement())
-  name      String     @unique
-  value     Float      @unique
-  discounts Discount[]
-
-  @@index([id, value, name])
-  @@map("percentage_discounts")
 }
 
 model ImportHistory {

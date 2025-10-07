@@ -16,65 +16,105 @@ export class DiscountsService {
   ) { }
 
   async create(dto: CreateDiscountDto, req: Request) {
-    // Usuario extraído del JWT
     const user = req['user'];
     if (!user || !user.userId) {
       throw new BadRequestException('Usuario no autenticado o información de usuario incompleta');
     }
 
-    // Validar que el monto sea mayor a cero
     if (dto.amount <= 0) {
       throw new BadRequestException('El monto del descuento debe ser mayor a cero');
     }
 
-    return await this.prisma.$transaction(async tx => {
-      // Buscar la moratoria
-      const moratory = await tx.moratoryInterest.findUnique({ 
-        where: { id: dto.moratoryId } 
+    return await this.prisma.$transaction(async (tx) => {
+      // Obtener el id del status "unPaid" (case-insensitive)
+      const unpaidStatus = await tx.moratoryInterestStatus.findFirst({
+        where: { name: { equals: 'unPaid', mode: 'insensitive' } },
       });
-      
-      if (!moratory) {
-        throw new BadRequestException('Interés moratorio no encontrado');
-      }
-      
-      if (moratory.amount <= 0) {
-        throw new BadRequestException('No existe interés moratorio generado para aplicar descuento');
-      }
+      if (!unpaidStatus) throw new BadRequestException('No se encontró el estado "unPaid" en MoratoryInterestStatus');
 
-      // Validar que el descuento no exceda el monto moratorio
-      const discountAmount = new Prisma.Decimal(dto.amount);
-      const moratoryAmount = new Prisma.Decimal(moratory.amount);
-      
-      if (discountAmount.greaterThan(moratoryAmount)) {
-        throw new BadRequestException(
-          `El descuento (${dto.amount}) no puede ser mayor al interés moratorio existente (${moratory.amount})`
-        );
-      }
-
-      // Aplicar descuento a la moratoria
-      const newMoratoryAmount = moratoryAmount.minus(discountAmount);
-      
-      await tx.moratoryInterest.update({
-        where: { id: dto.moratoryId },
-        data: { amount: newMoratoryAmount.toNumber() },
+      // Obtener el id del status "Discounted" (case-insensitive)
+      const discountedStatus = await tx.moratoryInterestStatus.findFirst({
+        where: { name: { equals: 'Discounted', mode: 'insensitive' } },
       });
+      if (!discountedStatus) throw new BadRequestException('No se encontró el estado "Discounted" en MoratoryInterestStatus');
 
-      // Crear descripción completa
-      const baseDescription = dto.description ? `${dto.description}. ` : '';
-      const appliedDescription = `DESCRIPCIÓN APLICADA POR EL SISTEMA: descuento de ${dto.amount} aplicado a interés moratorio ID ${dto.moratoryId}, generado por: ${user.userId} - ${user.email || 'N/A'}`;
+      const unpaidStatusId = unpaidStatus.id;
+      const discountedStatusId = discountedStatus.id;
 
-      // Crear registro de descuento
-      const discount = await tx.discount.create({
-        data: {
-          discountTypeId: dto.discountTypeId,
-          moratoryId: dto.moratoryId,
-          description: baseDescription + appliedDescription,
-          amount: discountAmount,
-          createdBy: user.userId,
+      // Obtener todas las cuotas activas del préstamo con sus moratorios pendientes
+      const installments = await tx.installment.findMany({
+        where: { loanId: dto.loanId, isActive: true },
+        orderBy: { sequence: 'asc' },
+        include: {
+          moratoryInterests: {
+            where: { isPaid: false, moratoryInterestStatusId: unpaidStatusId },
+            orderBy: { id: 'asc' }, // Para aplicar en orden
+          },
         },
       });
 
-      return this.convertDiscountToPlain(discount);
+      if (!installments || installments.length === 0) {
+        throw new BadRequestException('No se encontraron cuotas activas con intereses moratorios no pagados para este préstamo');
+      }
+
+      // 🔹 Validación del monto máximo de descuento
+      let totalPendingMoratory = new Prisma.Decimal(0);
+      for (const installment of installments) {
+        for (const moratory of installment.moratoryInterests) {
+          totalPendingMoratory = totalPendingMoratory.plus(new Prisma.Decimal(moratory.amount));
+        }
+      }
+
+      if (new Prisma.Decimal(dto.amount).greaterThan(totalPendingMoratory)) {
+        throw new BadRequestException(
+          `El monto del descuento (${dto.amount}) excede el total de intereses moratorios pendientes (${totalPendingMoratory.toNumber()}) para este préstamo`
+        );
+      }
+
+      // ✅ Aplicar el descuento en orden de cuotas y moratorios
+      let remainingDiscount = new Prisma.Decimal(dto.amount);
+      const appliedDiscounts: any[] = [];
+
+      for (const installment of installments) {
+        for (const moratory of installment.moratoryInterests) {
+          if (remainingDiscount.lte(0)) break;
+
+          const moratoryAmount = new Prisma.Decimal(moratory.amount);
+          const discountToApply = remainingDiscount.greaterThan(moratoryAmount) ? moratoryAmount : remainingDiscount;
+
+          const updatedMoratory = await tx.moratoryInterest.update({
+            where: { id: moratory.id },
+            data: {
+              amount: moratoryAmount.minus(discountToApply).toNumber(),
+              isDiscounted: discountToApply.equals(moratoryAmount) ? true : moratory.isDiscounted,
+              moratoryInterestStatusId: discountToApply.equals(moratoryAmount) ? discountedStatusId : moratory.moratoryInterestStatusId,
+            },
+          });
+
+          const baseDescription = dto.description ? `${dto.description}. ` : '';
+          const appliedDescription = `DESCRIPCIÓN APLICADA POR EL SISTEMA: descuento de ${discountToApply.toNumber()} aplicado a interés moratorio ID ${moratory.id} (cuota ${installment.sequence}), generado por: ${user.userId} - ${user.email || 'N/A'}`;
+
+          const discountRecord = await tx.discount.create({
+            data: {
+              discountTypeId: dto.discountTypeId,
+              loanId: dto.loanId,
+              installmentId: installment.id,
+              moratoryId: moratory.id,
+              description: baseDescription + appliedDescription,
+              amount: discountToApply,
+              createdBy: user.userId,
+            },
+          });
+
+          appliedDiscounts.push(discountRecord);
+          remainingDiscount = remainingDiscount.minus(discountToApply);
+
+          if (remainingDiscount.lte(0)) break;
+        }
+        if (remainingDiscount.lte(0)) break;
+      }
+
+      return appliedDiscounts.map((d) => this.convertDiscountToPlain(d));
     });
   }
 
