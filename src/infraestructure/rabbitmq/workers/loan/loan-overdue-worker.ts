@@ -239,7 +239,7 @@ export class LoanOverdueWorker implements OnModuleInit {
     const dailyInterest = loanAmount.mul(penaltyRate).div(30);
     
     // 🔄 APLICAR REDONDEO para evitar centavos en intereses moratorios
-    const roundedDailyInterest = new Decimal(Math.floor(dailyInterest.toNumber()));
+    const roundedDailyInterest = new Decimal(Math.round(dailyInterest.toNumber()));
     
     this.logger.log(
       `💰 Interés moratorio calculado: teórico=${dailyInterest.toFixed(2)}, redondeado=${roundedDailyInterest.toString()}`
