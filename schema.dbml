@@ -1,0 +1,514 @@
+Project MiGestor {
+  database_type: 'MySQL'
+  Note: '''
+    # MiGestor Database Schema
+    Sistema de gestión de créditos y cobranza
+    '''
+}
+
+// ==============================================
+// TABLAS DE CONFIGURACIÓN Y CATÁLOGOS
+// ==============================================
+
+Table companies {
+  id int [pk, increment]
+  name varchar(255) [not null]
+  nit varchar(20) [not null, unique]
+  verificationDigit int
+  phone varchar(20)
+  email varchar(255)
+  address text
+  logoUrl varchar(500)
+  isActive boolean [default: true]
+  createdAt datetime [default: `now()`]
+  updatedAt datetime [default: `now()`]
+  
+  Note: 'Información de la empresa'
+}
+
+Table zones {
+  id int [pk, increment]
+  name varchar(100) [not null, unique]
+  code varchar(10) [not null, unique]
+  isActive boolean [default: true]
+  createdAt datetime [default: `now()`]
+  updatedAt datetime [default: `now()`]
+  
+  Note: 'Zonas geográficas para asignar a clientes y cobradores'
+}
+
+Table genders {
+  id int [pk, increment]
+  name varchar(50) [not null, unique]
+  code varchar(5) [not null, unique]
+  isActive boolean [default: true]
+  
+  Note: 'Géneros: Masculino, Femenino, Otro'
+}
+
+Table typeDocumentIdentifications {
+  id int [pk, increment]
+  name varchar(100) [not null, unique]
+  code varchar(10) [not null, unique]
+  isActive boolean [default: true]
+  
+  Note: 'Tipos de documento: CC, CE, TI, etc.'
+}
+
+Table currencies {
+  id int [pk, increment]
+  name varchar(50) [not null]
+  code varchar(10) [not null, unique]
+  symbol varchar(5)
+  isActive boolean [default: true]
+  
+  Note: 'Monedas: COP, USD, EUR'
+}
+
+Table timezones {
+  id int [pk, increment]
+  name varchar(100) [not null]
+  code varchar(50) [not null, unique]
+  offset varchar(10)
+  isActive boolean [default: true]
+  
+  Note: 'Zonas horarias'
+}
+
+// ==============================================
+// CONFIGURACIONES DEL SISTEMA
+// ==============================================
+
+Table configurations {
+  id int [pk, increment]
+  currencyId int [ref: > currencies.id]
+  timezoneId int [ref: > timezones.id]
+  colorPalette text
+  isActive boolean [default: true]
+  createdAt datetime [default: `now()`]
+  updatedAt datetime [default: `now()`]
+  
+  Note: 'Configuraciones generales del sistema'
+}
+
+// ==============================================
+// USUARIOS Y AUTENTICACIÓN
+// ==============================================
+
+Table users {
+  id int [pk, increment]
+  email varchar(255) [not null, unique]
+  name varchar(255) [not null]
+  password varchar(255) [not null]
+  phone varchar(20)
+  isActive boolean [default: true]
+  emailVerifiedAt datetime
+  lastLoginAt datetime
+  createdAt datetime [default: `now()`]
+  updatedAt datetime [default: `now()`]
+  
+  Note: 'Usuarios del sistema'
+}
+
+Table roles {
+  id int [pk, increment]
+  name varchar(100) [not null, unique]
+  description text
+  isActive boolean [default: true]
+  createdAt datetime [default: `now()`]
+  updatedAt datetime [default: `now()`]
+  
+  Note: 'Roles de usuario: admin, collector, customer'
+}
+
+Table permissions {
+  id int [pk, increment]
+  name varchar(100) [not null, unique]
+  description text
+  module varchar(50)
+  isActive boolean [default: true]
+  
+  Note: 'Permisos del sistema'
+}
+
+Table userRoles {
+  id int [pk, increment]
+  userId int [ref: > users.id]
+  roleId int [ref: > roles.id]
+  isActive boolean [default: true]
+  assignedAt datetime [default: `now()`]
+  
+  Note: 'Relación usuarios-roles'
+}
+
+Table rolePermissions {
+  id int [pk, increment]
+  roleId int [ref: > roles.id]
+  permissionId int [ref: > permissions.id]
+  isActive boolean [default: true]
+  
+  Note: 'Relación roles-permisos'
+}
+
+// ==============================================
+// COBRADORES Y CLIENTES
+// ==============================================
+
+Table collectors {
+  id int [pk, increment]
+  firstName varchar(100) [not null]
+  lastName varchar(100) [not null]
+  typeDocumentIdentificationId int [ref: > typeDocumentIdentifications.id]
+  documentNumber varchar(20) [not null, unique]
+  birthDate date [not null]
+  genderId int [ref: > genders.id]
+  phone varchar(20) [not null]
+  email varchar(255) [not null, unique]
+  address text [not null]
+  zoneId int [ref: > zones.id]
+  userId int [ref: > users.id]
+  isActive boolean [default: true]
+  createdAt datetime [default: `now()`]
+  updatedAt datetime [default: `now()`]
+  
+  Note: 'Cobradores del sistema'
+}
+
+Table customers {
+  id int [pk, increment]
+  firstName varchar(100) [not null]
+  lastName varchar(100) [not null]
+  typeDocumentIdentificationId int [ref: > typeDocumentIdentifications.id]
+  documentNumber varchar(20) [not null, unique]
+  birthDate date [not null]
+  genderId int [ref: > genders.id]
+  phone varchar(20) [not null]
+  email varchar(255) [not null, unique]
+  address text [not null]
+  zoneId int [ref: > zones.id]
+  userId int [ref: > users.id]
+  isActive boolean [default: true]
+  createdAt datetime [default: `now()`]
+  updatedAt datetime [default: `now()`]
+  
+  Note: 'Clientes del sistema'
+}
+
+// ==============================================
+// CONFIGURACIÓN DE CRÉDITOS
+// ==============================================
+
+Table loanTypes {
+  id int [pk, increment]
+  name varchar(100) [not null, unique]
+  code varchar(20) [not null, unique]
+  description text
+  isActive boolean [default: true]
+  
+  Note: 'Tipos de crédito: cuotas fijas, solo intereses'
+}
+
+Table interestRates {
+  id int [pk, increment]
+  name varchar(50) [not null]
+  value decimal(5,2) [not null]
+  isActive boolean [default: true]
+  
+  Note: 'Tasas de interés corriente'
+}
+
+Table penaltyRates {
+  id int [pk, increment]
+  name varchar(50) [not null]
+  value decimal(5,4) [not null]
+  isActive boolean [default: true]
+  
+  Note: 'Tasas de interés moratorio'
+}
+
+Table terms {
+  id int [pk, increment]
+  value int [not null, unique]
+  isActive boolean [default: true]
+  
+  Note: 'Número de cuotas: 6, 12, 24, etc.'
+}
+
+Table paymentFrequencies {
+  id int [pk, increment]
+  name varchar(50) [not null, unique]
+  description text
+  days int [not null]
+  isActive boolean [default: true]
+  createdAt datetime [default: `now()`]
+  updatedAt datetime [default: `now()`]
+  
+  Note: 'Frecuencias de pago: diario, semanal, quincenal, mensual'
+}
+
+Table gracePeriods {
+  id int [pk, increment]
+  name varchar(50) [not null]
+  days int [not null]
+  isActive boolean [default: true]
+  
+  Note: 'Períodos de gracia para créditos de solo intereses'
+}
+
+Table loanStatuses {
+  id int [pk, increment]
+  name varchar(50) [not null, unique]
+  description text
+  isActive boolean [default: true]
+  
+  Note: 'Estados de crédito: Up to Date, Overdue, Paid, etc.'
+}
+
+// ==============================================
+// CRÉDITOS Y CUOTAS
+// ==============================================
+
+Table loans {
+  id int [pk, increment]
+  customerId int [ref: > customers.id]
+  loanAmount decimal(15,2) [not null]
+  remainingBalance decimal(15,2) [not null]
+  interestRateId int [ref: > interestRates.id]
+  termId int [ref: > terms.id]
+  paymentFrequencyId int [ref: > paymentFrequencies.id]
+  loanTypeId int [ref: > loanTypes.id]
+  loanStatusId int [ref: > loanStatuses.id]
+  penaltyRateId int [ref: > penaltyRates.id]
+  gracePeriodId int [ref: > gracePeriods.id]
+  startDate date [not null]
+  nextDueDate date
+  graceEndDate date
+  isActive boolean [default: true]
+  canceledAt datetime
+  createdAt datetime [default: `now()`]
+  updatedAt datetime [default: `now()`]
+  
+  Note: 'Créditos otorgados a clientes'
+}
+
+Table installmentStatuses {
+  id int [pk, increment]
+  name varchar(50) [not null, unique]
+  description text
+  isActive boolean [default: true]
+  
+  Note: 'Estados de cuota: Pendiente, Pagada, En Mora, etc.'
+}
+
+Table installments {
+  id int [pk, increment]
+  loanId int [ref: > loans.id]
+  sequence int [not null]
+  dueDate date [not null]
+  capitalAmount decimal(12,2) [not null]
+  interestAmount decimal(12,2) [not null]
+  totalAmount decimal(12,2) [not null]
+  paidAmount decimal(12,2) [default: 0]
+  isPaid boolean [default: false]
+  statusId int [ref: > installmentStatuses.id]
+  paidAt datetime
+  isActive boolean [default: true]
+  createdAt datetime [default: `now()`]
+  updatedAt datetime [default: `now()`]
+  
+  Note: 'Cuotas de los créditos'
+}
+
+// ==============================================
+// MORATORIAS Y DESCUENTOS
+// ==============================================
+
+Table moratories {
+  id int [pk, increment]
+  installmentId int [ref: > installments.id]
+  loanId int [ref: > loans.id]
+  principalAmount decimal(12,2) [not null]
+  interestAmount decimal(12,2) [not null]
+  lateFeeAmount decimal(12,2) [not null]
+  totalAmount decimal(12,2) [not null]
+  daysLate int [not null]
+  startDate date [not null]
+  isActive boolean [default: true]
+  createdAt datetime [default: `now()`]
+  updatedAt datetime [default: `now()`]
+  
+  Note: 'Moratorias generadas por cuotas vencidas'
+}
+
+Table discountTypes {
+  id int [pk, increment]
+  name varchar(100) [not null, unique]
+  description text
+  isActive boolean [default: true]
+  
+  Note: 'Tipos de descuento'
+}
+
+Table discounts {
+  id int [pk, increment]
+  amount decimal(12,2) [not null]
+  discountTypeId int [ref: > discountTypes.id]
+  description text [not null]
+  moratoryId int [ref: > moratories.id]
+  installmentId int [ref: > installments.id]
+  loanId int [ref: > loans.id]
+  isActive boolean [default: true]
+  createdAt datetime [default: `now()`]
+  updatedAt datetime [default: `now()`]
+  
+  Note: 'Descuentos aplicados a moratorias'
+}
+
+// ==============================================
+// PAGOS Y RECAUDOS
+// ==============================================
+
+Table payments {
+  id int [pk, increment]
+  loanId int [ref: > loans.id]
+  customerId int [ref: > customers.id]
+  collectorId int [ref: > collectors.id]
+  totalAmount decimal(12,2) [not null]
+  appliedToCapital decimal(12,2) [default: 0]
+  appliedToInterest decimal(12,2) [default: 0]
+  appliedToLateFee decimal(12,2) [default: 0]
+  excessAmount decimal(12,2) [default: 0]
+  paymentDate datetime [not null]
+  isActive boolean [default: true]
+  createdAt datetime [default: `now()`]
+  updatedAt datetime [default: `now()`]
+  
+  Note: 'Pagos realizados por clientes'
+}
+
+Table paymentAllocations {
+  id int [pk, increment]
+  paymentId int [ref: > payments.id]
+  installmentId int [ref: > installments.id]
+  capitalApplied decimal(12,2) [default: 0]
+  interestApplied decimal(12,2) [default: 0]
+  lateFeeApplied decimal(12,2) [default: 0]
+  totalApplied decimal(12,2) [not null]
+  createdAt datetime [default: `now()`]
+  
+  Note: 'Asignación de pagos a cuotas específicas'
+}
+
+// ==============================================
+// IMPORTACIONES Y PLANTILLAS
+// ==============================================
+
+Table importStatuses {
+  id int [pk, increment]
+  name varchar(50) [not null, unique]
+  description text
+  
+  Note: 'Estados de importación: pending, processing, completed, failed'
+}
+
+Table imports {
+  id int [pk, increment]
+  fileName varchar(255) [not null]
+  totalRecords int [not null]
+  successfulRecords int [default: 0]
+  failedRecords int [default: 0]
+  statusId int [ref: > importStatuses.id]
+  errorDetails json
+  startedAt datetime [default: `now()`]
+  completedAt datetime
+  createdById int [ref: > users.id]
+  
+  Note: 'Historial de importaciones masivas'
+}
+
+// ==============================================
+// AUDITORÍA Y NOTAS
+// ==============================================
+
+Table changes {
+  id int [pk, increment]
+  model varchar(100) [not null]
+  modelId int [not null]
+  action varchar(20) [not null]
+  oldValues json
+  newValues json
+  userId int [ref: > users.id]
+  createdAt datetime [default: `now()`]
+  
+  Note: 'Auditoría de cambios en el sistema'
+}
+
+Table notes {
+  id int [pk, increment]
+  model varchar(100) [not null]
+  modelId int [not null]
+  content text [not null]
+  userId int [ref: > users.id]
+  isActive boolean [default: true]
+  createdAt datetime [default: `now()`]
+  updatedAt datetime [default: `now()`]
+  
+  Note: 'Notas asociadas a diferentes entidades'
+}
+
+// ==============================================
+// DOCUMENTACIÓN DE ÍNDICES
+// ==============================================
+
+Note: '''
+# Índices para optimización de consultas
+
+Para mejorar el rendimiento de las consultas más frecuentes, se recomienda crear los siguientes índices:
+
+## Índices en tabla customers
+- CREATE INDEX idx_customers_document ON customers(documentNumber);
+- CREATE INDEX idx_customers_zone ON customers(zoneId);
+- CREATE INDEX idx_customers_email ON customers(email);
+
+## Índices en tabla collectors  
+- CREATE INDEX idx_collectors_document ON collectors(documentNumber);
+- CREATE INDEX idx_collectors_zone ON collectors(zoneId);
+- CREATE INDEX idx_collectors_email ON collectors(email);
+
+## Índices en tabla loans
+- CREATE INDEX idx_loans_customer ON loans(customerId);
+- CREATE INDEX idx_loans_status ON loans(loanStatusId);
+- CREATE INDEX idx_loans_start_date ON loans(startDate);
+- CREATE INDEX idx_loans_active ON loans(isActive);
+
+## Índices en tabla installments
+- CREATE INDEX idx_installments_loan ON installments(loanId);
+- CREATE INDEX idx_installments_due_date ON installments(dueDate);
+- CREATE INDEX idx_installments_status ON installments(statusId);
+- CREATE INDEX idx_installments_paid ON installments(isPaid);
+
+## Índices en tabla payments
+- CREATE INDEX idx_payments_loan ON payments(loanId);
+- CREATE INDEX idx_payments_customer ON payments(customerId);
+- CREATE INDEX idx_payments_collector ON payments(collectorId);
+- CREATE INDEX idx_payments_date ON payments(paymentDate);
+
+## Índices en tabla moratories
+- CREATE INDEX idx_moratories_loan ON moratories(loanId);
+- CREATE INDEX idx_moratories_installment ON moratories(installmentId);
+- CREATE INDEX idx_moratories_start_date ON moratories(startDate);
+
+## Índices en tabla changes (auditoría)
+- CREATE INDEX idx_changes_model ON changes(model, modelId);
+- CREATE INDEX idx_changes_user ON changes(userId);
+- CREATE INDEX idx_changes_created ON changes(createdAt);
+
+## Índices en tabla notes
+- CREATE INDEX idx_notes_model ON notes(model, modelId);
+- CREATE INDEX idx_notes_user ON notes(userId);
+
+## Índices compuestos para consultas específicas
+- CREATE INDEX idx_loans_customer_status ON loans(customerId, loanStatusId);
+- CREATE INDEX idx_installments_loan_status ON installments(loanId, statusId);
+- CREATE INDEX idx_payments_loan_date ON payments(loanId, paymentDate);
+'''
