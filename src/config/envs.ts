@@ -35,6 +35,7 @@ interface EnvVars {
 
     APP_REDIS_HOST: string;
     APP_REDIS_PORT: number;
+    APP_REDIS_USERNAME: string;
     APP_REDIS_PASSWORD: string;
 
     APP_IP_GEOLOCATION: string;
@@ -87,6 +88,7 @@ const envVarsSchema = joi.object({
 
     APP_REDIS_HOST: joi.string().required().default('localhost'),
     APP_REDIS_PORT: joi.number().required().default(6379),
+    APP_REDIS_USERNAME: joi.string().required().default('default'),
     APP_REDIS_PASSWORD: joi.string().required().default('redis'),
 
     APP_IP_GEOLOCATION: joi.string().optional(),
@@ -147,6 +149,7 @@ export const envs = {
     redis: {
         host: envVars.APP_REDIS_HOST,
         port: envVars.APP_REDIS_PORT,
+        username: envVars.APP_REDIS_USERNAME,
         password: envVars.APP_REDIS_PASSWORD,
         loanInstallmentsQueue: envVars.RABBITMQ_LOAN_INSTALLMENTS_QUEUE
     },

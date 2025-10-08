@@ -1,9 +1,11 @@
 import { Inject, Injectable, OnModuleDestroy } from '@nestjs/common';
 import Redis, { Redis as RedisClient } from 'ioredis';
+import { REDIS_OPTIONS } from './client';
 
 export interface RedisModuleOptions {
   host: string;
   port: number;
+  username?: string;
   password?: string;
 }
 
@@ -12,11 +14,12 @@ export class RedisService implements OnModuleDestroy {
   private client: RedisClient;
 
   constructor(
-    @Inject('REDIS_OPTIONS') private readonly options: RedisModuleOptions,
+    @Inject(REDIS_OPTIONS) private readonly options: RedisModuleOptions,
   ) {
     this.client = new Redis({
       host: options.host,
       port: options.port,
+      username: options.username,
       password: options.password,
     });
     // Conexión diferida

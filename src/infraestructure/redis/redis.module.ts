@@ -12,6 +12,7 @@ import { REDIS_CLIENT } from './client';
         return new Redis({
           host: envs.redis.host,
           port: envs.redis.port,
+          username: envs.redis.username,
           password: envs.redis.password,
         });
       },
