@@ -198,6 +198,9 @@ export class PermissionsGuard implements CanActivate {
       'update.installments': 'actualizar cuotas',
       'delete.installments': 'eliminar cuotas',
 
+      // type-discounts messages
+      'view.type-discounts': 'ver información de tipos de descuentos',
+      
       // Otros permisos
       // Agrega más si lo deseas
     };

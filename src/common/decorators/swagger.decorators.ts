@@ -17,6 +17,7 @@ import {
   ApiUnprocessableEntityResponse
 } from '@nestjs/swagger';
 
+// Decorador para documentar endpoints de exportación de reportes
 export function ApiExportReport(options: { reportTypes: string[], formats: string[] }) {
   return applyDecorators(
     ApiOperation({
@@ -63,6 +64,7 @@ export function ApiExportReport(options: { reportTypes: string[], formats: strin
   );
 }
 
+// Decorador para documentar endpoint de creación de cobros
 export function SwaggerCreateCollection() {
   return applyDecorators(
     ApiOperation({
@@ -88,6 +90,7 @@ export function SwaggerCreateCollection() {
   );
 }
 
+// Decorador para documentar endpoint de obtención de lista de cobros
 export function SwaggerGetCollections() {
   return applyDecorators(
     ApiOperation({
@@ -110,6 +113,7 @@ export function SwaggerGetCollections() {
   );
 }
 
+// Decorador para documentar endpoint de obtención de lista de préstamos
 export function SwaggerListLoans() {
   return applyDecorators(
     ApiOperation({
@@ -218,6 +222,7 @@ export function SwaggerListLoans() {
   );
 }
 
+// Decorador para documentar endpoint de obtención de préstamos en mora
 export function SwaggerOverdueLoans() {
   return applyDecorators(
     ApiOperation({
@@ -347,6 +352,7 @@ export function SwaggerOverdueLoans() {
   );
 }
 
+// Decorador para documentar endpoint de obtención de préstamo por ID
 export function SwaggerLoanById() {
   return applyDecorators(
     ApiOperation({
@@ -451,6 +457,7 @@ export function SwaggerLoanById() {
   );
 }
 
+// Decorador para documentar endpoint de creación de préstamos
 export function SwaggerCreateLoan() {
   return applyDecorators(
     ApiOperation({
@@ -671,6 +678,7 @@ export function SwaggerCreateLoan() {
   );
 }
 
+// Decorador para documentar endpoint de refinanciación de préstamos
 export function SwaggerRefinanceLoan() {
   return applyDecorators(
     ApiOperation({
@@ -835,6 +843,7 @@ export function SwaggerRefinanceLoan() {
   );
 }
 
+// Decorador para documentar endpoint de obtención de préstamos por ID de cliente
 export function SwaggerViewLoanByCustomerId() {
   return applyDecorators(
     ApiOperation({
@@ -953,6 +962,7 @@ export function SwaggerViewLoanByCustomerId() {
   );
 }
 
+// Decorador para documentar endpoint de cancelación de préstamos
 export function SwaggerCancelLoan() {
   return applyDecorators(
     ApiOperation({
@@ -1092,6 +1102,473 @@ export function SwaggerCancelLoan() {
             message: 'Error de base de datos al actualizar el estado del préstamo',
             error: 'Internal Server Error',
           },
+        },
+      },
+    }),
+  );
+}
+
+// Decorador para documentar endpoint de obtención de tipos de descuentos
+export function SwaggerTypeDiscounts() {
+  return applyDecorators(
+    ApiOperation({ summary: 'Obtener tipos de descuentos', description: 'Retorna la lista de tipos de descuentos.' }),
+    ApiOkResponse({
+      description: 'Tipos de descuentos obtenidos correctamente',
+      examples: {
+        success: {
+          summary: 'Tipos de descuentos obtenidos',
+          value: {
+            message: 'Lista de tipos de descuentos',
+            code: 200,
+            status: 'success',
+            data: {
+              typeDiscounts: [
+                { id: 1, name: 'Descuento por pronto pago', percentage: 10 },
+                { id: 2, name: 'Descuento por volumen', percentage: 15 }
+              ]
+            }
+          }
+        }
+      }
+    }),
+    ApiUnauthorizedResponse({
+      description: 'No autenticado',
+      examples: {
+        missingToken: {
+          summary: 'Token faltante',
+          value: {
+            code: 401,
+            message: 'Token de acceso requerido',
+            status: 'error',
+            errors: null
+          }
+        }
+      }
+    }),
+    ApiForbiddenResponse({
+      description: 'Sin permisos',
+      examples: {
+        forbidden: {
+          summary: 'Sin permisos',
+          value: {
+            code: 403,
+            message: 'No tiene los permisos necesarios para realizar esta acción.',
+            status: 'error',
+            errors: null
+          }
+        }
+      }
+    }),
+    ApiInternalServerErrorResponse({
+      description: 'Error interno del servidor',
+      examples: {
+        serverError: {
+          summary: 'Error interno',
+          value: {
+            code: 500,
+            message: 'Error interno del servidor',
+            status: 'error',
+            errors: null
+          }
+        }
+      }
+    })
+  );
+}
+
+// Decorador para documentar endpoint de obtención de reporte de préstamos nuevos y refinanciados
+export function SwaggerLoansReport() {
+  return applyDecorators(
+    ApiOperation({
+      summary: 'Obtener resumen de créditos nuevos y refinanciados',
+      description: 'Retorna el valor total y conteo de créditos y refinanciados en un rango de fechas. Si no se especifican fechas, el rango será del último mes.',
+    }),
+    ApiQuery({
+      name: 'startDate',
+      required: false,
+      example: '2025-01-01',
+      description: 'Fecha de inicio (Formato YYYY-MM-DD)',
+    }),
+    ApiQuery({
+      name: 'endDate',
+      required: false,
+      example: '2025-12-31',
+      description: 'Fecha de fin (Formato YYYY-MM-DD)',
+    }),
+    ApiOkResponse({
+      description: 'Resumen de créditos obtenido correctamente',
+      examples: {
+        success: {
+          summary: 'Resumen de créditos generado exitosamente',
+          value: {
+            message: 'Resumen de créditos obtenido correctamente',
+            code: 200,
+            status: 'success',
+            data: {
+              loansReport: {
+                startDate: '2025-09-08',
+                endDate: '2025-10-08',
+                numberOfNewLoans: 3,
+                newLoansTotalAmount: 3000000,
+                newLoansDetails: [
+                  {
+                    id: 19,
+                    loanAmount: 1000000,
+                    remainingBalance: 1000000,
+                    startDate: '2025-10-01',
+                    nextDueDate: '2025-10-01',
+                    graceEndDate: 'N/A',
+                    requiresCapitalPayment: 'No',
+                    interestRateId: 15,
+                    interestRateName: '15%',
+                    interestRateValue: 15,
+                    penaltyRateId: 1,
+                    penaltyRateName: 'Mora legal máxima',
+                    penaltyRateValue: 0.05,
+                    termId: 6,
+                    termValue: 6,
+                    gracePeriodId: null,
+                    gracePeriodName: 'N/A',
+                    gracePeriodDays: 0,
+                    paymentFrequencyId: 5,
+                    paymentFrequencyName: 'Minute',
+                    loanTypeId: 1,
+                    loanTypeName: 'Cuotas Fijas',
+                    creditTypeName: 'Cuotas Fijas',
+                    loanStatusId: 2,
+                    loanStatusName: 'En Mora',
+                    customerId: 3,
+                    customerName: 'armando betancourt',
+                    customerDocument: 1234567892,
+                    customerAddress: 'en su casa',
+                    customerPhone: '+573001234567'
+                  }
+                  // ...otros préstamos
+                ],
+                numberOfRefinancedLoans: 0,
+                refinancedLoansTotalAmount: 0,
+                refinancedLoansDetails: [],
+                summary: {
+                  numberOfNewLoans: 3,
+                  newLoansTotalAmount: 3000000,
+                  numberOfRefinancedLoans: 0,
+                  refinancedLoansTotalAmount: 0,
+                  totalLoans: 3,
+                  totalAmount: 3000000,
+                  averageLoanAmount: 1000000
+                },
+                metadata: {
+                  totalRecords: 3,
+                  generatedAt: '2025-10-08 17:55:06',
+                  period: '2025-09-08 al 2025-10-08'
+                }
+              }
+            }
+          }
+        }
+      }
+    }),
+    ApiNotFoundResponse({
+      description: 'No se encontraron datos de préstamos en el rango de fechas',
+      examples: {
+        notFound: {
+          summary: 'No hay datos en el período',
+          value: {
+            message: 'No se encontraron datos de préstamos en el rango de fechas proporcionado.',
+            code: 404,
+            status: 'error',
+            errors: null,
+            trace: 'NotFoundException: No se encontraron datos de préstamos en el rango de fechas proporcionado.'
+          }
+        }
+      }
+    }),
+    ApiBadRequestResponse({
+      description: 'Parámetros inválidos',
+      examples: {
+        invalidParams: {
+          summary: 'Datos enviados inválidos',
+          value: {
+            message: ['startDate debe tener formato YYYY-MM-DD', 'endDate debe ser posterior a startDate'],
+            code: 400,
+            status: 'error',
+            errors: ['startDate debe tener formato YYYY-MM-DD', 'endDate debe ser posterior a startDate']
+          }
+        }
+      }
+    }),
+    ApiUnauthorizedResponse({
+      description: 'No autorizado',
+      examples: {
+        missingToken: {
+          summary: 'Token faltante',
+          value: {
+            message: 'Token de acceso requerido',
+            code: 401,
+            status: 'error',
+            errors: null
+          }
+        }
+      }
+    }),
+    ApiForbiddenResponse({
+      description: 'Sin permisos',
+      examples: {
+        forbidden: {
+          summary: 'Sin permisos para ver reportes',
+          value: {
+            message: 'No tienes permisos para ver los reportes',
+            code: 403,
+            status: 'error',
+            errors: null
+          }
+        }
+      }
+    }),
+    ApiInternalServerErrorResponse({
+      description: 'Error interno del servidor',
+      examples: {
+        serverError: {
+          summary: 'Error interno',
+          value: {
+            message: 'Error interno del servidor al generar el reporte',
+            code: 500,
+            status: 'error',
+            errors: null
+          }
+        }
+      }
+    })
+  );
+}
+
+// Decorador para documentar endpoint de obtención de reporte de valores de cobros
+export function SwaggerCollectionsReport() {
+  return applyDecorators(
+    ApiOperation({
+      summary: 'Obtener reporte de valores de cobros',
+      description: 'Retorna resumen de cobros, colecciones y desempeño de cobradores en un rango de fechas. Si no se especifican fechas, el rango será del último mes.',
+    }),
+    ApiQuery({
+      name: 'startDate',
+      required: false,
+      example: '2025-11-01',
+      description: 'Fecha de inicio (Formato YYYY-MM-DD)',
+    }),
+    ApiQuery({
+      name: 'endDate',
+      required: false,
+      example: '2025-11-11',
+      description: 'Fecha de fin (Formato YYYY-MM-DD)',
+    }),
+    ApiOkResponse({
+      description: 'Resumen de valores de cobros obtenido exitosamente',
+      examples: {
+        success: {
+          summary: 'Resumen de cobros generado exitosamente',
+          value: {
+            message: 'Resumen de valores de cobros obtenido exitosamente',
+            code: 200,
+            status: 'success',
+            data: {
+              collectionsReport: {
+                startDate: '2025-11-01',
+                endDate: '2025-11-11',
+                summary: {
+                  totalCollections: 0,
+                  totalAssigned: 0,
+                  totalCollected: 0,
+                  totalPending: 0,
+                  globalPerformancePercentage: 0,
+                  activeCollectors: 0,
+                  uniqueCustomers: 0,
+                  uniqueLoans: 0,
+                  totalInstallmentsInPeriod: 0,
+                  totalInstallmentsPaid: 0,
+                  totalInstallmentsPending: 0,
+                  averageCollectedPerCollector: 0,
+                  averageCollectionAmount: 0,
+                  bestPerformanceCollector: { name: 'N/A', percentage: 0, collected: 0, assigned: 0, totalCollectionsMade: 0, route: 'N/A' },
+                  worstPerformanceCollector: { name: 'N/A', percentage: 0, collected: 0, assigned: 0, totalCollectionsMade: 0, route: 'N/A' },
+                  leastActiveCollector: { name: 'N/A', totalCollectionsMade: 0, collected: 0, percentage: 0, route: 'N/A' },
+                  bestCollector: { name: 'N/A', percentage: 0, collected: 0, route: 'N/A' },
+                  worstCollector: { name: 'N/A', percentage: 0, collected: 0, route: 'N/A' },
+                  mostActiveCollector: { name: 'N/A', totalCollectionsMade: 0, collected: 0, percentage: 0, route: 'N/A' },
+                  chartData: { collectorPerformance: [], collectorComparison: [], collectorActivity: [], globalStats: { assigned: 0, collected: 0, pending: 0, percentage: 0 } }
+                },
+                collectorSummary: [],
+                collections: [],
+                metadata: { totalRecords: 0, generatedAt: '2025-10-08', period: '2025-11-01 al 2025-11-11', totalCollectors: 0, activeCollectors: 0 }
+              }
+            }
+          }
+        }
+      }
+    }),
+    ApiNotFoundResponse({
+      description: 'No se encontraron datos en el rango de fechas',
+      examples: {
+        notFound: {
+          summary: 'No hay datos en el período',
+          value: {
+            message: 'No se encontraron datos de préstamos en el rango de fechas proporcionado.',
+            code: 404,
+            status: 'error',
+            errors: null,
+            trace: 'NotFoundException: No se encontraron datos de préstamos en el rango de fechas proporcionado.'
+          }
+        }
+      }
+    }),
+    ApiBadRequestResponse({
+      description: 'Parámetros inválidos',
+      examples: {
+        invalidParams: {
+          summary: 'Datos enviados inválidos',
+          value: {
+            message: ['startDate debe tener formato YYYY-MM-DD', 'endDate debe ser posterior a startDate'],
+            code: 400,
+            status: 'error',
+            errors: ['startDate debe tener formato YYYY-MM-DD', 'endDate debe ser posterior a startDate']
+          }
+        }
+      }
+    }),
+    ApiUnauthorizedResponse({
+      description: 'No autorizado',
+      examples: {
+        missingToken: {
+          summary: 'Token faltante',
+          value: { message: 'Token de acceso requerido', code: 401, status: 'error', errors: null }
+        }
+      }
+    }),
+    ApiForbiddenResponse({
+      description: 'Sin permisos',
+      examples: {
+        forbidden: {
+          summary: 'Sin permisos para ver reportes',
+          value: { message: 'No tienes permisos para ver los reportes', code: 403, status: 'error', errors: null }
+        }
+      }
+    }),
+    ApiInternalServerErrorResponse({
+      description: 'Error interno del servidor',
+      examples: {
+        serverError: {
+          summary: 'Error interno',
+          value: { message: 'Error interno del servidor al generar el reporte', code: 500, status: 'error', errors: null }
+        }
+      }
+    })
+  );
+}
+
+// Decorador para documentar endpoint de obtención de lista de cambios en modelos
+export function SwaggerChangesList() {
+  return applyDecorators(
+    ApiOperation({
+      summary: 'Listar cambios realizados en modelos',
+      description: 'Retorna un listado paginado de los cambios realizados en distintos modelos de la aplicación.',
+    }),
+    ApiQuery({
+      name: 'page',
+      required: false,
+      description: 'Número de página para la paginación',
+      example: 1,
+    }),
+    ApiQuery({
+      name: 'limit',
+      required: false,
+      description: 'Cantidad de registros por página',
+      example: 5,
+    }),
+    ApiOkResponse({
+      description: 'Lista de cambios obtenida correctamente',
+      schema: {
+        example: {
+          message: 'Lista de cambios realizados en modelos',
+          code: 200,
+          status: 'success',
+          data: {
+            changes: [
+              {
+                id: 1510,
+                model: 'Payment',
+                action: 'create',
+                before: null,
+                after: {
+                  id: 79,
+                  amount: 264237,
+                  loanId: 16,
+                  collectorId: null,
+                  paymentDate: '2025-10-08T00:00:00.000Z',
+                  paymentTypeId: 1,
+                  paymentMethodId: 1,
+                  recordedByUserId: 1,
+                },
+                timestamp: '2025-10-08 16:08:34',
+                userId: 1,
+              },
+            ],
+            meta: {
+              total: 79,
+              page: 1,
+              lastPage: 16,
+              limit: 5,
+              hasNextPage: true,
+            },
+          },
+        },
+      },
+    }),
+    ApiBadRequestResponse({
+      description: 'Parámetros de consulta inválidos',
+      schema: {
+        example: {
+          statusCode: 400,
+          message: ['page debe ser un número', 'limit debe ser un número'],
+          error: 'Bad Request',
+        },
+      },
+    }),
+    ApiUnauthorizedResponse({
+      description: 'No autorizado',
+      schema: {
+        example: {
+          statusCode: 401,
+          message: 'Token de acceso requerido',
+          error: 'Unauthorized',
+        },
+      },
+    }),
+    ApiForbiddenResponse({
+      description: 'Acceso prohibido',
+      schema: {
+        example: {
+          statusCode: 403,
+          message: 'No tienes permisos para acceder a los cambios',
+          error: 'Forbidden',
+        },
+      },
+    }),
+    ApiNotFoundResponse({
+      description: 'No se encontraron cambios',
+      schema: {
+        example: {
+          statusCode: 404,
+          message: 'No se encontraron cambios con los parámetros proporcionados',
+          error: 'Not Found',
+        },
+      },
+    }),
+    ApiInternalServerErrorResponse({
+      description: 'Error interno del servidor',
+      schema: {
+        example: {
+          statusCode: 500,
+          message: 'Error al obtener la lista de cambios',
+          error: 'Internal Server Error',
         },
       },
     }),

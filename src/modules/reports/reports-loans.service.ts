@@ -26,6 +26,7 @@ export class ReportLoanService {
                 'Cancelled': 'Cancelado',
                 'Created': 'Creado',
                 'Pending': 'Pendiente',
+                'Outstanding Balance': 'Saldo Pendiente',
             },
             loanType: {
                 'fixed_fees': 'Cuotas Fijas',
@@ -51,7 +52,7 @@ export class ReportLoanService {
     /**
      * Obtiene todos los datos necesarios para el reporte del valor de los créditos y refinanciados
      */
-    async getLoanData(dto: DateRangeDto) {
+    async getLoansReportData(dto: DateRangeDto) {
         let { startDate, endDate } = dto;
 
         if (!startDate || !endDate) {
@@ -209,18 +210,15 @@ export class ReportLoanService {
             // Frecuencia de pago (traducida)
             paymentFrequencyId: loan.paymentFrequency?.id || null,
             paymentFrequencyName: this.translateField('paymentFrequency', loan.paymentFrequency?.name || ''),
-            paymentFrequencyOriginal: loan.paymentFrequency?.name || '',
             
             // Tipo de crédito (traducido)
             loanTypeId: loan.loanType?.id || null,
             loanTypeName: this.translateField('loanType', loan.loanType?.name || ''),
-            loanTypeOriginal: loan.loanType?.name || '',
             creditTypeName: this.translateField('loanType', loan.loanType?.name || ''), // Alias para compatibilidad
             
             // Estado del crédito (traducido)
             loanStatusId: loan.loanStatus?.id || null,
             loanStatusName: this.translateField('loanStatus', loan.loanStatus?.name || ''),
-            loanStatusOriginal: loan.loanStatus?.name || '',
             
             // Cliente
             customerId: loan.customer?.id || null,

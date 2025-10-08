@@ -5,6 +5,7 @@ import { plainToInstance } from 'class-transformer';
 import { AuditPaginationDto, ResponseChangeDto } from './dto';
 import { JwtAuthGuard, PermissionsGuard } from '@modules/auth/guards';
 import { Permissions } from '@modules/auth/decorators';
+import { SwaggerChangesList } from '@common/decorators';
 
 @Controller('changes')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
@@ -13,6 +14,7 @@ export class ChangesController {
 
   @Get()
   @Permissions('read.changes')
+  @SwaggerChangesList()
   async findAll(@Query() query: AuditPaginationDto): Promise<ChangesListResponse> {
     const { rawChanges, meta } = await this.ChangesService.findAll(query);
 

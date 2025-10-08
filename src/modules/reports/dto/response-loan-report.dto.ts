@@ -2,7 +2,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import { IsNumber, IsOptional, IsString, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 
-export class LoanSummaryReportDetailDto {
+export class LoanReportDetailDto {
   @ApiProperty({ description: 'ID del préstamo', example: 10 })
   @IsNumber()
   @Type(() => Number)
@@ -78,7 +78,7 @@ export class LoanSummaryReportDetailDto {
   penaltyRateValue?: number;
 }
 
-export class ResponseLoanSummaryReportDto {
+export class ResponseLoanReportDto {
   @ApiProperty({ description: 'Número de créditos nuevos', example: 5 })
   @IsOptional()
   @Type(() => Number)
@@ -89,10 +89,10 @@ export class ResponseLoanSummaryReportDto {
   @Type(() => Number)
   newLoansTotalAmount?: number;
 
-  @ApiProperty({ description: 'Lista de créditos nuevos', type: [LoanSummaryReportDetailDto] })
+  @ApiProperty({ description: 'Lista de créditos nuevos', type: [LoanReportDetailDto] })
   @ValidateNested({ each: true })
-  @Type(() => LoanSummaryReportDetailDto)
-  newLoansDetails?: LoanSummaryReportDetailDto[];
+  @Type(() => LoanReportDetailDto)
+  newLoansDetails?: LoanReportDetailDto[];
 
   @ApiProperty({ description: 'Número de créditos refinanciados', example: 2 })
   @IsOptional()
@@ -104,8 +104,8 @@ export class ResponseLoanSummaryReportDto {
   @Type(() => Number)
   refinancedLoansTotalAmount?: number;
 
-  @ApiProperty({ description: 'Lista de créditos refinanciados', type: [LoanSummaryReportDetailDto] })
+  @ApiProperty({ description: 'Lista de créditos refinanciados', type: [LoanReportDetailDto] })
   @ValidateNested({ each: true })
-  @Type(() => LoanSummaryReportDetailDto)
-  refinancedLoansDetails?: LoanSummaryReportDetailDto[];
+  @Type(() => LoanReportDetailDto)
+  refinancedLoansDetails?: LoanReportDetailDto[];
 }

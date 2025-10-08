@@ -1,10 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as ExcelJS from 'exceljs';
 import PdfPrinter from 'pdfmake';
-import { TDocumentDefinitions } from 'pdfmake/interfaces';
 import { Chart, registerables } from 'chart.js';
 import { createCanvas } from 'canvas';
-import { ResponseLoanSummaryReportDto } from './dto';
 import * as path from 'path';
 import * as fs from 'fs';
 import { join } from 'path';

@@ -1,8 +1,8 @@
-import { ResponseLoanSummaryReportDto } from "../dto";
+import { ResponseLoanReportDto } from "../dto/response-loan-report.dto";
 
-export interface ReportLoanSummaryResponse{
+export interface LoanReportResponse{
     customMessage: string;
-    loansSummary: ResponseLoanSummaryReportDto;
+    loansReport: ResponseLoanReportDto;
   };
 
   export interface NewLoanInterestDetail {

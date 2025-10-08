@@ -1,5 +1,2 @@
-export * from './loan-summary-response.interface';
-export interface CollectionReportResponse {
-  customMessage: string;
-  collectionReport: any;
-}
+export * from './loan-report-response.interface';
+export * from './collection-report-response.interface';
