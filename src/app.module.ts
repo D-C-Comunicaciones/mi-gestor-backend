@@ -74,7 +74,12 @@ import { APP_INTERCEPTOR } from '@nestjs/core';
   ],
   controllers: [AppController],
   providers: [
-    AppService],
+    AppService,
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: MetricsHttpInterceptor,
+    },
+  ],
 })
 
 export class AppModule implements NestModule {

@@ -71,7 +71,7 @@ async function bootstrap() {
 
   // Interceptor global para respuestas exitosas
   app.useGlobalInterceptors(
-    new MetricsHttpInterceptor(app.get(MetricService)),
+    // new MetricsHttpInterceptor(app.get(MetricService)),
     new PrismaDecimalInterceptor(),
     new ResponseInterceptor(),
     new ClassSerializerInterceptor(app.get(Reflector)),
