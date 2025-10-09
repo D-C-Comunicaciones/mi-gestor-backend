@@ -52,6 +52,10 @@ interface EnvVars {
     // WEBHOOKS
     WEBHOOK_IMPORT_URL: string;
 
+    // METRICS AUTH
+    METRICS_ACCESS_TOKEN: string;
+    METRICS_PREFIX: string;
+
 }
 
 const envVarsSchema = joi.object({
@@ -102,6 +106,10 @@ const envVarsSchema = joi.object({
 
     // WEBHOOKS
     WEBHOOK_IMPORT_URL: joi.string().uri().optional(),
+
+    // METRICS AUTH
+    METRICS_ACCESS_TOKEN: joi.string().optional(),
+    METRICS_PREFIX: joi.string().default('migestor_metrics'),
 
 }).unknown(true);
 
@@ -171,4 +179,10 @@ export const envs = {
     webhooks: {
         importUrl: envVars.WEBHOOK_IMPORT_URL,
     },
+
+    metrics:{
+        prefix: envVars.METRICS_PREFIX,
+        metricsAccessToken: envVars.METRICS_ACCESS_TOKEN,
+    }
+    
 };

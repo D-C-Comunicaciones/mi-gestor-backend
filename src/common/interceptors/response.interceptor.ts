@@ -7,6 +7,12 @@ export class ResponseInterceptor implements NestInterceptor {
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
     const ctx = context.switchToHttp();
     const response = ctx.getResponse();
+    const request = ctx.getRequest();
+
+    // 🚫 No transformar la respuesta del endpoint de métricas
+    if (request.path.includes('/metrics')) {
+      return next.handle();
+    }
 
     return next.handle().pipe(
       map((data) => {

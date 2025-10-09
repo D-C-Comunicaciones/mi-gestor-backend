@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ClsModule } from 'nestjs-cls';
@@ -31,6 +31,8 @@ import { PrometheusModule } from '@willsoto/nestjs-prometheus';
 import { CollectionRoutesModule } from './modules/collection-routes/collection-routes.module';
 import { NotesModule } from './modules/notes/notes.module';
 import { TypeDiscountsModule } from './modules/type-discounts/type-discounts.module';
+import { MetricModule } from './infraestructure/metrics/metrics.module';
+import { MetricsAuthMiddleware } from '@common/middlewares';
 
 @Module({
   imports: [
@@ -66,10 +68,15 @@ import { TypeDiscountsModule } from './modules/type-discounts/type-discounts.mod
     PaymentMethodsModule,
     CollectionRoutesModule,
     NotesModule,
-    TypeDiscountsModule
+    TypeDiscountsModule,
+    MetricModule
   ],
   controllers: [AppController],
   providers: [AppService],
 })
 
-export class AppModule { }
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(MetricsAuthMiddleware).forRoutes('metrics');
+  }
+}
