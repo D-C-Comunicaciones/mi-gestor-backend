@@ -33,6 +33,8 @@ import { NotesModule } from './modules/notes/notes.module';
 import { TypeDiscountsModule } from './modules/type-discounts/type-discounts.module';
 import { MetricModule } from './infraestructure/metrics/metrics.module';
 import { MetricsAuthMiddleware } from '@common/middlewares';
+import { MetricsHttpInterceptor } from '@common/interceptors';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 
 @Module({
   imports: [
@@ -40,7 +42,6 @@ import { MetricsAuthMiddleware } from '@common/middlewares';
       global: true,
       middleware: { mount: true }, // esto lo instala como middleware global
     }),
-    PrometheusModule.register(),
     AuthModule,
     CollectorsModule,
     CustomersModule,
@@ -72,7 +73,8 @@ import { MetricsAuthMiddleware } from '@common/middlewares';
     MetricModule
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService],
 })
 
 export class AppModule implements NestModule {

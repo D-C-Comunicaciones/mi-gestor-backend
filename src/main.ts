@@ -6,7 +6,7 @@ import { AllExceptionsFilter } from '@common/filters/all-exceptions.filter';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import cookieParser from 'cookie-parser';
-import { PrismaDecimalInterceptor, ResponseInterceptor, MetricsHttpInterceptor } from '@common/interceptors';
+import { MetricsHttpInterceptor, PrismaDecimalInterceptor, ResponseInterceptor } from '@common/interceptors';
 import * as express from 'express';
 import { join } from 'path';
 import { apiReference } from '@scalar/nestjs-api-reference';
