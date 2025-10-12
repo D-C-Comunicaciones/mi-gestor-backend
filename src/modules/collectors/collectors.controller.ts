@@ -47,36 +47,6 @@ export class CollectorsController {
 
   }
 
-  @Get('unassigned')
-  @Permissions('view.collectors')
-  @SwaggerFindUnassignedCollectorsDocs()
-  async findUnassigned(
-    @Query() collectorPaginationDto: CollectorPaginationDto,
-    @Res({ passthrough: true }) res: Response,
-  ): Promise<CollectorListResponse> {
-    const { rawCollectors, meta } = await this.collectorsService.findUnassigned(collectorPaginationDto);
-    const collectorsArray = Array.isArray(rawCollectors) ? rawCollectors : [rawCollectors];
-
-    if (collectorsArray.length === 0) {
-      return {
-        customMessage: 'No existen registros',
-        collectors: [],
-        meta,
-      };
-    }
-
-    const collectors = plainToInstance(ResponseCollectorDto, collectorsArray, {
-      excludeExtraneousValues: true,
-    });
-
-    return {
-      customMessage: 'Cobradores obtenidos correctamente',
-      collectors,
-      meta,
-    };
-
-  }
-
   @Post()
   @Permissions('create.collectors')
   @SwaggerCreateCollectorDocs()

@@ -77,6 +77,7 @@ export class CustomersController {
             user: responseUser,
         };
     }
+
     @Post()
     @Permissions('create.customers')
     @SwaggerCreateCustomerDoc()

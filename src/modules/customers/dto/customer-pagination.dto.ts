@@ -1,9 +1,32 @@
-import { IsBoolean, IsInt, IsOptional, Min } from 'class-validator';
-import { Type } from 'class-transformer';
+import { IsOptional, IsBoolean } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import { PaginationDto } from '@common/dto';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
-export class CustomerPaginationDto {
-  @ApiPropertyOptional({ example: 1 }) @IsOptional() @Type(() => Number) @IsInt() @Min(1) page?: number = 1;
-  @ApiPropertyOptional({ example: 10 }) @IsOptional() @Type(() => Number) @IsInt() @Min(1) limit?: number = 10;
-  @ApiPropertyOptional({ example: true }) @IsOptional() @Type(() => Boolean) @IsBoolean() isActive?: boolean;
+export class CustomerPaginationDto extends PaginationDto {
+  @ApiPropertyOptional({
+    description: 'Filtrar clientes por estado activo/inactivo',
+    example: true,
+  })
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === 'true') return true;
+    if (value === 'false') return false;
+    return value;
+  })
+  @IsBoolean()
+  isActive?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Filtrar clientes por estado de asignación a una ruta. `true` para asignados, `false` para no asignados.',
+    example: false,
+  })
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === 'true') return true;
+    if (value === 'false') return false;
+    return value;
+  })
+  @IsBoolean()
+  assigned?: boolean;
 }

@@ -21,4 +21,17 @@ export class CollectorPaginationDto extends PaginationDto {
   })
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Filtrar cobradores por estado de asignación a una ruta. `true` para asignados, `false` para no asignados.',
+    example: false,
+  })
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === 'true') return true;
+    if (value === 'false') return false;
+    return value;
+  })
+  @IsBoolean()
+  assigned?: boolean;
 }
