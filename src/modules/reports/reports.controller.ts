@@ -8,7 +8,7 @@ import { plainToInstance } from 'class-transformer';
 import { JwtAuthGuard, PermissionsGuard } from '@modules/auth/guards';
 import { ReportCollectionService } from './reports-collections.service';
 import { ReportLoanService } from './reports-loans.service';
-import { ApiExportReport, SwaggerCollectionsReport, SwaggerLoansReport } from '@common/decorators';
+import { SwaggerExportReport, SwaggerCollectionsReport, SwaggerLoansReport } from '@common/decorators/swagger/reports';
 import { LoanReportDetailDto, ResponseLoanReportDto } from './dto/response-loan-report.dto';
 import { CollectionReportResponse, LoanReportResponse } from './interfaces';
 import { ResponseCollectionReportDto } from './dto';
@@ -52,7 +52,7 @@ export class ReportsController {
 
   @Get('export/:reportType/:format')
   @Permissions('export.reports')
-  @ApiExportReport({
+  @SwaggerExportReport({
     reportTypes: ['loans-report', 'interest-summary', 'collections-report'],
     formats: ['xlsx', 'pdf']
   })

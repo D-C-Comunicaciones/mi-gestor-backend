@@ -6,9 +6,10 @@ import { Permissions } from '@modules/auth/decorators';
 import { plainToInstance } from 'class-transformer';
 import { ResponseCollectionDto, ResponseCollectionListDto } from './dto';
 import { CollectionResponse, CollectionListResponse } from './interfaces';
-import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { PaginationDto } from '@common/dto';
-import { SwaggerCreateCollection, SwaggerGetCollections } from '@common/decorators';
+import { SwaggerCreateCollection, SwaggerGetCollections } from '@common/decorators/swagger/collections';
+import { HistoryCollectionQueryDto } from './dto';
 
 @ApiTags('collections')
 @ApiBearerAuth()
@@ -27,6 +28,25 @@ export class CollectionsController {
       customMessage: 'Cobro registrado exitosamente',
       collection
     }
+  }
+
+  @Get('history')
+  @Permissions('view.collections')
+  @ApiOperation({ summary: 'Obtener historial de recaudos por cliente o préstamo' })
+  @ApiResponse({ status: 200, description: 'Historial de recaudos obtenido correctamente.' })
+  @ApiResponse({ status: 400, description: 'Parámetros inválidos.' })
+  async getHistory(@Query() query: HistoryCollectionQueryDto) {
+    const history = await this.collectionsService.findAllByCustomerOrLoan(query);
+    if (history.length === 0) {
+      return {
+        customMessage: 'No se encontraron recaudos para los criterios especificados.',
+        data: [],
+      };
+    }
+    return {
+      customMessage: 'Historial de recaudos obtenido correctamente.',
+      data: history,
+    };
   }
 
   @Get()

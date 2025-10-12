@@ -1,0 +1,1 @@
+export * from './find-all-type-discounts-doc.decorator';

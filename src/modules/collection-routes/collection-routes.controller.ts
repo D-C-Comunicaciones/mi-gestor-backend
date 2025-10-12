@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, HttpStatus, Query, Req, UseGuards, NotFoundException, HttpCode } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, HttpStatus, Query, Req, UseGuards, HttpCode } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBody } from '@nestjs/swagger';
 import { UpdateCollectionRouteDto, ChangeStatusCollectionRouteDto, CreateCollectionRouteDto } from './dto';
 import { AssignCustomersToRouteDto } from './dto/assign-customers-to-route.dto';
@@ -8,11 +8,10 @@ import { Permissions } from '@modules/auth/decorators';
 import { plainToInstance } from 'class-transformer';
 import { CollectionRoutesPaginationDto, ResponseCollectionRouteDto } from './dto';
 import { CollectionRoutesService } from './collection-routes.service';
-import { HttpStatusCode } from 'node_modules/axios/index.cjs';
 import { BulkAssignCollectorsDto } from './dto/bulk-assign-collectors.dto';
 import { BulkAssignCustomersDto } from './dto/bulk-assign-customers.dto';
 
-@ApiTags('Rutas de Cobranza')
+@ApiTags('collectionRoutes')
 
 @Controller('collection-routes')
 @UseGuards(JwtAuthGuard, PermissionsGuard)

@@ -1,7 +1,7 @@
 import { Controller, Get, UseGuards } from '@nestjs/common';
 import { TypeDiscountsService } from './type-discounts.service';
 import { JwtAuthGuard, PermissionsGuard } from '@modules/auth/guards';
-import { SwaggerTypeDiscounts } from '@common/decorators';
+import { SwaggerTypeDiscounts } from '@common/decorators/swagger/type-discounts';
 
 @Controller('type-discounts')
 @UseGuards(JwtAuthGuard, PermissionsGuard)

@@ -86,6 +86,60 @@ export class CollectorsService {
     };
   }
 
+  async findUnassigned(paginationDto: CollectorPaginationDto) {
+    const { page = 1, limit = 10 } = paginationDto;
+
+    const where: Prisma.CollectorWhereInput = {
+      routes: {
+        none: {},
+      },
+      isActive: true,
+    };
+
+    const totalItems = await this.prisma.collector.count({ where });
+    const lastPage = Math.ceil(totalItems / limit) || 1;
+
+    if (page > lastPage && totalItems > 0) {
+      throw new BadRequestException(`La página #${page} no existe`);
+    }
+
+    const unassignedCollectors = await this.prisma.collector.findMany({
+      skip: (page - 1) * limit,
+      take: limit,
+      where,
+      include: {
+        user: true,
+        typeDocumentIdentification: true,
+        gender: true,
+      },
+      orderBy: {
+        id: 'asc',
+      },
+    });
+
+    const collectorsWithChanges = await Promise.all(
+      unassignedCollectors.map(async (collector) => {
+        const { create, lastUpdate } = await this.changesService.getChanges('collector', collector.id);
+        return {
+          ...collector,
+          createdAt: create?.timestamp || null,
+          updatedAt: lastUpdate?.timestamp || create?.timestamp || null,
+        };
+      }),
+    );
+
+    return {
+      rawCollectors: collectorsWithChanges,
+      meta: {
+        total: totalItems,
+        page,
+        lastPage,
+        limit,
+        hasNextPage: page < lastPage,
+      },
+    };
+  }
+
   async create(data: CreateCollectorDto) {
 
     // Validaciones previas

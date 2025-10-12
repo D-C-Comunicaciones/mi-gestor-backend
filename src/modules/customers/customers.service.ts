@@ -171,6 +171,71 @@ export class CustomersService {
     return { customer: customerObj, loans, user };
   }
 
+  async findUnassigned(paginationDto: CustomerPaginationDto) {
+    const { page = 1, limit = 10 } = paginationDto;
+
+    const where: Prisma.CustomerWhereInput = {
+      collectionRouteId: null,
+      isActive: true,
+    };
+
+    const totalItems = await this.prisma.customer.count({ where });
+
+    if (totalItems === 0) {
+      return {
+        customers: [],
+        meta: {
+          total: 0,
+          page: 1,
+          lastPage: 0,
+          limit,
+          hasNextPage: false,
+        },
+      };
+    }
+
+    const lastPage = Math.ceil(totalItems / limit) || 1;
+    if (page > lastPage) {
+      throw new BadRequestException(`La página #${page} no existe`);
+    }
+
+    const rawCustomers = await this.prisma.customer.findMany({
+      skip: (page - 1) * limit,
+      take: limit,
+      where,
+      orderBy: { id: 'asc' },
+      include: {
+        user: true,
+        zone: true,
+        typeDocumentIdentification: true,
+        gender: true,
+      },
+    });
+
+    const customersWithAudit = await Promise.all(
+      rawCustomers.map(async (customer) => {
+        const dto = this.buildCustomerResponse(customer);
+        const { create, lastUpdate } = await this.changesService.getChanges('customer', customer.id);
+        return {
+          ...dto,
+          createdAt: create?.timestamp || null,
+          updatedAt: lastUpdate?.timestamp || create?.timestamp || null,
+        };
+      }),
+    );
+
+    return {
+      customers: customersWithAudit,
+      meta: {
+        total: totalItems,
+        page,
+        lastPage,
+        limit,
+        hasNextPage: page < lastPage,
+      },
+    };
+  }
+
   async create(data: CreateCustomerDto) {
     // Validaciones previas para evitar gastar la transacción si ya existen
     const [existingDoc, existingEmail] = await Promise.all([
@@ -362,8 +427,8 @@ export class CustomersService {
           zoneId: created.zoneId,
           zoneName: created.zoneName,
           zoneCode: created.zoneCode,
-          createdAt: created.createdAt,
-          updatedAt: created.updatedAt,
+          createdAt: created.createdAt.toISOString().split('T')[0],
+          updatedAt: created.updatedAt.toISOString().split('T')[0],
         });
       } catch (err: any) {
         let field: string | undefined;

@@ -5,6 +5,7 @@ import { Decimal } from '@prisma/client/runtime/library';
 import { Prisma, PaymentAllocation, PositiveBalance } from '@prisma/client';
 import { CreateCollectionDto } from './dto/create-collection.dto';
 import { CollectionPaginationDto } from './dto/collection-pagination.dto';
+import { HistoryCollectionQueryDto } from './dto';
 
 type InstallmentWithLoan = Prisma.InstallmentGetPayload<{
   include: {
@@ -431,6 +432,106 @@ export class CollectionsService {
         })),
       };
     });
+  }
+
+  /**
+   * Obtiene el historial de recaudos para un cliente o un préstamo específico.
+   */
+  async findAllByCustomerOrLoan(query: HistoryCollectionQueryDto) {
+    const { customerId, loanId } = query;
+
+    if (!customerId && !loanId) {
+      throw new BadRequestException('Debe proporcionar customerId o loanId.');
+    }
+
+    const where: Prisma.LoanWhereInput = {};
+    if (customerId) where.customerId = customerId;
+    if (loanId) where.id = loanId;
+
+    const loansWithPayments = await this.prisma.loan.findMany({
+      where,
+      include: {
+        customer: true,
+        loanType: true,
+        loanStatus: true,
+        payments: {
+          include: {
+            allocations: {
+              include: {
+                installment: { select: { sequence: true } },
+              },
+            },
+            paymentMethod: true,
+            recordedByUser: {
+              select: {
+                id: true,
+                name: true,
+                collector: {
+                  select: { id: true, firstName: true, lastName: true },
+                },
+              },
+            },
+          },
+          orderBy: { paymentDate: 'asc' },
+        },
+      },
+      orderBy: { startDate: 'asc' },
+    });
+
+    if (loansWithPayments.length === 0) {
+      return [];
+    }
+
+    const result = loansWithPayments.map((loan) => {
+      const paymentsDetails = loan.payments.map((payment) => {
+        const totalAppliedToCapital = payment.allocations.reduce(
+          (sum, alloc) => sum.plus(alloc.appliedToCapital ?? 0),
+          new Decimal(0),
+        );
+        const totalAppliedToInterest = payment.allocations.reduce(
+          (sum, alloc) => sum.plus(alloc.appliedToInterest ?? 0),
+          new Decimal(0),
+        );
+        const totalAppliedToLateFee = payment.allocations.reduce(
+          (sum, alloc) => sum.plus(alloc.appliedToLateFee ?? 0),
+          new Decimal(0),
+        );
+
+        const collector = payment.recordedByUser.collector;
+
+        return {
+          paymentId: payment.id,
+          paymentDate: payment.paymentDate ? payment.paymentDate.toISOString().slice(0, 10) : null,
+          paymentAmount: new Decimal(payment.amount).toFixed(2),
+          paymentMethod: payment.paymentMethod?.name || 'N/A',
+          appliedToCapital: totalAppliedToCapital.toFixed(2),
+          appliedToInterest: totalAppliedToInterest.toFixed(2),
+          appliedToLateFee: totalAppliedToLateFee.toFixed(2),
+          collector: {
+            id: collector?.id || payment.recordedByUser.id,
+            name: collector
+              ? `${collector.firstName} ${collector.lastName}`
+              : payment.recordedByUser.name,
+          },
+        };
+      });
+
+      return {
+        loanId: loan.id,
+        loanAmount: new Decimal(loan.loanAmount).toFixed(2),
+        remainingBalance: new Decimal(loan.remainingBalance).toFixed(2),
+        loanTypeName: this.translateLoanType(loan.loanType.name),
+        loanStatusName: this.translateLoanStatus(loan.loanStatus.name),
+        customer: {
+          id: loan.customer.id,
+          name: `${loan.customer.firstName} ${loan.customer.lastName}`,
+          documentNumber: loan.customer.documentNumber,
+        },
+        payments: paymentsDetails,
+      };
+    });
+
+    return result;
   }
 
   // ------------------- findAll (igual que antes) -------------------
