@@ -26,38 +26,53 @@ export class DiscountsService {
     }
 
     return await this.prisma.$transaction(async (tx) => {
-      // Obtener el id del status "unPaid" (case-insensitive)
-      const unpaidStatus = await tx.moratoryInterestStatus.findFirst({
-        where: { name: { equals: 'unPaid', mode: 'insensitive' } },
+      // ✅ Obtener los estados necesarios
+      const statuses = await tx.moratoryInterestStatus.findMany({
+        where: {
+          name: {
+            in: ['Unpaid', 'Paid', 'Partially Paid', 'Partially Discounted', 'Discounted'],
+            mode: 'insensitive',
+          },
+        },
       });
-      if (!unpaidStatus) throw new BadRequestException('No se encontró el estado "unPaid" en MoratoryInterestStatus');
 
-      // Obtener el id del status "Discounted" (case-insensitive)
-      const discountedStatus = await tx.moratoryInterestStatus.findFirst({
-        where: { name: { equals: 'Discounted', mode: 'insensitive' } },
-      });
-      if (!discountedStatus) throw new BadRequestException('No se encontró el estado "Discounted" en MoratoryInterestStatus');
+      const getStatusId = (name: string) =>
+        statuses.find((s) => s.name.toLowerCase() === name.toLowerCase())?.id;
 
-      const unpaidStatusId = unpaidStatus.id;
-      const discountedStatusId = discountedStatus.id;
+      const unpaidStatusId = getStatusId('Unpaid');
+      const partiallyPaidStatusId = getStatusId('Partially Paid');
+      const partiallyDiscountedStatusId = getStatusId('Partially Discounted');
+      const discountedStatusId = getStatusId('Discounted');
 
-      // Obtener todas las cuotas activas del préstamo con sus moratorios pendientes
+      if (!unpaidStatusId || !partiallyDiscountedStatusId || !discountedStatusId) {
+        throw new BadRequestException('No se encontraron los estados de moratorio requeridos');
+      }
+
+      // ✅ Obtener cuotas con intereses moratorios aplicables
       const installments = await tx.installment.findMany({
         where: { loanId: dto.loanId, isActive: true },
         orderBy: { sequence: 'asc' },
         include: {
           moratoryInterests: {
-            where: { isPaid: false, moratoryInterestStatusId: unpaidStatusId },
-            orderBy: { id: 'asc' }, // Para aplicar en orden
+            where: {
+              isPaid: false,
+              moratoryInterestStatus: {
+                name: {
+                  in: ['Unpaid', 'Partially Paid', 'Partially Discounted'],
+                  mode: 'insensitive',
+                },
+              },
+            },
+            orderBy: { id: 'asc' },
           },
         },
       });
 
       if (!installments || installments.length === 0) {
-        throw new BadRequestException('No se encontraron cuotas activas con intereses moratorios no pagados para este préstamo');
+        throw new BadRequestException('No se encontraron cuotas activas con intereses moratorios aplicables');
       }
 
-      // 🔹 Validación del monto máximo de descuento
+      // ✅ Calcular total de intereses moratorios elegibles
       let totalPendingMoratory = new Prisma.Decimal(0);
       for (const installment of installments) {
         for (const moratory of installment.moratoryInterests) {
@@ -67,11 +82,11 @@ export class DiscountsService {
 
       if (new Prisma.Decimal(dto.amount).greaterThan(totalPendingMoratory)) {
         throw new BadRequestException(
-          `El monto del descuento (${dto.amount}) excede el total de intereses moratorios pendientes (${totalPendingMoratory.toNumber()}) para este préstamo`
+          `El monto del descuento (${dto.amount}) excede el total de intereses moratorios pendientes (${totalPendingMoratory.toNumber()})`
         );
       }
 
-      // ✅ Aplicar el descuento en orden de cuotas y moratorios
+      // ✅ Aplicar descuentos
       let remainingDiscount = new Prisma.Decimal(dto.amount);
       const appliedDiscounts: any[] = [];
 
@@ -80,20 +95,29 @@ export class DiscountsService {
           if (remainingDiscount.lte(0)) break;
 
           const moratoryAmount = new Prisma.Decimal(moratory.amount);
-          const discountToApply = remainingDiscount.greaterThan(moratoryAmount) ? moratoryAmount : remainingDiscount;
+          const discountToApply = remainingDiscount.greaterThan(moratoryAmount)
+            ? moratoryAmount
+            : remainingDiscount;
 
-          const updatedMoratory = await tx.moratoryInterest.update({
+          const isTotalDiscount = discountToApply.equals(moratoryAmount);
+          const discountTypeLabel = isTotalDiscount ? 'DESCUENTO TOTAL' : 'DESCUENTO PARCIAL';
+
+          // ✅ Actualizar moratorio (sin modificar amount)
+          await tx.moratoryInterest.update({
             where: { id: moratory.id },
             data: {
-              amount: moratoryAmount.minus(discountToApply).toNumber(),
-              isDiscounted: discountToApply.equals(moratoryAmount) ? true : moratory.isDiscounted,
-              moratoryInterestStatusId: discountToApply.equals(moratoryAmount) ? discountedStatusId : moratory.moratoryInterestStatusId,
+              isDiscounted: isTotalDiscount,
+              moratoryInterestStatusId: isTotalDiscount
+                ? discountedStatusId
+                : partiallyDiscountedStatusId,
             },
           });
 
+          // 📝 Descripción del descuento aplicado
           const baseDescription = dto.description ? `${dto.description}. ` : '';
-          const appliedDescription = `DESCRIPCIÓN APLICADA POR EL SISTEMA: descuento de ${discountToApply.toNumber()} aplicado a interés moratorio ID ${moratory.id} (cuota ${installment.sequence}), generado por: ${user.userId} - ${user.email || 'N/A'}`;
+          const appliedDescription = `DESCRIPCIÓN APLICADA POR EL SISTEMA: ${discountTypeLabel} de ${discountToApply.toNumber()} aplicado a interés moratorio ID ${moratory.id} (cuota ${installment.sequence}), generado por: ${user.userId} - ${user.email || 'N/A'}`;
 
+          // 💾 Crear registro del descuento
           const discountRecord = await tx.discount.create({
             data: {
               discountTypeId: dto.discountTypeId,

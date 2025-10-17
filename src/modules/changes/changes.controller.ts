@@ -5,7 +5,7 @@ import { plainToInstance } from 'class-transformer';
 import { AuditPaginationDto, ResponseChangeDto } from './dto';
 import { JwtAuthGuard, PermissionsGuard } from '@modules/auth/guards';
 import { Permissions } from '@modules/auth/decorators';
-import { SwaggerChangesList } from '@common/decorators/swagger/changes';
+import { SwaggerChangesList } from '@common/decorators/swagger';
 
 @Controller('changes')
 @UseGuards(JwtAuthGuard, PermissionsGuard)

@@ -15,21 +15,21 @@ export function SwaggerFindAllCustomersDoc() {
         summary: 'Listar clientes', 
         description: `Obtiene una lista paginada de clientes con múltiples opciones de filtrado.
         
-**Parámetros disponibles:**
-- \`page\`: Número de página (por defecto: 1)
-- \`limit\`: Cantidad de registros por página (por defecto: 10)
-- \`isActive\`: Filtrar por estado activo/inactivo
-- \`assigned\`: Filtrar por asignación a rutas (true = asignados, false = sin asignar)
+        **Parámetros disponibles:**
+        - \`page\`: Número de página (por defecto: 1)
+        - \`limit\`: Cantidad de registros por página (por defecto: 10)
+        - \`isActive\`: Filtrar por estado activo/inactivo
+        - \`assigned\`: Filtrar por asignación a rutas (true = asignados, false = sin asignar)
 
-**Ejemplos de uso:**
-- \`/v1/customers\` - Todos los clientes (paginación por defecto)
-- \`/v1/customers?assigned=false\` - Solo clientes sin ruta asignada
-- \`/v1/customers?assigned=true\` - Solo clientes con ruta asignada
-- \`/v1/customers?isActive=true\` - Solo clientes activos
-- \`/v1/customers?isActive=false\` - Solo clientes inactivos
-- \`/v1/customers?page=2&limit=20\` - Segunda página con 20 registros
-- \`/v1/customers?assigned=false&isActive=true\` - Clientes activos sin ruta
-- \`/v1/customers?assigned=true&isActive=true&page=1&limit=5\` - Primera página de clientes activos con ruta (5 por página)`
+        **Ejemplos de uso:**
+        - \`/v1/customers\` - Todos los clientes (paginación por defecto)
+        - \`/v1/customers?assigned=false\` - Solo clientes sin ruta asignada
+        - \`/v1/customers?assigned=true\` - Solo clientes con ruta asignada
+        - \`/v1/customers?isActive=true\` - Solo clientes activos
+        - \`/v1/customers?isActive=false\` - Solo clientes inactivos
+        - \`/v1/customers?page=2&limit=20\` - Segunda página con 20 registros
+        - \`/v1/customers?assigned=false&isActive=true\` - Clientes activos sin ruta
+        - \`/v1/customers?assigned=true&isActive=true&page=1&limit=5\` - Primera página de clientes activos con ruta (5 por página)`
       }),
       ApiQuery({ 
         name: 'page', 

@@ -41,11 +41,13 @@ export class ReportExporterService {
      */
     async generateCollectionReportPdf(reportData: CollectionReportData): Promise<Buffer> {
         try {
-            // 🎯 Generar gráficas antes de crear el template
-            let globalPerformanceChartBase64 = '';
-            let comparisonChartBase64 = '';
+            // Logos y texto vertical
             const { headerLogo, watermarkLogo } = this.getLogosBase64();
             const verticalTextBase64 = await this.getVerticalTextBase64(envs.verticalTextReports, 792);
+
+            // 🎯 Generar gráficas
+            let globalPerformanceChartBase64 = '';
+            let comparisonChartBase64 = '';
 
             try {
                 const globalChartBuffer = await this.generateGlobalPerformanceChart(reportData);
@@ -61,53 +63,15 @@ export class ReportExporterService {
                 this.logger.warn('Error generando gráfica de comparación:', error.message);
             }
 
-            // 🎯 Mapear los datos para que coincidan con la interfaz del template
+            // Mapear datos para el template
             const templateData: CollectionReportData = {
+                ...reportData,
                 reportDate: new Date().toLocaleDateString(envs.appLocale),
-                startDate: reportData.startDate,
-                endDate: reportData.endDate,
-                headerLogo: headerLogo,
-                watermarkLogo: watermarkLogo,
-                verticalTextBase64: verticalTextBase64, // 🎯 Agregar texto vertical
-                globalPerformanceChartBase64, // 🎯 Agregar gráfica de rendimiento global
-                comparisonChartBase64, // 🎯 Agregar gráfica de comparación
-                summary: {
-                    globalPerformancePercentage: reportData.summary.globalPerformancePercentage,
-                    totalAssigned: reportData.summary.totalAssigned,
-                    totalCollected: reportData.summary.totalCollected,
-                    totalCollections: reportData.summary.totalCollections,
-                    activeCollectors: reportData.summary.activeCollectors,
-                    averageCollectedPerCollector: reportData.summary.averageCollectedPerCollector,
-                    bestCollector: {
-                        name: reportData.summary.bestCollector.name,
-                        percentage: reportData.summary.bestCollector.percentage,
-                        collected: reportData.summary.bestCollector.collected,
-                    },
-                    worstCollector: {
-                        name: reportData.summary.worstCollector.name,
-                        percentage: reportData.summary.worstCollector.percentage,
-                        collected: reportData.summary.worstCollector.collected,
-                    },
-                },
-                // 🎯 Mapear collectorSummary con los campos correctos
-                collectorSummary: reportData.collectorSummary.map((collector: any) => ({
-                    collectorName: collector.collectorName,
-                    collectorRoute: collector.collectorRoute, // 🎯 Usar collectorRoute
-                    totalAssigned: collector.totalAssigned,
-                    totalCollected: collector.totalCollected,
-                    totalCollectionsMade: collector.totalCollectionsMade, // 🎯 Usar totalCollectionsMade
-                    performancePercentage: collector.performancePercentage,
-                    averageCollectionAmount: collector.averageCollectionAmount,
-                })),
-                // 🎯 Mapear collections con los campos correctos
-                collections: reportData.collections.map((collection: any) => ({
-                    paymentDate: collection.paymentDate,
-                    loanId: collection.loanId.toString(),
-                    customerName: collection.customerName,
-                    collectorName: collection.collectorName,
-                    collectorRoute: collection.collectorRoute, // 🎯 Usar collectorRoute
-                    amount: collection.amount,
-                })),
+                headerLogo,
+                watermarkLogo,
+                verticalTextBase64,
+                globalPerformanceChartBase64,
+                comparisonChartBase64,
             };
 
             const docDefinition = await collectionsReportTemplate(templateData);
@@ -133,29 +97,21 @@ export class ReportExporterService {
     /**
      * Genera reporte de recaudos en Excel
      */
-    async generateCollectionReportExcel(data: any): Promise<Buffer> {
-        // Validar que data tenga la estructura esperada
-        if (!data || typeof data !== 'object') {
-            throw new Error('Los datos del reporte son inválidos o están vacíos');
-        }
-
+    async generateCollectionReportExcel(reportData: CollectionReportData): Promise<Buffer> {
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet('Reporte de Recaudos');
 
-        const collections = data.collections || [];
-        const summary = data.summary || {};
-        const collectorSummary = data.collectorSummary || [];
+        const { collections, summary, collectorSummary, startDate, endDate } = reportData;
 
-        // 1. Encabezado y Resumen
+        // 1. Encabezado
         worksheet.getCell('A1').value = 'REPORTE DE RECAUDOS POR COBRADOR';
         worksheet.getCell('A1').font = { bold: true, size: 16 };
         worksheet.mergeCells('A1:H1');
         worksheet.getCell('A1').alignment = { horizontal: 'center' };
-
-        worksheet.getCell('A3').value = `Período: ${data.startDate || 'N/A'} - ${data.endDate || 'N/A'}`;
+        worksheet.getCell('A3').value = `Período: ${startDate || 'N/A'} - ${endDate || 'N/A'}`;
         worksheet.getCell('A3').font = { bold: true };
 
-        // Resumen general
+        // 2. Resumen general
         worksheet.getCell('A5').value = 'RESUMEN GENERAL';
         worksheet.getCell('A5').font = { bold: true, size: 14 };
         worksheet.getCell('A6').value = 'Total de Recaudos:';
@@ -164,10 +120,9 @@ export class ReportExporterService {
         worksheet.getCell('B7').value = summary.totalCollected || 0;
         worksheet.getCell('B7').numFmt = '$#,##0.00';
 
-        // 2. Resumen por Cobrador
+        // 3. Resumen por cobrador
         let currentRow = 10;
-
-        if (collectorSummary.length > 0) {
+        if (collectorSummary.length) {
             worksheet.getCell(`A${currentRow}`).value = 'RESUMEN POR COBRADOR';
             worksheet.getCell(`A${currentRow}`).font = { bold: true, size: 14 };
             currentRow += 2;
@@ -187,21 +142,21 @@ export class ReportExporterService {
                     { name: 'Promedio por Cobro' }
                 ],
                 rows: collectorSummary.map(c => [
-                    c.collectorName || '',
-                    c.zoneName || '',
-                    c.totalAssigned || 0,
-                    c.totalCollected || 0,
-                    c.performancePercentage || 0,
-                    c.totalCollectionsMade || c.collectionsCount || c.paymentsRegistered || 0,
-                    c.averageCollectionAmount || 0
-                ]),
+                    c.collectorName,
+                    c.collectorRoute,
+                    c.totalAssigned,
+                    c.totalCollected,
+                    c.performancePercentage,
+                    c.totalCollectionsMade,
+                    c.averageCollectionAmount
+                ])
             });
 
             currentRow += collectorSummary.length + 3;
         }
 
-        // 3. Detalle de Recaudos
-        if (collections.length > 0) {
+        // 4. Detalle de cobros
+        if (collections.length) {
             worksheet.getCell(`A${currentRow}`).value = 'DETALLE DE RECAUDOS';
             worksheet.getCell(`A${currentRow}`).font = { bold: true, size: 14 };
             currentRow += 2;
@@ -221,37 +176,25 @@ export class ReportExporterService {
                 ],
                 rows: collections.map(c => [
                     c.paymentDate?.split(' ')[0] || '',
-                    c.collectorName || '',
-                    c.customerName || '',
-                    c.loanId || '',
-                    c.zoneName || '',
-                    c.amount || 0
-                ]),
+                    c.collectorName,
+                    c.customerName,
+                    c.loanId,
+                    c.collectorRoute,
+                    c.amount
+                ])
             });
-
-            // Aplicar formato de moneda
-            worksheet.getColumn(4).numFmt = '$#,##0.00'; // Total Asignado
-            worksheet.getColumn(5).numFmt = '$#,##0.00'; // Total Recaudado
-            worksheet.getColumn(6).numFmt = '0.00"%"';   // Rendimiento %
-            worksheet.getColumn(8).numFmt = '$#,##0.00'; // Promedio por Cobro
-
-            // Para la tabla de detalle
-            const detailTableCol = currentRow > 20 ? 6 : 6; // Columna de monto en detalle
-            worksheet.getColumn(detailTableCol).numFmt = '$#,##0.00';
         }
 
-        // Ajustar ancho de columnas
-        worksheet.columns.forEach((column) => {
-            let maxLength = 0;
-            if (typeof column.eachCell === 'function') {
-                column.eachCell({ includeEmpty: true }, (cell) => {
-                    const columnText = cell.text;
-                    if (columnText) {
-                        maxLength = Math.max(maxLength, columnText.toString().length);
-                    }
+        // Ajustar ancho de columnas automáticamente
+        worksheet.columns.forEach(col => {
+            let maxLength = 10;
+            if (typeof col.eachCell === 'function') {
+                col.eachCell({ includeEmpty: true }, (cell) => {
+                    const text = cell.value ? String(cell.value) : '';
+                    maxLength = Math.max(maxLength, text.length + 2);
                 });
             }
-            column.width = maxLength < 10 ? 10 : maxLength + 2;
+            col.width = maxLength;
         });
 
         const buffer = await workbook.xlsx.writeBuffer();

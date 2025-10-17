@@ -1,0 +1,30 @@
+export interface Collection {
+  paymentId: number;
+  paymentDate: string;
+  amount: number;
+  paymentTypeId: number;
+  paymentMethodId: number;
+  recordedByUserId: number;
+  installmentId: number;
+  collectorName: string;
+  collectorId: number;
+  collectorDocument: string;
+  collectorPhone: string;
+  collectorRoute: string;
+  collectorRouteId: number | string | null;
+  customerRoute: string;
+  loanId: number;
+  customerId: number;
+  customerName: string;
+  customerDocument: string;
+  zoneCustomerId: number | null;
+  zoneCustomerName: string;
+  zoneCustomerCode: string;
+  installmentDueDate: string | null;
+  installmentIsPaid: boolean;
+  installmentTotalAmount: number;
+  installmentPaidAmount: number;
+  installmentPaidAt: string | null;
+  installmentStatusId: number | null;
+  installmentSequence: number | null;
+}

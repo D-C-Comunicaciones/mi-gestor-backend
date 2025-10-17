@@ -1,333 +1,60 @@
-// import { BadRequestException, Injectable, InternalServerErrorException, Logger, NotFoundException } from '@nestjs/common';
-// import { PrismaService } from '@infraestructure/prisma/prisma.service';
-// import { Prisma } from '@prisma/client';
-// import { subDays, startOfDay, endOfDay, format } from 'date-fns';
-// import { DateRangeDto } from '@common/dto';
-// import { InterestReportPaginationDto, ResponseLoanSummaryReportDto } from './dto';
+import { Injectable, Logger } from '@nestjs/common';
+import { ReportsGateway } from './reports.gateway';
+import { ReportRegistry } from './registry/reports.registry';
+import { ReportsCache } from './caché/reports.cache';
+import { ReportHandler } from './handlers/base-report.handler';
 
-// @Injectable()
-// export class ReportsService {
-//     private readonly logger = new Logger(ReportsService.name);
+@Injectable()
+export class ReportsService {
+    private readonly logger = new Logger(ReportsService.name);
+    private readonly cacheTTL = 30 * 60 * 1000; // 30 minutos
 
-//     constructor(
-//         private readonly prisma: PrismaService,
-//     ) { }
+    constructor(
+        private readonly reportRegistry: ReportRegistry,
+        private readonly reportsCache: ReportsCache,
+        private readonly reportsGateway: ReportsGateway,
+    ) { }
 
-//     async getLoanValuesSummary(dto: DateRangeDto) {
-//         let { startDate, endDate } = dto;
+    async getReport<TParams = any, TResult = any>(
+        reportName: string,
+        params?: TParams,
+    ): Promise<TResult> {
+        this.logger.log(`📊 Solicitando reporte: ${reportName}`);
 
-//         if (!startDate || !endDate) {
-//             const now = new Date();
-//             startDate = startOfDay(subDays(now, 30)).toISOString();
-//             endDate = endOfDay(now).toISOString();
-//         }
+        const cacheKey = this.buildCacheKey(reportName, params);
+        const cached = await this.reportsCache.get<TResult>(cacheKey);
 
-//         const start = new Date(startDate);
-//         const end = new Date(endDate);
-//         if (start > end) {
-//             throw new BadRequestException('La fecha de inicio no puede ser posterior a la fecha de fin.');
-//         }
+        if (cached) {
+            this.logger.log(`🗄️ Reporte obtenido desde cache: ${reportName}`);
+            this.reportsGateway.emitReport(reportName, cached);
+            return cached;
+        }
 
-//         // Obtener los IDs de los estados
-//         const [upToDateStatus, refinancedStatus, cancelledStatus] = await Promise.all([
-//             this.prisma.loanStatus.findUnique({ where: { name: 'Up to Date' } }),
-//             this.prisma.loanStatus.findUnique({ where: { name: 'Refinanced' } }),
-//             this.prisma.loanStatus.findUnique({ where: { name: 'Cancelled' } }),
-//         ]);
+        const handler: ReportHandler<TParams, TResult> | null =
+            this.reportRegistry.getHandler(reportName) as any;
 
-//         if (!upToDateStatus || !refinancedStatus || !cancelledStatus) {
-//             throw new BadRequestException('No se encontraron los estados de préstamo necesarios.');
-//         }
+        if (!handler) {
+            this.logger.warn(`❌ No se encontró handler para el reporte: ${reportName}`);
+            throw new Error(`Handler no registrado para reporte: ${reportName}`);
+        }
 
-//         const newLoansWhere: Prisma.LoanWhereInput = {
-//             startDate: {
-//                 gte: start,
-//                 lte: end,
-//             },
-//             loanStatusId: {
-//                 notIn: [refinancedStatus.id, cancelledStatus.id],
-//             },
-//         };
+        this.logger.log(`⚡ Generando reporte: ${reportName}`);
+        const result = await handler.execute(params);
 
-//         // 1. Consultas para créditos nuevos (no cancelados ni refinanciados)
-//         const [newLoansTotal, numberOfNewLoans, newLoansDetails] = await Promise.all([
-//             this.prisma.loan.aggregate({
-//                 _sum: { loanAmount: true },
-//                 where: newLoansWhere,
-//             }),
-//             this.prisma.loan.count({ where: newLoansWhere }),
-//             this.prisma.loan.findMany({
-//                 where: newLoansWhere,
-//                 select: {
-//                     id: true,
-//                     loanAmount: true,
-//                     remainingBalance: true, // ✅ Agregar remainingBalance
-//                     startDate: true,
-//                     interestRate: { select: { value: true } },
-//                     penaltyRate: { select: { value: true } },
-//                     loanType: { select: { name: true } },
-//                     customer: { select: { firstName: true, lastName: true, documentNumber: true, address: true, phone: true } },
-//                     loanStatus: { select: { name: true } },
-//                 }
-//             }),
-//         ]);
+        await this.reportsCache.set(cacheKey, result, this.cacheTTL);
+        this.logger.log(`✅ Reporte cacheado por 30 minutos: ${reportName}`);
 
-//         // 2. Consultas para créditos refinanciados
-//         const refinancedLoansWhere: Prisma.LoanWhereInput = {
-//             startDate: {
-//                 gte: start,
-//                 lte: end,
-//             },
-//             loanStatusId: refinancedStatus.id,
-//         };
+        this.reportsGateway.emitReport(reportName, result);
 
-//         const [refinancedLoansTotal, numberOfRefinancedLoans, refinancedLoansDetails] = await Promise.all([
-//             this.prisma.loan.aggregate({
-//                 _sum: { loanAmount: true },
-//                 where: refinancedLoansWhere,
-//             }),
-//             this.prisma.loan.count({ where: refinancedLoansWhere }),
-//             this.prisma.loan.findMany({
-//                 where: refinancedLoansWhere,
-//                 select: {
-//                     id: true,
-//                     loanAmount: true,
-//                     remainingBalance: true, // ✅ Agregar remainingBalance
-//                     startDate: true,
-//                     interestRate: { select: { value: true } },
-//                     penaltyRate: { select: { value: true } },
-//                     loanType: { select: { name: true } },
-//                     customer: { select: { firstName: true, lastName: true, documentNumber: true, address: true, phone: true } },
-//                     loanStatus: { select: { name: true } },
-//                 }
-//             }),
-//         ]);
+        return result;
+    }
 
-//         const newLoansTotalAmount = newLoansTotal._sum.loanAmount?.toNumber() || 0;
-//         const refinancedLoansTotalAmount = refinancedLoansTotal._sum.loanAmount?.toNumber() || 0;
+    private buildCacheKey(reportName: string, params?: any): string {
+        if (!params) return reportName;
+        return `${reportName}:${JSON.stringify(params)}`;
+    }
 
-//         if (newLoansTotalAmount === 0 && refinancedLoansTotalAmount === 0) {
-//             throw new NotFoundException(`No se encontraron datos de préstamos en el rango de fechas proporcionado.`);
-//         }
-
-//         // 3. Mapeo final con conversiones seguras
-//         const mapLoanDetails = (loan: any) => ({
-//             id: loan.id,
-//             loanAmount: loan.loanAmount.toNumber(),
-//             remainingBalance: loan.remainingBalance?.toNumber() || 0, // ✅ Agregar remainingBalance
-//             startDate: format(loan.startDate, 'yyyy-MM-dd'),
-//             interestRateValue: loan.interestRate?.value?.toNumber() || 0,
-//             penaltyRateValue: loan.penaltyRate?.value?.toNumber() ?? null,
-//             creditTypeName: loan.loanType?.name || '',
-//             customerName: `${loan.customer?.firstName || ''} ${loan.customer?.lastName || ''}`,
-//             customerDocument: loan.customer?.documentNumber || '',
-//             customerAddress: loan.customer?.address || '',
-//             customerPhone: loan.customer?.phone || '',
-//             loanStatusName: loan.loanStatus.name,
-//         });
-
-//         return {
-//             numberOfNewLoans,
-//             newLoansTotalAmount,
-//             newLoansDetails: newLoansDetails.map(mapLoanDetails),
-//             numberOfRefinancedLoans,
-//             refinancedLoansTotalAmount,
-//             refinancedLoansDetails: refinancedLoansDetails.map(mapLoanDetails),
-//         }
-//     }
-
-//     /**
-//      * Obtiene los totales de Intereses RECAUDADOS y PENDIENTES, desglosados por concepto.
-//      * La paginación se ignora, ya que el reporte es de totales.
-//      */
-//     async getLoanInterestSummary(dto: InterestReportPaginationDto): Promise<any> {
-//         // Usamos el DTO de paginación para heredar startDate/endDate, pero ignoramos page/limit
-//         let { startDate, endDate, loanStatusName } = dto;
-
-//         // 1. Configuración de Fechas por defecto (Últimos 30 días)
-//         if (!startDate || !endDate) {
-//             const now = new Date();
-//             startDate = startOfDay(subDays(now, 30)).toISOString();
-//             endDate = endOfDay(now).toISOString();
-//         }
-//         const start = new Date(startDate);
-//         const end = new Date(endDate);
-//         if (start > end) {
-//             throw new BadRequestException('La fecha de inicio no puede ser posterior a la fecha de fin.');
-//         }
-
-//         // 2. Filtros de Estado para Loans
-//         const loanStatusFilter: Prisma.LoanStatusWhereInput = {
-//             name: {
-//                 not: 'Cancelled', // Excluir 'Cancelled'
-//                 in: loanStatusName ? [loanStatusName] : undefined, // Filtro opcional
-//             }
-//         };
-//         const installmentPendingStatuses = ['Overdue', 'Created'];
-
-//         // --- PARTE A: RECAUDADO (Collected) ---
-
-//         const collectedAllocationsRaw = await this.prisma.paymentAllocation.findMany({
-//             where: {
-//                 payment: { paymentDate: { gte: start, lte: end } },
-//                 OR: [{ appliedToInterest: { gt: 0 } }, { appliedToLateFee: { gt: 0 } }],
-//                 installment: {
-//                     isPaid: true,
-//                     loan: { isActive: true, loanStatus: loanStatusFilter },
-//                 },
-//             },
-//             select: {
-//                 appliedToInterest: true,
-//                 appliedToLateFee: true,
-//                 payment: {
-//                     select: {
-//                         id: true,
-//                         paymentDate: true,
-//                         recordedByUser: {
-//                             select: { name: true, collector: { select: { firstName: true, lastName: true } } }
-//                         }
-//                     }
-//                 },
-//                 installment: {
-//                     select: {
-//                         loan: {
-//                             select: {
-//                                 id: true,
-//                                 loanStatus: { select: { name: true } },
-//                                 customer: { select: { firstName: true, lastName: true } }
-//                             }
-//                         }
-//                     }
-//                 }
-//             },
-//             orderBy: { payment: { paymentDate: 'desc' } },
-//         });
-
-//         let totalInterestRecaudado = 0;
-//         let totalMoratorioRecaudado = 0;
-
-//         const collectedDetails = collectedAllocationsRaw.map(alloc => {
-//             const loan = alloc.installment.loan;
-//             const customer = loan.customer;
-//             const collector = alloc.payment.recordedByUser.collector;
-
-//             const interest = alloc.appliedToInterest?.toNumber() || 0;
-//             const lateFee = alloc.appliedToLateFee?.toNumber() || 0;
-//             const totalPaid = interest + lateFee;
-
-//             totalInterestRecaudado += interest;
-//             totalMoratorioRecaudado += lateFee;
-
-//             return {
-//                 paymentDate: format(alloc.payment.paymentDate, 'yyyy-MM-dd HH:mm:ss'),
-//                 appliedToInterest: interest,
-//                 appliedToLateFee: lateFee,
-//                 totalPaid: totalPaid,
-//                 loanId: loan.id,
-//                 loanStatusName: loan.loanStatus.name,
-//                 customerName: `${customer?.firstName || ''} ${customer?.lastName || ''}`,
-//                 collectorName: collector ? `${collector.firstName} ${collector.lastName}` : alloc.payment.recordedByUser.name,
-//             };
-//         });
-
-//         // --- PARTE B: PENDIENTE (Pending) ---
-
-//         const pendingInstallments = await this.prisma.installment.findMany({
-//             where: {
-//                 isPaid: false,
-//                 dueDate: { lte: new Date() },
-//                 status: { name: { in: installmentPendingStatuses } },
-//                 loan: { isActive: true, loanStatus: loanStatusFilter },
-//             },
-//             select: {
-//                 interestAmount: true,
-//                 moratoryInterests: { select: { amount: true } }
-//             }
-//         });
-
-//         let totalInterestPendiente = 0;
-//         let totalMoratorioPendiente = 0;
-
-//         pendingInstallments.forEach(inst => {
-//             totalInterestPendiente += inst.interestAmount?.toNumber() || 0;
-
-//             if (inst.moratoryInterests && inst.moratoryInterests.length > 0) {
-//                 const moraTotal = inst.moratoryInterests.reduce(
-//                     (sum, mora) => sum + Number(mora.amount || 0),
-//                     0
-//                 );
-//                 totalMoratorioPendiente += moraTotal;
-//             }
-//         });
-
-//         // 3. Retornar el reporte final
-//         return {
-//             // Totales Recaudados
-//             totalInterestRecaudado,
-//             totalMoratorioRecaudado,
-//             totalGeneralRecaudado: totalInterestRecaudado + totalMoratorioRecaudado,
-
-//             // Totales Pendientes
-//             totalInterestPendiente,
-//             totalMoratorioPendiente,
-//             totalGeneralPendiente: totalInterestPendiente + totalMoratorioPendiente,
-
-//             // Detalle
-//             details: collectedDetails,
-
-//             meta: { total: collectedDetails.length, page: 1, limit: 99999999, lastPage: 1 }
-//         }
-//     }
-
-//     /**
-//      * Exporta cualquier reporte en el formato solicitado (xlsx, pdf).
-//      */
-//     async exportReport(reportType: string, format: string, queryParams: any): Promise<Buffer> {
-//         this.logger.log(`Solicitud de exportación para el reporte "${reportType}" en formato "${format}".`);
-
-//         let reportData: any;
-//         try {
-//             switch (reportType) {
-//                 case 'interest-new-loans':
-//                 case 'interest-summary':
-//                     reportData = await this.getLoanInterestSummary({ ...queryParams, page: 1, limit: 99999999 });
-//                     break;
-//                 case 'loans-summary':
-//                     reportData = await this.getLoanValuesSummary(queryParams);
-//                     break;
-//                 case 'collections-report':
-//                     reportData = await this.getCollectionReport(queryParams);
-//                     break;
-//                 default:
-//                     throw new BadRequestException(`Tipo de reporte "${reportType}" no soportado para exportación.`);
-//             }
-//         } catch (error) {
-//             this.logger.error(`Error al obtener los datos del reporte: ${error.message}`);
-//             throw error;
-//         }
-
-//         const isInterestReport = reportType === 'interest-new-loans' || reportType === 'interest-summary';
-//         const isCollectionReport = reportType === 'collections-report';
-
-//         switch (format) {
-//             case 'xlsx':
-//                 if (isInterestReport) {
-//                     return this.reportsExporterService.generateInterestReportExcel(reportData);
-//                 } else if (isCollectionReport) {
-//                     return this.reportsExporterService.generateCollectionReportExcel(reportData);
-//                 } else {
-//                     return this.reportsExporterService.generateLoansExcel(reportData as ResponseLoanSummaryReportDto);
-//                 }
-//             case 'pdf':
-//                 if (isInterestReport) {
-//                     return this.reportsExporterService.generateInterestReportPdf(reportData);
-//                 } else if (isCollectionReport) {
-//                     return this.reportsExporterService.generateCollectionReportPdf(reportData);
-//                 } else {
-//                     return this.reportsExporterService.generateLoansPdf(reportData as ResponseLoanSummaryReportDto);
-//                 }
-//             default:
-//                 throw new BadRequestException(`Formato de exportación "${format}" no soportado.`);
-//         }
-//     }
-// }
+    getAvailableReports(): string[] {
+        return this.reportRegistry.getAvailableReports();
+    }
+}

@@ -8,10 +8,11 @@ import { plainToInstance } from 'class-transformer';
 import { JwtAuthGuard, PermissionsGuard } from '@modules/auth/guards';
 import { ReportCollectionService } from './reports-collections.service';
 import { ReportLoanService } from './reports-loans.service';
-import { SwaggerExportReport, SwaggerCollectionsReport, SwaggerLoansReport } from '@common/decorators/swagger/reports';
+import { SwaggerExportReport, SwaggerCollectionsReport, SwaggerLoansReport } from '@common/decorators/swagger';
 import { LoanReportDetailDto, ResponseLoanReportDto } from './dto/response-loan-report.dto';
-import { CollectionReportResponse, LoanReportResponse } from './interfaces';
+import { LoanReportResponse } from './interfaces';
 import { ResponseCollectionReportDto } from './dto';
+import { ReportsService } from './reports.service';
 
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiTags('reports')
@@ -21,8 +22,8 @@ import { ResponseCollectionReportDto } from './dto';
 export class ReportsController {
   private readonly logger = new Logger(ReportsController.name);
   constructor(
+    private readonly reportsService: ReportsService,
     private readonly reportsExporterService: ReportExporterService,
-    private readonly reportsCollectionsService: ReportCollectionService,
     private readonly reportLoanService: ReportLoanService,
   ) { }
 
@@ -41,9 +42,18 @@ export class ReportsController {
   @Get('collections-report')
   @Permissions('view.reports')
   @SwaggerCollectionsReport()
-  async getCollectionsReport(@Query() dto: DateRangeDto): Promise<CollectionReportResponse> {
-    const collectionsReportRaw = await this.reportsCollectionsService.getCollectionsReportData(dto);
+  async getCollectionsReport(
+    @Query() dto: DateRangeDto
+  ): Promise<{ customMessage: string; collectionsReport: ResponseCollectionReportDto }> {
+
+    // Usamos el ReportsService pasando el nombre exacto del handler
+    const collectionsReportRaw = await this.reportsService.getReport(
+      'collections-report', // Debe coincidir con getName() del handler
+      dto
+    );
+
     const collectionsReport = plainToInstance(ResponseCollectionReportDto, collectionsReportRaw);
+
     return {
       customMessage: 'Resumen de valores de cobros obtenido exitosamente',
       collectionsReport,
@@ -89,12 +99,13 @@ export class ReportsController {
         filename: 'loans-report'
       },
       'collections-report': {
-        fetchData: (dto) => this.reportsCollectionsService.getCollectionsReportData(dto),
+        fetchData: (dto) => this.reportsService.getReport('collections-report', dto),
         validateData: (data) => data.collections && data.collections.length > 0,
         generateExcel: (data) => this.reportsExporterService.generateCollectionReportExcel(data),
         generatePdf: (data) => this.reportsExporterService.generateCollectionReportPdf(data),
         filename: 'collections-report'
       },
+
       // 'interest-summary': { ... } agregar cuando sea necesario
     };
 

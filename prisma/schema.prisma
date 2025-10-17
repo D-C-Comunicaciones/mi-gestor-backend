@@ -332,6 +332,7 @@ model MoratoryInterest {
   paidAmount  Decimal @default(0) @db.Decimal(20, 2)
   isPaid      Boolean @default(false)
   isDiscounted Boolean @default(false)
+  discountedAt       DateTime? @db.Date
   moratoryInterestStatusId Int @default(1)
   moratoryInterestStatus  MoratoryInterestStatus @relation(fields: [moratoryInterestStatusId], references: [id])
   installment Installment @relation(fields: [installmentId], references: [id])

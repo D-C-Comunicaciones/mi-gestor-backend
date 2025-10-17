@@ -6,7 +6,7 @@ import { Permissions } from '@modules/auth/decorators';
 import { ApiTags, ApiBearerAuth, ApiExtraModels } from '@nestjs/swagger';
 import { CompanyListResponse, SwaggerCompanyListResponse, SwaggerCompanyResponse } from './interfaces/company-responses.interface';
 import { CompanyResponse } from './interfaces';
-import { CreateCompanyDocs, FindAllCompaniesDocs, FindOneCompanyDocs, UpdateCompanyDocs } from '@common/decorators/swagger/companies';
+import { CreateCompanyDocs, FindAllCompaniesDocs, FindOneCompanyDocs, UpdateCompanyDocs } from '@common/decorators/swagger';
 
 @ApiTags('Companies')
 @ApiBearerAuth()

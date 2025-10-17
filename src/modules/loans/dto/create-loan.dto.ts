@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsDateString, IsDecimal, IsInt, IsNumber, IsOptional, IsPositive, Min, ValidateIf } from 'class-validator';
+import { IsDateString, IsInt, IsNumber, IsOptional, IsPositive, Min } from 'class-validator';
 import { Transform } from 'class-transformer';
 
 export class CreateLoanDto {

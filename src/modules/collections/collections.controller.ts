@@ -8,7 +8,7 @@ import { ResponseCollectionDto, ResponseCollectionListDto } from './dto';
 import { CollectionResponse, CollectionListResponse } from './interfaces';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { PaginationDto } from '@common/dto';
-import { SwaggerCreateCollection, SwaggerGetCollections } from '@common/decorators/swagger/collections';
+import { SwaggerCreateCollection, SwaggerGetCollections } from '@common/decorators/swagger';
 import { HistoryCollectionQueryDto } from './dto';
 
 @ApiTags('collections')

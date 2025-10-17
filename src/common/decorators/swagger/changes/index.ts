@@ -1,1 +1,0 @@
-export * from './find-all-changes-doc.decorator';

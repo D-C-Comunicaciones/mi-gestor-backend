@@ -10,7 +10,7 @@ import { ApiTags, ApiBearerAuth, ApiExtraModels } from '@nestjs/swagger';
 import { ResponseLoanDto } from '@modules/loans/dto';
 import { UserResponseDto } from '@modules/users/dto';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { SwaggerCreateManyCustomersDoc, SwaggerCreateCustomerDoc, SwaggerFindAllCustomersDoc, SwaggerFindOneCustomerDoc, SwaggerUpdateCustomerDoc } from '@common/decorators/swagger/customers';
+import { SwaggerCreateManyCustomersDoc, SwaggerCreateCustomerDoc, SwaggerFindAllCustomersDoc, SwaggerFindOneCustomerDoc, SwaggerUpdateCustomerDoc } from '@common/decorators/swagger';
 
 @ApiTags('Customers')
 @ApiBearerAuth()

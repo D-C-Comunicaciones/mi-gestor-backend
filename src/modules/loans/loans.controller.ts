@@ -11,7 +11,7 @@ import { plainToInstance } from 'class-transformer';
 import { ResponseLoanDto } from './dto';
 import { ResponseLoanWithInstallmentsDto } from './dto/response-loan-by-customer.dto';
 import { RefinanceLoanDto } from './dto';
-import { SwaggerCancelLoan, SwaggerCreateLoan, SwaggerListLoans, SwaggerLoanById, SwaggerOverdueLoans, SwaggerRefinanceLoan, SwaggerViewLoanByCustomerId } from '@common/decorators/swagger/loans';
+import { SwaggerCancelLoan, SwaggerCreateLoan, SwaggerListLoans, SwaggerLoanById, SwaggerOverdueLoans, SwaggerRefinanceLoan, SwaggerViewLoanByCustomerId } from '@common/decorators/swagger';
 
 @ApiTags('Loans')
 @ApiBearerAuth()
@@ -111,22 +111,23 @@ export class LoansController {
     };
   }
 
-  @Post(':id/refinance')
+  @Post(':loanId/refinance')
   @Permissions('refinance.loans')
   @SwaggerRefinanceLoan()
   async refinance(
-    @Param('id', ParseIntPipe) loanId: number,
+    @Param('loanId', ParseIntPipe) loanId: number,
     @Body() dto: RefinanceLoanDto,
   ): Promise<RefinanceLoanResponse> {
-    const { oldMapped, newMapped } = await this.loansService.refinance(loanId, dto);
-    const oldLoan = plainToInstance(ResponseLoanDto, oldMapped, { excludeExtraneousValues: true });
-    const newLoan = plainToInstance(ResponseLoanDto, newMapped, { excludeExtraneousValues: true });
+    const { rawOldLoan, rawNewLoan } = await this.loansService.refinance(loanId, dto);
+    const oldLoan = plainToInstance(ResponseLoanDto, rawOldLoan, { excludeExtraneousValues: true });
+    const newLoan = plainToInstance(ResponseLoanDto, rawNewLoan, { excludeExtraneousValues: true });
     return {
       customMessage: 'Préstamo refinanciado exitosamente',
       oldLoan,
       newLoan,
     };
   }
+
 
   @Get('customer/:id')
   @Permissions('view.loans')
@@ -142,7 +143,7 @@ export class LoansController {
 
   @Patch(':id/cancel')
   @SwaggerCancelLoan()
-  async cancelLoan(@Param('id', ParseIntPipe) id: number): Promise <LoanResponse>  {
+  async cancelLoan(@Param('id', ParseIntPipe) id: number): Promise<LoanResponse> {
     const rawLoan = await this.loansService.cancelLoan(id);
     const loan = plainToInstance(ResponseLoanDto, rawLoan, { excludeExtraneousValues: true });
     return {

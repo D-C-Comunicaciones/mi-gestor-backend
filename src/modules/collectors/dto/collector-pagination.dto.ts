@@ -23,14 +23,14 @@ export class CollectorPaginationDto extends PaginationDto {
   isActive?: boolean;
 
   @ApiPropertyOptional({
-    description: 'Filtrar cobradores por estado de asignación a una ruta. `true` para asignados, `false` para no asignados.',
+    description: 'Filtrar cobradores por estado de asignación a una ruta. true = asignados, false = sin asignar',
     example: false,
   })
   @IsOptional()
   @Transform(({ value }) => {
-    if (value === 'true') return true;
-    if (value === 'false') return false;
-    return value;
+    if (value === 'true' || value === true) return true;
+    if (value === 'false' || value === false) return false;
+    return undefined;
   })
   @IsBoolean()
   assigned?: boolean;

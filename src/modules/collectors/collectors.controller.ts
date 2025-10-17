@@ -7,7 +7,7 @@ import { Response } from 'express';
 import { Permissions } from '@auth/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '@modules/auth/guards';
 import { ApiTags, ApiBearerAuth, ApiExtraModels } from '@nestjs/swagger';
-import { SwaggerCreateCollectorDocs, SwaggerFindAllCollectorsDocs, SwaggerFindOneCollectorDocs, SwaggerFindUnassignedCollectorsDocs, SwaggerUpdateCollectorDocs } from '@common/decorators/swagger/collectors';
+import { SwaggerCreateCollectorDocs, SwaggerFindAllCollectorsDocs, SwaggerFindOneCollectorDocs, SwaggerUpdateCollectorDocs } from '@common/decorators/swagger';
 
 @ApiTags('Collectors')
 @ApiBearerAuth()

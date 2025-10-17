@@ -1,55 +1,41 @@
 import { RefinanceLoanDto } from '@modules/loans/dto';
 import { applyDecorators } from '@nestjs/common';
-import {
-    ApiOperation,
-    ApiParam,
-    ApiBody,
-    ApiOkResponse,
-    ApiUnauthorizedResponse,
-    ApiForbiddenResponse,
-    ApiNotFoundResponse,
-    ApiInternalServerErrorResponse,
-    ApiBadRequestResponse,
-    ApiUnprocessableEntityResponse,
-} from '@nestjs/swagger';
+import { ApiOperation, ApiParam, ApiBody, ApiOkResponse, ApiUnauthorizedResponse, ApiForbiddenResponse, ApiNotFoundResponse, ApiInternalServerErrorResponse, ApiBadRequestResponse, ApiUnprocessableEntityResponse } from '@nestjs/swagger';
 
 export function SwaggerRefinanceLoan() {
     return applyDecorators(
         ApiOperation({
             summary: 'Refinanciar préstamo',
-            description: 'Refinancia un préstamo inactivo, creando uno nuevo.',
+            description: 'Refinancia un préstamo inactivo, creando un nuevo préstamo con los datos actualizados.',
         }),
-        ApiParam({ name: 'id', type: Number, example: 1 }),
+        ApiParam({ name: 'loanId', type: Number, example: 1 }),
         ApiBody({
             type: RefinanceLoanDto,
-            description: 'Datos para refinanciar el préstamo',
+            description: 'Datos opcionales para refinanciar el préstamo',
             examples: {
                 'refinanciar-basico': {
                     summary: 'Refinanciación básica',
-                    description: 'Ejemplo de refinanciación con nuevos términos',
+                    description: 'Solo se actualiza la tasa de interés y el motivo',
                     value: {
-                        newAmount: 1200000,
-                        newInterestRate: 2.2,
-                        newTermId: 18,
+                        interestRateId: 2,
                         reason: 'Mejores condiciones por buen historial crediticio',
                     },
                 },
                 'refinanciar-completo': {
                     summary: 'Refinanciación completa',
-                    description: 'Ejemplo de refinanciación con todos los parámetros',
+                    description: 'Se actualizan todos los parámetros aplicables',
                     value: {
-                        newAmount: 1500000,
-                        newInterestRate: 2.8,
-                        newTermId: 24,
+                        interestRateId: 3,
+                        penaltyRateId: 1,
                         paymentFrequencyId: 2,
-                        reason: 'Consolidación de deudas y ampliación del plazo',
-                        startDate: '2024-03-01',
+                        termId: 18,
+                        gracePeriodId: 2,
                     },
                 },
             },
         }),
         ApiOkResponse({
-            description: 'Préstamo refinanciado',
+            description: 'Préstamo refinanciado correctamente',
             examples: {
                 success: {
                     summary: 'Préstamo refinanciado exitosamente',
@@ -70,6 +56,7 @@ export function SwaggerRefinanceLoan() {
                                 amount: 1200000,
                                 interestRate: 2.2,
                                 termId: 18,
+                                gracePeriodId: 2,
                                 customerId: 1,
                                 status: 'active',
                                 remainingBalance: 1200000,
@@ -82,13 +69,13 @@ export function SwaggerRefinanceLoan() {
             },
         }),
         ApiBadRequestResponse({
-            description: 'Validación / lógica',
+            description: 'Validación o lógica de negocio fallida',
             examples: {
                 'cannot-refinance': {
                     summary: 'No se puede refinanciar',
                     value: {
                         statusCode: 400,
-                        message: 'Solo se pueden refinanciar préstamos inactivos o completamente pagados',
+                        message: 'Solo se pueden refinanciar préstamos activos con saldo pendiente',
                         error: 'Bad Request',
                     },
                 },
@@ -97,8 +84,8 @@ export function SwaggerRefinanceLoan() {
                     value: {
                         statusCode: 400,
                         message: [
-                            'El nuevo monto debe ser mayor a 0',
-                            'La nueva tasa debe estar entre 1 y 50',
+                            'El nuevo plazo (termId) es obligatorio para créditos fixed_fee',
+                            'El período de gracia (gracePeriodId) es obligatorio para créditos only_interests',
                         ],
                         error: 'Bad Request',
                     },
@@ -106,7 +93,7 @@ export function SwaggerRefinanceLoan() {
             },
         }),
         ApiNotFoundResponse({
-            description: 'Préstamo a refinanciar no encontrado',
+            description: 'Préstamo o recursos relacionados no encontrados',
             examples: {
                 'loan-not-found': {
                     summary: 'Préstamo no encontrado',
@@ -116,19 +103,26 @@ export function SwaggerRefinanceLoan() {
                         error: 'Not Found',
                     },
                 },
+                'status-not-found': {
+                    summary: 'Estado "Refinanced" no encontrado',
+                    value: {
+                        statusCode: 404,
+                        message: 'El estado "Refinanced" no fue encontrado. Ejecute el seed.',
+                        error: 'Not Found',
+                    },
+                },
             },
         }),
         ApiUnprocessableEntityResponse({
-            description: 'Errores de validación',
+            description: 'Errores de validación de campos opcionales',
             examples: {
                 'validation-error': {
-                    summary: 'Errores de validación',
+                    summary: 'Errores de validación de DTO',
                     value: {
                         statusCode: 422,
                         message: [
-                            'newAmount debe ser un número positivo',
-                            'newInterestRate es requerido',
-                            'reason debe ser una cadena de texto',
+                            'interestRateId debe ser un número entero positivo',
+                            'termId debe ser un número entero positivo',
                         ],
                         error: 'Unprocessable Entity',
                     },
@@ -149,7 +143,7 @@ export function SwaggerRefinanceLoan() {
             },
         }),
         ApiForbiddenResponse({
-            description: 'Sin permiso refinance.loans',
+            description: 'Permisos insuficientes',
             examples: {
                 'insufficient-permissions': {
                     summary: 'Sin permisos para refinanciar préstamos',
@@ -165,7 +159,7 @@ export function SwaggerRefinanceLoan() {
             description: 'Error interno del servidor',
             examples: {
                 'server-error': {
-                    summary: 'Error interno del servidor',
+                    summary: 'Error al refinanciar préstamo',
                     value: {
                         statusCode: 500,
                         message: 'Error interno del servidor al refinanciar el préstamo',
