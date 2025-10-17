@@ -1,8 +1,10 @@
-import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
+import { Injectable, OnModuleInit, Logger, Inject } from '@nestjs/common';
 import { RabbitMqService } from '@infraestructure/rabbitmq/rabbitmq.service';
 import { ReportRegistry } from '../registry/reports.registry';
-import { ReportsCache } from '../caché/reports.cache';
 import { ReportsGateway } from '../reports.gateway';
+import { REDIS_CLIENT } from '@infraestructure/redis/client';
+import Redis from 'ioredis';
+
 @Injectable()
 export class ReportsWorker implements OnModuleInit {
   private readonly logger = new Logger(ReportsWorker.name);
@@ -11,8 +13,8 @@ export class ReportsWorker implements OnModuleInit {
   constructor(
     private readonly rabbitMqService: RabbitMqService,
     private readonly reportRegistry: ReportRegistry,
-    private readonly reportsCache: ReportsCache,
     private readonly reportsGateway: ReportsGateway,
+    @Inject(REDIS_CLIENT) private readonly redis: Redis, // <-- Inyectamos Redis
   ) {}
 
   async onModuleInit() {
@@ -46,18 +48,11 @@ export class ReportsWorker implements OnModuleInit {
     this.logger.log('✅ Consumo de mensajes iniciado en reports_queue');
   }
 
-  private async processReportWithRetry(
-    reportName: string,
-    params: any,
-    attempt = 1,
-  ) {
+  private async processReportWithRetry(reportName: string, params: any, attempt = 1) {
     try {
       await this.generateReport(reportName, params);
     } catch (error) {
-      this.logger.error(
-        `❌ Error generando reporte ${reportName} (intento ${attempt}):`,
-        error,
-      );
+      this.logger.error(`❌ Error generando reporte ${reportName} (intento ${attempt}):`, error);
       if (attempt < this.maxProcessingAttempts) {
         await new Promise((r) => setTimeout(r, attempt * 2000));
         await this.processReportWithRetry(reportName, params, attempt + 1);
@@ -69,11 +64,14 @@ export class ReportsWorker implements OnModuleInit {
 
   private async generateReport(reportName: string, params: any) {
     const cacheKey = `${reportName}:${JSON.stringify(params)}`;
-    const cachedData = this.reportsCache.get(cacheKey);
-    if (cachedData) {
+
+    // ✅ Revisar cache directamente en Redis
+    const cached = await this.redis.get(cacheKey);
+    if (cached) {
+      const parsed = JSON.parse(cached);
       this.logger.log(`Reporte encontrado en cache: ${cacheKey}`);
-      this.reportsGateway.emitReport(reportName, cachedData);
-      return cachedData;
+      this.reportsGateway.emitReport(reportName, parsed);
+      return parsed;
     }
 
     const handler = this.reportRegistry.getHandler(reportName);
@@ -83,7 +81,9 @@ export class ReportsWorker implements OnModuleInit {
     }
 
     const result = await handler.execute(params);
-    this.reportsCache.set(cacheKey, result, 30 * 60); // TTL 30 min en segundos
+
+    // Guardar en Redis TTL 30 minutos (1800 seg)
+    await this.redis.set(cacheKey, JSON.stringify(result), 'EX', 1800);
     this.logger.log(`Reporte generado y cacheado: ${cacheKey}`);
 
     this.reportsGateway.emitReport(reportName, result);

@@ -6,22 +6,14 @@ export function SwaggerRefinanceLoan() {
     return applyDecorators(
         ApiOperation({
             summary: 'Refinanciar préstamo',
-            description: 'Refinancia un préstamo inactivo, creando un nuevo préstamo con los datos actualizados.',
+            description: 'Refinancia un préstamo con saldo pendiente, creando un nuevo préstamo con los datos actualizados.',
         }),
         ApiParam({ name: 'loanId', type: Number, example: 1 }),
         ApiBody({
             type: RefinanceLoanDto,
             description: 'Datos opcionales para refinanciar el préstamo',
             examples: {
-                'refinanciar-basico': {
-                    summary: 'Refinanciación básica',
-                    description: 'Solo se actualiza la tasa de interés y el motivo',
-                    value: {
-                        interestRateId: 2,
-                        reason: 'Mejores condiciones por buen historial crediticio',
-                    },
-                },
-                'refinanciar-completo': {
+                'refinanciar': {
                     summary: 'Refinanciación completa',
                     description: 'Se actualizan todos los parámetros aplicables',
                     value: {
@@ -84,8 +76,8 @@ export function SwaggerRefinanceLoan() {
                     value: {
                         statusCode: 400,
                         message: [
-                            'El nuevo plazo (termId) es obligatorio para créditos fixed_fee',
-                            'El período de gracia (gracePeriodId) es obligatorio para créditos only_interests',
+                            'El nuevo plazo (termId) es obligatorio para créditos de cuotas fijas',
+                            'El período de gracia (gracePeriodId) es obligatorio para créditos de interés mensual',
                         ],
                         error: 'Bad Request',
                     },

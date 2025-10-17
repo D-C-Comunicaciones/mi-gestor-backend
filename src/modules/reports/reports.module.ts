@@ -5,13 +5,12 @@ import { ReportExporterService } from './reports-exporter.service';
 import { ReportLoanService } from './reports-loans.service';
 import { ReportCollectionService } from './reports-collections.service';
 import { ReportRegistry } from './registry/reports.registry';
-import { ReportsCache } from './caché/reports.cache';
 import { ReportsGateway } from './reports.gateway';
 import { CollectionsReportHandler } from './handlers/collections-report.handler';
-// Si hay otros handlers, importarlos aquí
-// import { LoansReportHandler } from './handlers/loans-report.handler';
+import { RedisModule } from '@infraestructure/redis/redis.module';
 
 @Module({
+  imports: [RedisModule],
   controllers: [ReportsController],
   providers: [
     ReportsService,
@@ -19,10 +18,8 @@ import { CollectionsReportHandler } from './handlers/collections-report.handler'
     ReportLoanService,
     ReportCollectionService,
     ReportRegistry,
-    ReportsCache,
     ReportsGateway,
     CollectionsReportHandler,
-    // LoansReportHandler, etc.
   ],
   exports: [
     ReportsService,
@@ -30,7 +27,6 @@ import { CollectionsReportHandler } from './handlers/collections-report.handler'
     ReportLoanService,
     ReportCollectionService,
     ReportRegistry,
-    ReportsCache,
     ReportsGateway,
   ],
 })

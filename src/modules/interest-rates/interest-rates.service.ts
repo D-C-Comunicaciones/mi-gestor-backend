@@ -12,7 +12,9 @@ export class InterestRatesService {
   // }
 
   async findAll() {
-    const rawInterestRate = await this.prisma.interestRate.findMany();
+    const rawInterestRate = await this.prisma.interestRate.findMany({
+      orderBy: { id: 'asc' },
+    });
 
     if (!rawInterestRate || rawInterestRate.length === 0) {
       throw new Error('No interest rates found');

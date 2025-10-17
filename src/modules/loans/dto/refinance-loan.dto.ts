@@ -2,12 +2,12 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsInt, IsOptional, IsPositive } from 'class-validator';
 
 export class RefinanceLoanDto {
-    @ApiPropertyOptional({ description: 'ID de la nueva tasa de interés' })
+    @ApiPropertyOptional({ description: 'ID de la nueva tasa de interés corriente' })
     @IsInt()
     @IsOptional()
     interestRateId?: number;
 
-    @ApiPropertyOptional({ description: 'ID de la nueva tasa de interés moratoria (si aplica)' })
+    @ApiPropertyOptional({ description: 'ID de la nueva tasa de interés moratoria.' })
     @IsInt()
     @IsOptional()
     penaltyRateId?: number;
@@ -17,13 +17,13 @@ export class RefinanceLoanDto {
     @IsOptional()
     paymentFrequencyId?: number;
 
-    @ApiPropertyOptional({ description: 'Nuevo plazo (en meses, si aplica)' })
+    @ApiPropertyOptional({ description: 'Nuevo número de cuotas (Aplica solo para créditos de cuotas fijas)' })
     @IsInt()
     @IsPositive()
     @IsOptional()
     termId?: number;
 
-    @ApiPropertyOptional({ description: 'Nuevo período de gracia (si aplica)' })
+    @ApiPropertyOptional({ description: 'Nuevo período de gracia (aplica solo para créditos de interés mensual)' })
     @IsInt()
     @IsOptional()
     gracePeriodId?: number;
