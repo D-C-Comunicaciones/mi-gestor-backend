@@ -1,7 +1,7 @@
 export * from './collection-report-data.interface';
 export * from './loan-report-data.interface';
 
-export interface LoansReportData {
+export interface LoanReportData {
   headerLogo: string;
   watermarkLogo?: string;
   verticalTextBase64?: string;

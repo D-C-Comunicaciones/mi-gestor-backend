@@ -1,6 +1,6 @@
-import { ChartData } from "chart.js";
 import { CollectorActivity } from "./collector-activity.interface";
 import { CollectorPerformance } from "./collector-performance.interface";
+import { ReportsChartData } from "./report-chart-data.interface";
 
 export interface Summary {
   totalCollections: number;
@@ -16,11 +16,26 @@ export interface Summary {
   totalInstallmentsPending: number;
   averageCollectedPerCollector: number;
   averageCollectionAmount: number;
-  bestPerformanceCollector: CollectorPerformance;
-  worstPerformanceCollector: CollectorPerformance;
+  bestPerformanceCollector: CollectorPerformance | {
+    name: string;
+    percentage: number;
+    collected: number;
+    assigned?: number;
+    totalCollectionsMade?: number;
+    route?: string;
+  };
+  worstPerformanceCollector: CollectorPerformance | {
+    name: string;
+    percentage: number;
+    collected: number;
+    assigned?: number;
+    totalCollectionsMade?: number;
+    route?: string;
+  };
   mostActiveCollector: CollectorActivity;
   leastActiveCollector: CollectorActivity;
   bestCollector: { name: string; percentage: number; collected: number; route: string };
   worstCollector: { name: string; percentage: number; collected: number; route: string };
-  chartData: ChartData;
+  // Cambiado: usar ReportsChartData para evitar ambigüedad con Chart.js
+  chartData: ReportsChartData;
 }

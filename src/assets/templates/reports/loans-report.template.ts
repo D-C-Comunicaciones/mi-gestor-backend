@@ -1,5 +1,5 @@
 import type { TDocumentDefinitions, Content } from 'pdfmake/interfaces';
-import { LoansReportData } from './interfaces';
+import { LoanReportData } from './interfaces';
 
 
 
@@ -7,7 +7,7 @@ import { LoansReportData } from './interfaces';
  * Construye el template del reporte PDF de créditos
  */
 export async function loansReportTemplate(
-  data: LoansReportData
+  data: LoanReportData
 ): Promise<TDocumentDefinitions> {
 
   return {

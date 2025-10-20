@@ -1,10 +1,8 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, ParseIntPipe } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, UseGuards, ParseIntPipe } from '@nestjs/common';
 import { ZonesService } from './zones.service';
 import { CreateZoneDto } from './dto/create-zone.dto';
 import { UpdateZoneDto } from './dto/update-zone.dto';
 import { ZoneListResponse, ZoneResponse } from './interfaces';
-import { plainToInstance } from 'class-transformer';
-import { ResponseZoneDto } from './dto';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiOkResponse, ApiBadRequestResponse, ApiUnauthorizedResponse, ApiForbiddenResponse, ApiNotFoundResponse, ApiInternalServerErrorResponse, ApiCreatedResponse, ApiParam, ApiBody, ApiUnprocessableEntityResponse, ApiConflictResponse } from '@nestjs/swagger';
 import { JwtAuthGuard, PermissionsGuard } from '@modules/auth/guards';
 import { Permissions } from '@modules/auth/decorators';

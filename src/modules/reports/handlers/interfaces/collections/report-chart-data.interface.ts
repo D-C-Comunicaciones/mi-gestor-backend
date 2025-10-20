@@ -1,8 +1,8 @@
 import { CollectorActivity } from "./collector-activity.interface";
-import { CollectorComparison } from "./collector-comparison.interface";
+import { CollectorComparison } from "./collector-comparission.interface";
 import { CollectorPerformance } from "./collector-performance.interface";
 
-export interface ChartData {
+export interface ReportsChartData {
   collectorPerformance: CollectorPerformance[];
   collectorComparison: CollectorComparison[];
   collectorActivity: CollectorActivity[];
@@ -13,3 +13,5 @@ export interface ChartData {
     percentage: number;
   };
 }
+
+export type ChartDataReport = ReportsChartData;

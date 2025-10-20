@@ -1,10 +1,18 @@
-export interface LoansReportData {
+import { LoansReportMetadata } from "@modules/reports/handlers/interfaces";
+
+export interface LoanReportData {
   headerLogo: string;
   watermarkLogo?: string;
   verticalTextBase64?: string;
   reportDate: string;
   startDate: string;
   endDate: string;
+
+  // 🔹 Totales directos para acceso rápido
+  numberOfNewLoans: number;
+  newLoansTotalAmount: number;
+  numberOfRefinancedLoans: number;
+  refinancedLoansTotalAmount: number;
 
   summary: {
     numberOfNewLoans: number;
@@ -46,11 +54,12 @@ export interface LoansReportData {
     loanStatusName: string;
   }>;
 
+  // 🔹 Gráficas opcionales
   newLoansChartBase64?: string;
   refinancedLoansChartBase64?: string;
   comparisonChartBase64?: string;
-
-  // 🔹 Nuevas propiedades para gráficas de estado
   statusBarChartBase64?: string;
   statusComparisonChartBase64?: string;
+
+  metadata: LoansReportMetadata;
 }

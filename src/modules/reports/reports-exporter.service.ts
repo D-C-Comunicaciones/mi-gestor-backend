@@ -7,9 +7,10 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { join } from 'path';
 import { envs } from '@config/envs';
-import { CollectionReportData, LoansReportData } from '@templates/reports/interfaces';
-import { collectionsReportTemplate } from '@templates/reports/collections-report.template';
-import { loansReportTemplate } from '@templates/reports/loans-report.template';
+import { LoanDetail, MoratoryInterestReport } from './handlers/interfaces';
+import { CollectionReportData } from '@templates/reports/interfaces';
+import { loansReportTemplate, collectionsReportTemplate, moratoryInterestsReportTemplate } from '@templates/index';
+import { LoanReportData } from '@templates/reports/interfaces';
 
 Chart.register(...registerables);
 
@@ -201,7 +202,7 @@ export class ReportExporterService {
         return Buffer.from(buffer);
     }
 
-   async generateLoanReportExcel(reportData: any): Promise<Buffer> {
+    async generateLoanReportExcel(reportData: LoanReportData): Promise<Buffer> {
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet('Reporte de Créditos');
 
@@ -238,7 +239,7 @@ export class ReportExporterService {
                 fgColor: { argb: 'FF00aa00' },
             };
 
-            reportData.newLoansDetails.forEach((loan: any) => {
+            reportData.newLoansDetails.forEach((loan: LoanDetail) => {
                 worksheet.addRow({
                     id: loan.id,
                     startDate: loan.startDate,
@@ -259,7 +260,7 @@ export class ReportExporterService {
                 customerName: '',
                 customerDocument: '',
                 creditTypeName: 'TOTAL NUEVOS:',
-                loanAmount: reportData.newLoansTotalAmount,
+                loanAmount: reportData.newLoansDetails[Symbol.iterator]().next().value.newLoansTotalAmount,
                 remainingBalance: '',
                 interestRateValue: '',
                 loanStatusName: '',
@@ -304,7 +305,7 @@ export class ReportExporterService {
                 customerName: '',
                 customerDocument: '',
                 creditTypeName: 'TOTAL REFINANCIADOS:',
-                loanAmount: reportData.refinancedLoansTotalAmount,
+                loanAmount: reportData.refinancedLoansDetails[Symbol.iterator]().next().value.refinancedLoansTotalAmount,
                 remainingBalance: '',
                 interestRateValue: '',
                 loanStatusName: '',
@@ -367,7 +368,7 @@ export class ReportExporterService {
         return Buffer.from(buffer);
     }
 
-    async generateLoanReportPdf(reportData: any): Promise<Buffer> {
+    async generateLoanReportPdf(reportData: LoanReportData): Promise<Buffer> {
         this.logger.log('Generando reporte de préstamos en PDF');
 
         try {
@@ -391,7 +392,7 @@ export class ReportExporterService {
                     ...(reportData.newLoansDetails || []),
                     ...(reportData.refinancedLoansDetails || []),
                 ];
-                
+
                 if (allLoans.length > 0) {
                     this.logger.log(`Generando gráfica de distribución por tipo (${allLoans.length} créditos)`);
                     const newLoansChartBuffer = await this.generateLoanTypeChart(allLoans);
@@ -419,14 +420,14 @@ export class ReportExporterService {
             const verticalTextBase64 = await this.getVerticalTextBase64(envs.verticalTextReports, 792);
 
             // 🔹 Mapear datos para la plantilla
-            const templateData: LoansReportData = {
+            const templateData: LoanReportData = {
                 ...reportData,
                 headerLogo,
                 watermarkLogo,
                 verticalTextBase64,
                 newLoansChartBase64,
                 comparisonChartBase64,
-                reportDate: reportData.metadata?.generatedAt || new Date().toLocaleDateString(),
+                reportDate: new Date().toLocaleDateString(),
             };
 
             this.logger.log('📄 Generando documento PDF con plantilla...');
@@ -451,6 +452,49 @@ export class ReportExporterService {
 
         } catch (error) {
             this.logger.error('Error generando PDF de préstamos:', error);
+            throw new Error(`Error al generar PDF: ${error.message}`);
+        }
+    }
+
+    async generateMoratoryInterestReportPdf(reportData: MoratoryInterestReport): Promise<Buffer> {
+        try {
+            const { headerLogo, watermarkLogo } = this.getLogosBase64();
+            const verticalTextBase64 = await this.getVerticalTextBase64(envs.verticalTextReports, 792);
+
+            // (opcional) podrías generar un gráfico simple del total generado vs recaudado
+            let summaryChartBase64 = '';
+            try {
+                const chartBuffer = await this.generateSimpleSummaryChart(reportData.summary);
+                summaryChartBase64 = `data:image/png;base64,${chartBuffer.toString('base64')}`;
+            } catch (error) {
+                this.logger.warn('Error generando gráfica resumen:', error.message);
+            }
+
+            const templateData = {
+                ...reportData,
+                reportDate: new Date().toLocaleDateString(envs.appLocale),
+                headerLogo,
+                watermarkLogo,
+                verticalTextBase64,
+                summaryChartBase64,
+            };
+
+            const docDefinition = await moratoryInterestsReportTemplate(templateData);
+            const pdfDoc = this.printer.createPdfKitDocument(docDefinition);
+
+            return new Promise((resolve, reject) => {
+                const chunks: Buffer[] = [];
+                pdfDoc.on('data', (chunk) => chunks.push(chunk));
+                pdfDoc.on('end', () => resolve(Buffer.concat(chunks)));
+                pdfDoc.on('error', (err) => {
+                    pdfDoc.end();
+                    reject(err);
+                });
+                pdfDoc.end();
+            });
+
+        } catch (error) {
+            this.logger.error('Error generando PDF de reporte de intereses moratorios:', error);
             throw new Error(`Error al generar PDF: ${error.message}`);
         }
     }
@@ -506,7 +550,7 @@ export class ReportExporterService {
                         },
                         tooltip: {
                             callbacks: {
-                                label: function(context) {
+                                label: function (context) {
                                     const label = context.label || '';
                                     const value = context.parsed;
                                     return `${label}: ${value.toFixed(1)}%`;
@@ -565,12 +609,12 @@ export class ReportExporterService {
                             font: { size: 14, weight: 'bold' },
                             color: '#000000' // ✅ Negro nítido
                         },
-                        legend: { 
-                            display: false 
+                        legend: {
+                            display: false
                         },
                         tooltip: {
                             callbacks: {
-                                label: function(context) {
+                                label: function (context) {
                                     const collectorName = topCollectors[context.dataIndex].collectorName;
                                     const percentage = percentages[context.dataIndex];
                                     const amount = collected[context.dataIndex];
@@ -637,8 +681,8 @@ export class ReportExporterService {
                             font: { size: 14 },
                             color: '#000000' // ✅ Negro nítido
                         },
-                        legend: { 
-                            display: false 
+                        legend: {
+                            display: false
                         }
                     },
                     scales: {
@@ -831,7 +875,7 @@ export class ReportExporterService {
     private async generateLoanTypeChart(loans: any[]): Promise<Buffer> {
         try {
             const canvas = createCanvas(450, 300);
-            
+
             // Agrupar por tipo de crédito (usar el campo creditTypeName que ya está traducido)
             const typeCounts: { [key: string]: number } = {};
             loans.forEach(l => {
@@ -891,7 +935,7 @@ export class ReportExporterService {
                         },
                         tooltip: {
                             callbacks: {
-                                label: function(context) {
+                                label: function (context) {
                                     const label = labels[context.dataIndex];
                                     const value = context.parsed;
                                     const percentage = percentages[context.dataIndex];
@@ -916,7 +960,7 @@ export class ReportExporterService {
     private async generateLoanComparisonChart(loans: any[]): Promise<Buffer> {
         try {
             const canvas = createCanvas(500, 300);
-            
+
             // Contar nuevos vs refinanciados (usando el campo loanStatusName traducido)
             const statusCounts: { [key: string]: number } = {
                 'Nuevos': 0,
@@ -968,12 +1012,12 @@ export class ReportExporterService {
                             font: { size: 14, weight: 'bold' },
                             color: '#000000' // ✅ Negro nítido
                         },
-                        legend: { 
-                            display: false 
+                        legend: {
+                            display: false
                         },
                         tooltip: {
                             callbacks: {
-                                label: function(context) {
+                                label: function (context) {
                                     const value = context.parsed.y;
                                     const percentage = percentages[context.dataIndex];
                                     return `Cantidad: ${value} (${percentage}%)`;
@@ -986,7 +1030,7 @@ export class ReportExporterService {
                             beginAtZero: true,
                             ticks: {
                                 stepSize: 1,
-                                callback: function(value) {
+                                callback: function (value) {
                                     return value;
                                 },
                                 color: '#000000' // ✅ Negro nítido
@@ -1007,4 +1051,63 @@ export class ReportExporterService {
             return this.createEmptyChart(createCanvas(500, 300), 'Error al generar gráfica');
         }
     }
+
+    /**
+     * Genera un gráfico de resumen simple a partir de los datos proporcionados.
+     * @param summary Resumen de los datos a visualizar.
+     * @returns Buffer de la imagen del gráfico generado.
+     */
+    private async generateSimpleSummaryChart(summary: any): Promise<Buffer> {
+        try {
+            const canvas = createCanvas(400, 300);
+
+            const generated = this.sanitizeNumber(summary.totalGenerated);
+            const collected = this.sanitizeNumber(summary.totalCollected);
+
+            const remaining = Math.max(0, generated - collected);
+            const labels = ['Generado', 'Recaudado', 'Pendiente'];
+
+            new Chart(canvas as any, {
+                type: 'bar',
+                data: {
+                    labels,
+                    datasets: [{
+                        label: 'Valores ($)',
+                        data: [generated, collected, remaining],
+                        backgroundColor: ['#36a2eb', '#4bc0c0', '#ff6384'],
+                        borderWidth: 1,
+                        borderColor: '#ffffff'
+                    }],
+                },
+                options: {
+                    responsive: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Resumen General',
+                            font: { size: 16, weight: 'bold' },
+                            color: '#000000'
+                        },
+                        legend: { display: false }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: { color: '#000000' },
+                            title: { display: true, text: 'Monto ($)', color: '#000000' }
+                        },
+                        x: {
+                            ticks: { color: '#000000' }
+                        }
+                    }
+                }
+            });
+
+            return canvas.toBuffer('image/png');
+        } catch (error) {
+            this.logger.error('Error en generateSimpleSummaryChart:', error);
+            return this.createEmptyChart(createCanvas(400, 300), 'Error al generar resumen');
+        }
+    }
+
 }

@@ -66,11 +66,25 @@ export class ReportsService {
 
   private isReportEmpty(report: any): boolean {
     // Ajusta según la estructura de tus reportes
-    // Para collections-report
-    if (report.summary && report.summary.totalCollections === 0) {
-      return true;
+    // Para collections-report (existente)
+    if (report && report.summary && typeof report.summary.totalCollections === 'number') {
+      return report.summary.totalCollections === 0;
     }
-    // Agrega otras validaciones si hay más tipos de reportes
+
+    // Para moratory interest report: summary puede ser { byStatus: [...], totalGenerated, totalCollected }
+    if (report && report.summary) {
+      // si summary.totalGenerated existe y es numérico
+      if (typeof report.summary.totalGenerated === 'number') {
+        return report.summary.totalGenerated === 0;
+      }
+      // si summary.byStatus es un arreglo, comprobar suma de total_generated
+      if (Array.isArray(report.summary.byStatus)) {
+        const total = report.summary.byStatus.reduce((acc: number, s: any) => acc + (s?.total_generated || 0), 0);
+        return total === 0;
+      }
+    }
+
+    // Por defecto, no considerarlo vacío
     return false;
   }
 

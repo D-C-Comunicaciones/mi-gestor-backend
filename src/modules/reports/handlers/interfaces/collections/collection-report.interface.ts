@@ -1,4 +1,4 @@
-import { CollectorSummary } from "./collection-summary.interface";
+import { CollectorSummary } from "./collector-summary.interface";
 import { Collection } from "./collection.interface";
 import { Metadata } from "./metadata.interface";
 import { Summary } from "./summary.interface";

@@ -1,0 +1,32 @@
+export interface LoanDetail {
+  id: number;
+  loanAmount: number;
+  remainingBalance: number;
+  startDate: string;
+  nextDueDate: string;
+  graceEndDate: string;
+  requiresCapitalPayment: string;
+  interestRateId: number | null;
+  interestRateName: string;
+  interestRateValue: number;
+  penaltyRateId: number | null;
+  penaltyRateName: string;
+  penaltyRateValue: number;
+  termId: number | null;
+  termValue: string | number | null;
+  gracePeriodId: number | null;
+  gracePeriodName: string;
+  gracePeriodDays: number;
+  paymentFrequencyId: number | null;
+  paymentFrequencyName: string;
+  loanTypeId: number | null;
+  loanTypeName: string;
+  creditTypeName: string;
+  loanStatusId: number | null;
+  loanStatusName: string;
+  customerId: number | null;
+  customerName: string;
+  customerDocument: string;
+  customerAddress: string;
+  customerPhone: string;
+}

@@ -1,20 +1,13 @@
 import { PrismaService } from '@infraestructure/prisma/prisma.service';
 import { DateRangeDto } from '@common/dto';
 import { Injectable, Logger } from '@nestjs/common';
-import {
-	Collection,
-	CollectionsReport,
-	CollectorRouteAggregate,
-	InstallmentRawRow,
-	PaymentRawRow,
-	CollectorSummary,
-	Summary,
-} from './interfaces';
 import { ReportHandler } from './base-report.handler';
+import { Collection, CollectionsReport, CollectorRouteAggregate, CollectorSummary, InstallmentRawRow, PaymentRawRow, Summary } from './interfaces';
+import {  } from './interfaces';
 
 @Injectable()
-export class CollectionsReportHandler implements ReportHandler<DateRangeDto, CollectionsReport> {
-  private readonly logger = new Logger(CollectionsReportHandler.name);
+export class CollectionReportHandler implements ReportHandler<DateRangeDto, CollectionsReport> {
+  private readonly logger = new Logger(CollectionReportHandler.name);
 
   constructor(private readonly prisma: PrismaService) {}
 

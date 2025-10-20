@@ -6,8 +6,6 @@ import { Response } from 'express';
 import { ReportExporterService } from './reports-exporter.service';
 import { plainToInstance } from 'class-transformer';
 import { JwtAuthGuard, PermissionsGuard } from '@modules/auth/guards';
-import { ReportCollectionService } from './reports-collections.service';
-import { ReportLoanService } from './reports-loans.service';
 import { SwaggerExportReport, SwaggerCollectionsReport, SwaggerLoansReport } from '@common/decorators/swagger';
 import { LoanReportDetailDto, ResponseLoanReportDto } from './dto/response-loan-report.dto';
 import { LoanReportResponse } from './interfaces';
@@ -24,14 +22,13 @@ export class ReportsController {
   constructor(
     private readonly reportsService: ReportsService,
     private readonly reportsExporterService: ReportExporterService,
-    private readonly reportLoanService: ReportLoanService,
   ) { }
 
   @Get('loans-report')
   @Permissions('view.reports')
   @SwaggerLoansReport()
   async getLoansReport(@Query() dto: DateRangeDto): Promise<LoanReportResponse> {
-    const loansReportRaw = await this.reportLoanService.getLoansReportData(dto);
+    const loansReportRaw = await this.reportsService.getReport('loans-report', dto);
     const loansReport = plainToInstance(ResponseLoanReportDto, loansReportRaw);
     return {
       customMessage: 'Resumen de valores de créditos obtenido exitosamente',
@@ -57,6 +54,18 @@ export class ReportsController {
     return {
       customMessage: 'Resumen de valores de cobros obtenido exitosamente',
       collectionsReport,
+    };
+  }
+
+  @Get('moratory-interests-report')
+  @Permissions('view.reports')
+  @SwaggerLoansReport()
+  async getInterestReport(@Query() dto: DateRangeDto) {
+    const interestReportRaw = await this.reportsService.getReport('moratory-interests-report', dto);
+    const interestReport = plainToInstance(ResponseLoanReportDto, interestReportRaw);
+    return {
+      customMessage: 'Resumen de valores de créditos obtenido exitosamente',
+      loansReport: interestReport,
     };
   }
 
@@ -92,7 +101,7 @@ export class ReportsController {
       filename?: string
     }> = {
       'loans-report': {
-        fetchData: (dto) => this.reportLoanService.getLoansReportData(dto),
+        fetchData: (dto) => this.reportsService.getReport('loans-report', dto),
         validateData: (data) => ((data.numberOfNewLoans || 0) > 0) || ((data.numberOfRefinancedLoans || 0) > 0),
         generateExcel: (data) => this.reportsExporterService.generateLoanReportExcel(data),
         generatePdf: (data) => this.reportsExporterService.generateLoanReportPdf(data),
@@ -104,6 +113,14 @@ export class ReportsController {
         generateExcel: (data) => this.reportsExporterService.generateCollectionReportExcel(data),
         generatePdf: (data) => this.reportsExporterService.generateCollectionReportPdf(data),
         filename: 'collections-report'
+      },
+
+      'moratory-interests-report': {
+        fetchData: (dto) => this.reportsService.getReport('moratory-interests-report', dto),
+        validateData: (data) => data.collections && data.collections.length > 0,
+        generateExcel: (data) => this.reportsExporterService.generateCollectionReportExcel(data),
+        generatePdf: (data) => this.reportsExporterService.generateCollectionReportPdf(data),
+        filename: 'moratory-interests-report'
       },
 
       // 'interest-summary': { ... } agregar cuando sea necesario
