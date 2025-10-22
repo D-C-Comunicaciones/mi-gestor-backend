@@ -7,7 +7,8 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { join } from 'path';
 import { envs } from '@config/envs';
-import { LoanDetail, MoratoryInterestReport } from './handlers/interfaces';
+import { LoanDetail } from './handlers/interfaces/loans';
+import { MoratoryInterestReport } from './handlers/interfaces/moratory-interest';
 import { CollectionReportData } from '@templates/reports/interfaces';
 import { loansReportTemplate, collectionsReportTemplate, moratoryInterestsReportTemplate } from '@templates/index';
 import { LoanReportData } from '@templates/reports/interfaces';
@@ -461,7 +462,7 @@ export class ReportExporterService {
             const { headerLogo, watermarkLogo } = this.getLogosBase64();
             const verticalTextBase64 = await this.getVerticalTextBase64(envs.verticalTextReports, 792);
 
-            // (opcional) podrías generar un gráfico simple del total generado vs recaudado
+            // 📊 Intentar generar la gráfica resumen (opcional)
             let summaryChartBase64 = '';
             try {
                 const chartBuffer = await this.generateSimpleSummaryChart(reportData.summary);
@@ -492,12 +493,128 @@ export class ReportExporterService {
                 });
                 pdfDoc.end();
             });
-
         } catch (error) {
             this.logger.error('Error generando PDF de reporte de intereses moratorios:', error);
             throw new Error(`Error al generar PDF: ${error.message}`);
         }
     }
+
+    /**
+ * Genera reporte de intereses moratorios en Excel
+ */
+    async generateMoratoryInterestsReportExcel(reportData: any): Promise<Buffer> {
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet('Intereses Moratorios');
+
+        const { loansReport } = reportData;
+        const { data = [], summary = {}, startDate, endDate } = loansReport || {};
+
+        // 1. ENCABEZADO PRINCIPAL
+        worksheet.getCell('A1').value = 'REPORTE DE INTERESES MORATORIOS';
+        worksheet.getCell('A1').font = { bold: true, size: 16 };
+        worksheet.mergeCells('A1:H1');
+        worksheet.getCell('A1').alignment = { horizontal: 'center' };
+
+        worksheet.getCell('A3').value = `Período: ${startDate || 'N/A'} - ${endDate || 'N/A'}`;
+        worksheet.getCell('A3').font = { bold: true };
+
+        // 2. RESUMEN GENERAL
+        worksheet.getCell('A5').value = 'RESUMEN GENERAL';
+        worksheet.getCell('A5').font = { bold: true, size: 14 };
+
+        worksheet.getCell('A6').value = 'Total Intereses Generados:';
+        worksheet.getCell('B6').value = summary.totalGenerated || 0;
+        worksheet.getCell('B6').numFmt = '$#,##0.00';
+
+        worksheet.getCell('A7').value = 'Total Recaudado (Intereses):';
+        worksheet.getCell('B7').value = summary.totalCollected || 0;
+        worksheet.getCell('B7').numFmt = '$#,##0.00';
+
+        worksheet.getCell('A8').value = 'Total Descontado:';
+        worksheet.getCell('B8').value = summary.totalDiscounted || 0;
+        worksheet.getCell('B8').numFmt = '$#,##0.00';
+
+        worksheet.getCell('A9').value = 'Total Pendiente por Recaudar:';
+        worksheet.getCell('B9').value = summary.totalRemaining || 0;
+        worksheet.getCell('B9').numFmt = '$#,##0.00';
+
+        let currentRow = 11;
+
+        // 3. DETALLE AGRUPADO POR STATUS
+        for (const group of data) {
+            const { status, records = [], totalGenerated, totalCollected, totalDiscounted, totalRemaining } = group;
+
+            if (!records.length) continue;
+
+            currentRow += 2;
+            worksheet.getCell(`A${currentRow}`).value = `ESTADO: ${status.toUpperCase()}`;
+            worksheet.getCell(`A${currentRow}`).font = { bold: true, size: 14 };
+
+            currentRow += 2;
+
+            // Tabla de registros individuales
+            worksheet.addTable({
+                name: `${status.replace(/\s+/g, '')}Table`,
+                ref: `A${currentRow}`,
+                headerRow: true,
+                style: { theme: 'TableStyleMedium2', showRowStripes: true },
+                columns: [
+                    { name: 'ID Cuota', filterButton: true },
+                    { name: 'Estado', filterButton: true },
+                    { name: 'Interés Generado', filterButton: true },
+                    { name: 'Recaudado', filterButton: true },
+                    { name: 'Descontado', filterButton: true },
+                    { name: 'Pendiente', filterButton: true },
+                    { name: 'Descuentos Aplicados', filterButton: true },
+                    { name: 'Fecha' }
+                ],
+                rows: records.map(r => [
+                    r.installmentId,
+                    r.status,
+                    r.moratoryGenerated || 0,
+                    r.moratoryCollected || 0,
+                    r.moratoryDiscounted || 0,
+                    r.moratoryRemaining || 0,
+                    r.discountDescriptions?.join(', ') || '',
+                    r.createdAt ? r.createdAt.split('T')[0] : ''
+                ])
+            });
+
+            currentRow += records.length + 3;
+
+            // Subtotales
+            worksheet.getCell(`A${currentRow}`).value = 'Subtotal Generado:';
+            worksheet.getCell(`B${currentRow}`).value = totalGenerated || 0;
+            worksheet.getCell(`B${currentRow}`).numFmt = '$#,##0.00';
+            worksheet.getCell(`A${currentRow + 1}`).value = 'Subtotal Recaudado:';
+            worksheet.getCell(`B${currentRow + 1}`).value = totalCollected || 0;
+            worksheet.getCell(`B${currentRow + 1}`).numFmt = '$#,##0.00';
+            worksheet.getCell(`A${currentRow + 2}`).value = 'Subtotal Descontado:';
+            worksheet.getCell(`B${currentRow + 2}`).value = totalDiscounted || 0;
+            worksheet.getCell(`B${currentRow + 2}`).numFmt = '$#,##0.00';
+            worksheet.getCell(`A${currentRow + 3}`).value = 'Subtotal Pendiente:';
+            worksheet.getCell(`B${currentRow + 3}`).value = totalRemaining || 0;
+            worksheet.getCell(`B${currentRow + 3}`).numFmt = '$#,##0.00';
+
+            currentRow += 5;
+        }
+
+        // 4. AJUSTE DE ANCHO AUTOMÁTICO
+        worksheet.columns.forEach(col => {
+            let maxLength = 10;
+            if (typeof col.eachCell === 'function') {
+                col.eachCell({ includeEmpty: true }, (cell) => {
+                    const text = cell.value ? String(cell.value) : '';
+                    maxLength = Math.max(maxLength, text.length + 2);
+                });
+            }
+            col.width = maxLength;
+        });
+
+        const buffer = await workbook.xlsx.writeBuffer();
+        return Buffer.from(buffer);
+    }
+
 
     // -----------------------------------------------------------
     // MÉTODOS AUXILIARES

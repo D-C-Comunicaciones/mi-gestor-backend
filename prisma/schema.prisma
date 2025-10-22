@@ -337,7 +337,10 @@ model MoratoryInterest {
   installment Installment @relation(fields: [installmentId], references: [id])
   discounts   Discount[]  @relation("MoratoryDiscounts")
 
-  @@index([installmentId, moratoryInterestStatusId, daysLate, amount, paidAt, paidAmount, isPaid])
+  createdAt     DateTime @default(now()) @db.Date
+  updatedAt     DateTime? @updatedAt @db.Date
+
+  @@index([installmentId, moratoryInterestStatusId, daysLate, amount, paidAt, paidAmount, isPaid, createdAt, updatedAt])
   @@map("moratory_interests")
 }
 

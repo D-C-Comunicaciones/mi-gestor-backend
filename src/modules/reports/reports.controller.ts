@@ -9,8 +9,11 @@ import { JwtAuthGuard, PermissionsGuard } from '@modules/auth/guards';
 import { SwaggerExportReport, SwaggerCollectionsReport, SwaggerLoansReport } from '@common/decorators/swagger';
 import { LoanReportDetailDto, ResponseLoanReportDto } from './dto/response-loan-report.dto';
 import { LoanReportResponse } from './interfaces';
-import { ResponseCollectionReportDto } from './dto';
+import { ResponseCollectionReportDto, ResponseMoratoryInterestReportDto } from './dto';
 import { ReportsService } from './reports.service';
+import { reportTypesData } from './report-types';
+import { reportFormatsData } from './report-formats';
+import { SwaggerMoratoryInterestsReportDoc } from '@common/decorators/swagger/reports/moratory-interests-report-doc.decorator';
 
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiTags('reports')
@@ -27,53 +30,116 @@ export class ReportsController {
   @Get('loans-report')
   @Permissions('view.reports')
   @SwaggerLoansReport()
-  async getLoansReport(@Query() dto: DateRangeDto): Promise<LoanReportResponse> {
+  async getLoansReport(@Query() dto: DateRangeDto) {
     const loansReportRaw = await this.reportsService.getReport('loans-report', dto);
+
+    // 🔹 Validar si el reporte viene vacío
+    if (
+      loansReportRaw &&
+      typeof loansReportRaw === 'object' &&
+      'code' in loansReportRaw &&
+      loansReportRaw.code === 204
+    ) {
+      return {
+        code: 200,
+        status: 'success',
+        customMessage: loansReportRaw.message, // mensaje "No se encontraron datos..."
+      };
+    }
+
     const loansReport = plainToInstance(ResponseLoanReportDto, loansReportRaw);
+
     return {
+      code: 200,
+      status: 'success',
       customMessage: 'Resumen de valores de créditos obtenido exitosamente',
-      loansReport,
+      data: {
+        loansReport,
+      },
     };
   }
 
   @Get('collections-report')
   @Permissions('view.reports')
   @SwaggerCollectionsReport()
-  async getCollectionsReport(
-    @Query() dto: DateRangeDto
-  ): Promise<{ customMessage: string; collectionsReport: ResponseCollectionReportDto }> {
-
-    // Usamos el ReportsService pasando el nombre exacto del handler
+  async getCollectionsReport(@Query() dto: DateRangeDto) {
     const collectionsReportRaw = await this.reportsService.getReport(
-      'collections-report', // Debe coincidir con getName() del handler
-      dto
+      'collections-report',
+      dto,
     );
 
-    const collectionsReport = plainToInstance(ResponseCollectionReportDto, collectionsReportRaw);
+    // 🔹 Validar si el reporte viene vacío
+    if (
+      collectionsReportRaw &&
+      typeof collectionsReportRaw === 'object' &&
+      'code' in collectionsReportRaw &&
+      collectionsReportRaw.code === 204
+    ) {
+      return {
+        code: 200,
+        status: 'success',
+        customMessage: collectionsReportRaw.message, // mensaje "No se encontraron datos..."
+      };
+    }
+
+    const collectionsReport = plainToInstance(
+      ResponseCollectionReportDto,
+      collectionsReportRaw,
+    );
 
     return {
+      code: 200,
+      status: 'success',
       customMessage: 'Resumen de valores de cobros obtenido exitosamente',
-      collectionsReport,
+      data: {
+        collectionsReport,
+      },
     };
   }
 
   @Get('moratory-interests-report')
   @Permissions('view.reports')
-  @SwaggerLoansReport()
+  @SwaggerMoratoryInterestsReportDoc()
   async getInterestReport(@Query() dto: DateRangeDto) {
-    const interestReportRaw = await this.reportsService.getReport('moratory-interests-report', dto);
-    const interestReport = plainToInstance(ResponseLoanReportDto, interestReportRaw);
+    const moratoryInterestReportRaw = await this.reportsService.getReport(
+      'moratory-interests-report',
+      dto,
+    );
+
+    // 🔹 Si el reporte devuelve objeto "sin datos"
+    if (
+      moratoryInterestReportRaw &&
+      typeof moratoryInterestReportRaw === 'object' &&
+      'code' in moratoryInterestReportRaw &&
+      moratoryInterestReportRaw.code === 204
+    ) {
+      return {
+        customMessage: moratoryInterestReportRaw.message, // usar el mensaje "No se encontraron datos..."
+      };
+    }
+
+    // 🔹 Si sí trae datos válidos
+    const moratoryInterestReport = plainToInstance(
+      ResponseMoratoryInterestReportDto,
+      moratoryInterestReportRaw,
+    );
+
     return {
+      code: 200,
+      status: 'success',
       customMessage: 'Resumen de valores de créditos obtenido exitosamente',
-      loansReport: interestReport,
+      data: {
+        moratoryInterestReport,
+      },
     };
   }
+
 
   @Get('export/:reportType/:format')
   @Permissions('export.reports')
   @SwaggerExportReport({
-    reportTypes: ['loans-report', 'interest-summary', 'collections-report'],
-    formats: ['xlsx', 'pdf']
+    reportTypes: ['loans-report', 'interest-summary', 'collections-report', 'moratory-interests-report'],
+    formats: ['xlsx', 'pdf'],
   })
   async exportReport(
     @Param('reportType') reportType: string,
@@ -82,6 +148,7 @@ export class ReportsController {
     @Res() res: Response,
   ): Promise<any> {
 
+    // Valid formats provienen de reportFormatsData
     const validFormats = ['xlsx', 'pdf'];
 
     if (!validFormats.includes(format)) {
@@ -109,7 +176,7 @@ export class ReportsController {
       },
       'collections-report': {
         fetchData: (dto) => this.reportsService.getReport('collections-report', dto),
-        validateData: (data) => data.collections && data.collections.length > 0,
+        validateData: (data) => data && data.collections && data.collections.length > 0,
         generateExcel: (data) => this.reportsExporterService.generateCollectionReportExcel(data),
         generatePdf: (data) => this.reportsExporterService.generateCollectionReportPdf(data),
         filename: 'collections-report'
@@ -117,22 +184,26 @@ export class ReportsController {
 
       'moratory-interests-report': {
         fetchData: (dto) => this.reportsService.getReport('moratory-interests-report', dto),
-        validateData: (data) => data.collections && data.collections.length > 0,
-        generateExcel: (data) => this.reportsExporterService.generateCollectionReportExcel(data),
-        generatePdf: (data) => this.reportsExporterService.generateCollectionReportPdf(data),
+        // Acepta:
+        // - respuestas en forma de array (legacy)
+        // - objetos con propiedad `data` que sea array (handler actual)
+        validateData: (data) => {
+          if (!data) return false;
+          if (Array.isArray(data)) return data.length > 0;
+          if (Array.isArray((data as any).data)) return (data as any).data.length > 0;
+          return false;
+        },
+        generateExcel: (data) => this.reportsExporterService.generateMoratoryInterestsReportExcel(data),
+        generatePdf: (data) => this.reportsExporterService.generateMoratoryInterestReportPdf(data),
         filename: 'moratory-interests-report'
       },
-
-      // 'interest-summary': { ... } agregar cuando sea necesario
     };
 
     const config = reportConfigs[reportType];
 
     if (!config) {
       return res.status(400).json({
-        statusCode: 400,
-        message: `Tipo de reporte "${reportType}" no válido o no implementado. Tipos disponibles: ${Object.keys(reportConfigs).join(', ')}`,
-        error: 'Bad Request'
+        customMmessage: `Tipo de reporte "${reportType}" no válido o no implementado. Tipos disponibles: ${Object.keys(reportConfigs).join(', ')}`,
       });
     }
 
@@ -140,10 +211,8 @@ export class ReportsController {
       const reportData = await config.fetchData(dto);
 
       if (!config.validateData(reportData)) {
-        return res.status(404).json({
-          statusCode: 404,
-          message: `No se encontraron datos para exportar para el reporte "${reportType}" en el período especificado`,
-          error: 'Not Found'
+        return res.status(200).json({
+          customMessage: `No se encontraron datos para exportar para el reporte "${reportType}" en el período especificado`,
         });
       }
 

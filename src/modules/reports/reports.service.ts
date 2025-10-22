@@ -19,12 +19,12 @@ export class ReportsService {
   async getReport<TParams = any, TResult = any>(
     reportName: string,
     params?: TParams,
-  ): Promise<TResult> {
+  ): Promise<TResult | { code: number; status: string; message: string; data?: any }> {
     this.logger.log(`📊 Solicitando reporte: ${reportName}`);
 
     const cacheKey = this.buildCacheKey(reportName, params);
 
-    // Revisar cache directamente en Redis
+    // 🔹 Revisar cache directamente en Redis
     const cached = await this.redis.get(cacheKey);
     if (cached) {
       const parsed = JSON.parse(cached) as TResult;
@@ -33,31 +33,43 @@ export class ReportsService {
       return parsed;
     }
 
+    // 🔹 Buscar el handler correspondiente al reporte
     const handler: ReportHandler<TParams, TResult> | null =
       this.reportRegistry.getHandler(reportName) as any;
 
     if (!handler) {
       this.logger.warn(`❌ No se encontró handler para el reporte: ${reportName}`);
-      throw new Error(`Handler no registrado para reporte: ${reportName}`);
+      return {
+        code: 200,
+        status: 'error',
+        message: `Handler no registrado para reporte: ${reportName}`,
+      };
     }
 
     this.logger.log(`⚡ Generando reporte: ${reportName}`);
     const result = await handler.execute(params);
 
-    // ✅ Validar que haya datos antes de cachear
+    // 🔹 Validar que haya datos antes de cachear
     if (!result || this.isReportEmpty(result)) {
       this.logger.log(`Reporte vacío, no se cachea: ${reportName}`);
-      throw new Error(`No se encontraron datos para exportar para el reporte "${reportName}" en el período especificado`);
+      return {
+        code: 204,
+        status: 'no_content',
+        message: `No se encontraron datos para exportar para el reporte "${reportName}" en el período especificado`,
+        data: [],
+      };
     }
 
-    // Guardar en Redis TTL 30 minutos (1800 seg)
+    // 🔹 Guardar en Redis TTL 30 minutos (1800 seg)
     await this.redis.set(cacheKey, JSON.stringify(result), 'EX', this.cacheTTL / 1000);
     this.logger.log(`✅ Reporte cacheado por 30 minutos: ${reportName}`);
 
+    // 🔹 Emitir evento del reporte generado
     this.reportsGateway.emitReport(reportName, result);
 
     return result;
   }
+
 
   private buildCacheKey(reportName: string, params?: any): string {
     if (!params) return reportName;

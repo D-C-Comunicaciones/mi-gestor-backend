@@ -2,8 +2,7 @@ import { PrismaService } from '@infraestructure/prisma/prisma.service';
 import { DateRangeDto } from '@common/dto';
 import { Injectable, Logger } from '@nestjs/common';
 import { ReportHandler } from './base-report.handler';
-import { Collection, CollectionsReport, CollectorRouteAggregate, CollectorSummary, InstallmentRawRow, PaymentRawRow, Summary } from './interfaces';
-import {  } from './interfaces';
+import { Collection, CollectionsReport, CollectorRouteAggregate, CollectorSummary, InstallmentRawRow, PaymentRawRow, Summary } from './interfaces/collections';
 
 @Injectable()
 export class CollectionReportHandler implements ReportHandler<DateRangeDto, CollectionsReport> {

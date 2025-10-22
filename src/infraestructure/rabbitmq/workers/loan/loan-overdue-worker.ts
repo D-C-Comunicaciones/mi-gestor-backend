@@ -25,10 +25,10 @@ export class LoanOverdueWorker implements OnModuleInit {
 
   private async handleMessage(msg: any) {
     if (!msg) return;
-    
+
     const content = msg.content?.toString() ?? '';
     const { loanId } = JSON.parse(content);
-    
+
     if (!loanId) {
       this.logger.warn('⚠️ Mensaje sin loanId, se descarta');
       return;
@@ -41,7 +41,7 @@ export class LoanOverdueWorker implements OnModuleInit {
     }
 
     this.processingLoans.add(loanId);
-    
+
     try {
       this.logger.log(`📩 Procesando loanId=${loanId}`);
 
@@ -237,10 +237,10 @@ export class LoanOverdueWorker implements OnModuleInit {
   ) {
     // Calcular interés diario
     const dailyInterest = loanAmount.mul(penaltyRate).div(30);
-    
+
     // 🔄 APLICAR REDONDEO para evitar centavos en intereses moratorios
     const roundedDailyInterest = new Decimal(Math.round(dailyInterest.toNumber()));
-    
+
     this.logger.log(
       `💰 Interés moratorio calculado: teórico=${dailyInterest.toFixed(2)}, redondeado=${roundedDailyInterest.toString()}`
     );
@@ -253,6 +253,15 @@ export class LoanOverdueWorker implements OnModuleInit {
       }
     });
 
+    const unpaidStatus = await this.prisma.moratoryInterestStatus.findFirst({
+      where: { name: "Unpaid"},
+    });
+
+    if (!unpaidStatus) {
+      throw new Error("No se encontró el estado 'Unpaid' en esta base de datos.");
+    }
+
+
     // Solo crear si no existe para ESTE DÍA específico
     if (!existingMoratory && roundedDailyInterest.gt(0)) {
       await this.prisma.moratoryInterest.create({
@@ -262,7 +271,7 @@ export class LoanOverdueWorker implements OnModuleInit {
           daysLate: 1, // cada registro representa un día
           paidAmount: new Decimal(0),
           isPaid: false,
-          moratoryInterestStatusId: 1, // "Unpaid" (asegúrate que existe ese status)
+          moratoryInterestStatusId: unpaidStatus.id, // "Unpaid" (asegúrate que existe ese status)
         },
       });
 

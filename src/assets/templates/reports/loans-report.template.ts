@@ -1,8 +1,6 @@
 import type { TDocumentDefinitions, Content } from 'pdfmake/interfaces';
 import { LoanReportData } from './interfaces';
 
-
-
 /**
  * Construye el template del reporte PDF de créditos
  */

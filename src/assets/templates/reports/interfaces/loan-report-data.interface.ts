@@ -1,4 +1,4 @@
-import { LoansReportMetadata } from "@modules/reports/handlers/interfaces";
+import { LoansReportMetadata } from "@modules/reports/handlers/interfaces/loans";
 
 export interface LoanReportData {
   headerLogo: string;

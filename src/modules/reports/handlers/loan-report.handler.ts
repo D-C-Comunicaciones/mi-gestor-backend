@@ -4,7 +4,7 @@ import { PrismaService } from '@infraestructure/prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import { format, startOfDay, endOfDay, subDays } from 'date-fns';
 import { ReportHandler } from './base-report.handler';
-import { LoanDetail, LoanReportData } from './interfaces';
+import { LoanDetail, LoanReportData } from './interfaces/loans';
 
 /* -------------------- Handler -------------------- */
 @Injectable()
@@ -70,6 +70,7 @@ export class LoanReportHandler
   }
 
   private async getLoansReportData(dto: DateRangeDto): Promise<LoanReportData> {
+    
     let { startDate, endDate } = dto;
 
     if (!startDate || !endDate) {
