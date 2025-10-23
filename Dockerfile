@@ -47,6 +47,10 @@ RUN apk add --no-cache \
 
 COPY package*.json ./
 RUN npm ci --omit=dev
+
+# ✅ Agregar ts-node y typescript solo para permitir ejecutar el seed
+RUN npm install ts-node typescript
+
 COPY prisma ./prisma
 RUN npx prisma generate
 
@@ -65,7 +69,7 @@ RUN apk add --no-cache \
     fontconfig \
     ttf-dejavu
 
-# (Opcional) user no-root:
+# (Opcional) user no-root
 RUN addgroup -S app && adduser -S app -G app
 
 COPY --from=prod-deps /app/node_modules ./node_modules
@@ -79,5 +83,3 @@ EXPOSE 3000
 # HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD wget -qO- http://localhost:3000/health || exit 1
 
 CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main"]
-
-
