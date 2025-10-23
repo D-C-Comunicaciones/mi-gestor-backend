@@ -94,7 +94,7 @@ model LoanStatus {
 
 model PaymentType {
   id       Int     @id @default(autoincrement()) // PK: id tipo de pago
-  name     String  @unique // Ej: CAPITAL, INTEREST, LATE_FEE, RENT
+  name     String  @unique
   isActive Boolean @default(true) // Control de catálogo
 
   payments Payment[] // Pagos registrados con ese tipo

@@ -3,7 +3,7 @@ FROM node:20-alpine AS deps
 
 WORKDIR /app
 
-# Instalar dependencias necesarias para compilar canvas
+# Instalar dependencias necesarias para compilar canvas + fuentes
 RUN apk add --no-cache \
     python3 \
     make \
@@ -11,7 +11,9 @@ RUN apk add --no-cache \
     cairo-dev \
     pango-dev \
     jpeg-dev \
-    giflib-dev
+    giflib-dev \
+    fontconfig \
+    ttf-dejavu
 
 COPY package*.json ./
 COPY prisma ./prisma
@@ -31,7 +33,7 @@ FROM node:20-alpine AS prod-deps
 
 WORKDIR /app
 
-# Instalar dependencias necesarias para compilar canvas en prod
+# Instalar dependencias necesarias para compilar canvas en prod + fuentes
 RUN apk add --no-cache \
     python3 \
     make \
@@ -39,7 +41,9 @@ RUN apk add --no-cache \
     cairo-dev \
     pango-dev \
     jpeg-dev \
-    giflib-dev
+    giflib-dev \
+    fontconfig \
+    ttf-dejavu
 
 COPY package*.json ./
 RUN npm ci --omit=dev
@@ -52,12 +56,14 @@ FROM node:20-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 
-# Instalar solo librerías runtime necesarias para ejecutar canvas
+# Instalar librerías runtime necesarias para ejecutar canvas + fuentes
 RUN apk add --no-cache \
     cairo \
     pango \
     jpeg \
-    giflib
+    giflib \
+    fontconfig \
+    ttf-dejavu
 
 # (Opcional) user no-root:
 RUN addgroup -S app && adduser -S app -G app
@@ -69,7 +75,9 @@ COPY public ./public
 
 EXPOSE 3000
 
-# HEALTHCHECK simple (opcional, descomenta si tienes /health)
+# HEALTHCHECK simple (opcional)
 # HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD wget -qO- http://localhost:3000/health || exit 1
 
-CMD ["sh", "-c", "npx prisma migrate deploy && npx prisma db seed && node dist/main"]
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main"]
+
+

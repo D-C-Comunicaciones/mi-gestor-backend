@@ -859,18 +859,17 @@ export class ReportExporterService {
             const yPos = height / 2 + 25;
 
             const svg = `
-<svg xmlns="http://www.w3.org/2000/svg" width="40" height="${height}">
-  <text x="20" y="${yPos}" 
-        text-anchor="middle"
-        font-size="${fontSize}" 
-        fill="black"
-        fill-opacity="0.35"
-        font-family="Arial, sans-serif"
-        transform="rotate(90, 20, ${yPos})">
-    ${safeText}
-  </text>
-</svg>`.trim(); // 👈 importante el trim()
-
+                <svg xmlns="http://www.w3.org/2000/svg" width="40" height="${height}">
+                <text x="20" y="${yPos}" 
+                        text-anchor="middle"
+                        font-size="${fontSize}" 
+                        fill="black"
+                        fill-opacity="0.35"
+                        font-family="Arial, sans-serif"
+                        transform="rotate(90, 20, ${yPos})">
+                    ${safeText}
+                </text>
+                </svg>`.trim();
 
             return svg;
 

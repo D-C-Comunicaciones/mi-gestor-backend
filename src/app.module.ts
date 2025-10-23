@@ -8,7 +8,6 @@ import { ChangesModule } from '@modules/changes/changes.module';
 import { CustomersModule } from '@modules/customers/customers.module';
 import { LoansModule } from '@modules/loans/loans.module';
 import { InstallmentsModule } from '@modules/installments/installments.module';
-import { WorkersModule } from '@infraestructure/rabbitmq/workers/loan/workers.module';
 import { DiscountsModule } from '@modules/discounts/discounts.module';
 import { ImportsModule } from '@modules/imports/imports.module';
 import { TemplatesModule } from '@modules/templates/templates.module';
@@ -48,7 +47,6 @@ import { APP_INTERCEPTOR } from '@nestjs/core';
     ChangesModule,
     LoansModule,
     InstallmentsModule,
-    WorkersModule,
     DiscountsModule,
     ImportsModule,
     TemplatesModule,

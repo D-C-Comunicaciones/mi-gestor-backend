@@ -8,6 +8,10 @@ import { NotesModule } from '@modules/notes/notes.module';
 import { FixedFeesStrategy, OnlyInterestsStrategy } from './strategies';
 import { LoanStrategyFactory } from './strategies/factories';
 import { TranslationsModule } from '@modules/translations/translations.module';
+import { InstallmentsService } from '@modules/installments/installments.service';
+import { LoanOverdueWorker } from './workers/loan-overdue-worker';
+import { LoanInstallmentWorker } from './workers/loan-installments-worker';
+import { RabbitMqModule } from '@infraestructure/rabbitmq/rabbitmq.module';
 
 @Module({
   imports: [
@@ -16,6 +20,7 @@ import { TranslationsModule } from '@modules/translations/translations.module';
     InstallmentsModule,
     NotesModule,
     TranslationsModule,
+    RabbitMqModule  
   ],
   controllers: [LoansController],
   providers: [
@@ -23,6 +28,9 @@ import { TranslationsModule } from '@modules/translations/translations.module';
     LoanStrategyFactory,
     FixedFeesStrategy,
     OnlyInterestsStrategy,
+    LoanInstallmentWorker,
+    LoanOverdueWorker,
+    InstallmentsService,
   ],
   exports: [LoansService],
 })

@@ -254,7 +254,7 @@ export class LoanOverdueWorker implements OnModuleInit {
     });
 
     const unpaidStatus = await this.prisma.moratoryInterestStatus.findFirst({
-      where: { name: "Unpaid"},
+      where: { name: "Unpaid" },
     });
 
     if (!unpaidStatus) {
