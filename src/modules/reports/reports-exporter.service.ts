@@ -839,11 +839,7 @@ export class ReportExporterService {
      * Genera un PNG en base64 con texto vertical rotado -90°
      */
 
-    async getVerticalTextBase64(
-        text: string,
-        height: number,
-        fontSize: number = 10
-    ): Promise<string> {
+    async getVerticalTextBase64(text: string, height: number, fontSize: number = 10): Promise<string> {
         const start = Date.now();
 
         try {
