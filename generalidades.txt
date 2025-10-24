@@ -17,3 +17,8 @@ rabbitmq-plugins enable rabbitmq_delayed_message_exchange
 ## para metricas en grafana
 
 rabbitmq-plugins enable rabbitmq_prometheus
+
+
+## para migrar datos seed y seed-status
+
+npm run seed:status

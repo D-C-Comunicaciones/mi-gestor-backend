@@ -1,6 +1,5 @@
 generator client {
   provider = "prisma-client-js"
-  seed = "ts-node --compiler-options {\"module\":\"CommonJS\"} prisma/seed.ts"
 }
 
 datasource db {
@@ -18,7 +17,7 @@ model Zone {
   code     String  @unique // Código corto de la zona (útil para integraciones)
   isActive Boolean @default(true) // Indica si la zona está activa (soft delete)
 
-  customers  Customer[] // Rel: clientes asignados a la zona
+  customers Customer[] // Rel: clientes asignados a la zona
 
   @@index([name])
   @@index([code])
@@ -124,7 +123,7 @@ model User {
   // Relación para pagos registrados por este usuario (audit)
   paymentsRecorded Payment[]  @relation("PaymentsRecordedByUser")
   discountsCreated Discount[] @relation("DiscountsCreatedByUser")
-  notes      Note[]     // Notas creadas por este usuario
+  notes            Note[] // Notas creadas por este usuario
 
   @@index([email])
   @@index([roleId])
@@ -224,19 +223,19 @@ model Customer {
   genderId Int
   gender   Gender @relation(fields: [genderId], references: [id])
 
-  documentNumber Int      @unique // Número de documento (único)
-  birthDate      DateTime @db.Date // Fecha de nacimiento (opcional, pero útil para auditoría)
-  address        String
-  phone          String // Teléfono
-  zoneId         Int? // FK opcional a Zone (si trabaja por zona)
+  documentNumber    Int      @unique // Número de documento (único)
+  birthDate         DateTime @db.Date // Fecha de nacimiento (opcional, pero útil para auditoría)
+  address           String
+  phone             String // Teléfono
+  zoneId            Int? // FK opcional a Zone (si trabaja por zona)
   collectionRouteId Int? // FK opcional, porque podría no estar asignado
-  userId         Int?     @unique // FK opcional a User (si tiene cuenta)
-  isActive       Boolean  @default(true) // Activación del cobrador
+  userId            Int?     @unique // FK opcional a User (si tiene cuenta)
+  isActive          Boolean  @default(true) // Activación del cobrador
 
   // Relaciones
-  zone Zone? @relation(fields: [zoneId], references: [id])
-  user User? @relation(fields: [userId], references: [id])
-  collectionRoute   CollectionRoute? @relation(fields: [collectionRouteId], references: [id])
+  zone            Zone?            @relation(fields: [zoneId], references: [id])
+  user            User?            @relation(fields: [userId], references: [id])
+  collectionRoute CollectionRoute? @relation(fields: [collectionRouteId], references: [id])
 
   loans Loan[] // Créditos asociados a este customer
 
@@ -275,22 +274,21 @@ model Collector {
   routes CollectionRoute[] // Rutas asignadas al cobrador
 
   @@index([firstName, lastName, isActive])
-
   @@map("collectors")
 }
 
 model CollectionRoute {
-  id          Int       @id @default(autoincrement())
+  id          Int        @id @default(autoincrement())
   collectorId Int?
   name        String
-  isActive    Boolean   @default(true)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  isActive    Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
   createdBy   Int
   collector   Collector? @relation(fields: [collectorId], references: [id])
-  customers   Customer[]  // <- Relación con customers
+  customers   Customer[] // <- Relación con customers
 
-  @@index([collectorId, isActive,  createdBy, createdAt, updatedAt, name, id])
+  @@index([collectorId, isActive, createdBy, createdAt, updatedAt, name, id])
   @@map("collection_routes")
 }
 
@@ -325,30 +323,30 @@ model PenaltyRate {
 }
 
 model MoratoryInterest {
-  id            Int   @id @default(autoincrement())
-  installmentId Int   
-  daysLate      Int
-  amount        Float
-  paidAt       DateTime? @db.Date
-  paidAmount  Decimal @default(0) @db.Decimal(20, 2)
-  isPaid      Boolean @default(false)
-  isDiscounted Boolean @default(false)
-  moratoryInterestStatusId Int @default(1)
-  moratoryInterestStatus  MoratoryInterestStatus @relation(fields: [moratoryInterestStatusId], references: [id])
-  installment Installment @relation(fields: [installmentId], references: [id])
-  discounts   Discount[]  @relation("MoratoryDiscounts")
+  id                       Int                    @id @default(autoincrement())
+  installmentId            Int
+  daysLate                 Int
+  amount                   Float
+  paidAt                   DateTime?              @db.Date
+  paidAmount               Decimal                @default(0) @db.Decimal(20, 2)
+  isPaid                   Boolean                @default(false)
+  isDiscounted             Boolean                @default(false)
+  moratoryInterestStatusId Int                    @default(1)
+  moratoryInterestStatus   MoratoryInterestStatus @relation(fields: [moratoryInterestStatusId], references: [id])
+  installment              Installment            @relation(fields: [installmentId], references: [id])
+  discounts                Discount[]             @relation("MoratoryDiscounts")
 
-  createdAt     DateTime @default(now()) @db.Date
-  updatedAt     DateTime? @updatedAt @db.Date
+  createdAt DateTime  @default(now()) @db.Date
+  updatedAt DateTime? @updatedAt @db.Date
 
   @@index([installmentId, moratoryInterestStatusId, daysLate, amount, paidAt, paidAmount, isPaid, createdAt, updatedAt])
   @@map("moratory_interests")
 }
 
 model MoratoryInterestStatus {
-  id          Int                 @id @default(autoincrement())
-  name        String              @unique
-  moratories  MoratoryInterest[]
+  id         Int                @id @default(autoincrement())
+  name       String             @unique
+  moratories MoratoryInterest[]
 
   @@index([id, name])
   @@map("moratory_interest_statuses")
@@ -427,12 +425,13 @@ model Loan {
 
 model Note {
   id        Int      @id @default(autoincrement()) // PK nota
-  modelId   Int      // ID del registro al que se asocia la nota
-  model     String   // Nombre del modelo al que se asocia la nota (ej: "loan", "customer")
-  content   String   // Contenido de la nota
+  modelId   Int // ID del registro al que se asocia la nota
+  model     String // Nombre del modelo al que se asocia la nota (ej: "loan", "customer")
+  content   String // Contenido de la nota
   createdBy Int      @default(0) // FK al usuario que creó la nota
   user      User     @relation(fields: [createdBy], references: [id]) // Relación a User
   createdAt DateTime @default(now()) // Fecha de creación
+
   @@index([createdBy, model, modelId, createdAt])
   @@map("notes")
 }
@@ -479,10 +478,10 @@ model InstallmentStatus {
 }
 
 model PaymentMethod {
-  id        Int     @id @default(autoincrement())
-  name      String  @unique
-  isActive  Boolean @default(true)
-  payments  Payment[]
+  id       Int       @id @default(autoincrement())
+  name     String    @unique
+  isActive Boolean   @default(true)
+  payments Payment[]
 
   @@index([name])
   @@index([isActive])
@@ -494,21 +493,21 @@ model Payment {
   loanId Int
   loan   Loan @relation(fields: [loanId], references: [id])
 
-  amount              Decimal   @db.Decimal(20, 2)
-    
+  amount Decimal @db.Decimal(20, 2)
+
   paymentTypeId Int
   paymentType   PaymentType @relation(fields: [paymentTypeId], references: [id])
 
   paymentMethodId Int
   paymentMethod   PaymentMethod @relation(fields: [paymentMethodId], references: [id])
 
-  paymentDate         DateTime @db.Date @default(now())
-  recordedByUserId    Int
-  recordedByUser      User     @relation("PaymentsRecordedByUser", fields: [recordedByUserId], references: [id])
+  paymentDate      DateTime @default(now()) @db.Date
+  recordedByUserId Int
+  recordedByUser   User     @relation("PaymentsRecordedByUser", fields: [recordedByUserId], references: [id])
 
   // Agregar relación con collector
-  collectorId         Int?
-  collector           Collector? @relation("PaymentsCollectedBy", fields: [collectorId], references: [id])
+  collectorId Int?
+  collector   Collector? @relation("PaymentsCollectedBy", fields: [collectorId], references: [id])
 
   allocations PaymentAllocation[]
 
@@ -638,14 +637,14 @@ model Discount {
   installment Installment?      @relation("InstallmentDiscounts", fields: [installmentId], references: [id])
   moratory    MoratoryInterest? @relation("MoratoryDiscounts", fields: [moratoryId], references: [id])
 
-  description  String?
-  amount       Decimal? @db.Decimal(20, 2)
+  description String?
+  amount      Decimal? @db.Decimal(20, 2)
 
-  createdAt       DateTime            @db.Date @default(now())
-  createdBy       Int?
-  createdByUser   User?               @relation("DiscountsCreatedByUser", fields: [createdBy], references: [id])
-  discountType    DiscountType        @relation(fields: [discountTypeId], references: [id])
-  isActive        Boolean             @default(true)
+  createdAt     DateTime     @default(now()) @db.Date
+  createdBy     Int?
+  createdByUser User?        @relation("DiscountsCreatedByUser", fields: [createdBy], references: [id])
+  discountType  DiscountType @relation(fields: [discountTypeId], references: [id])
+  isActive      Boolean      @default(true)
 
   @@index([loanId])
   @@index([installmentId])
@@ -747,4 +746,15 @@ model Configuration {
 
   @@index([currencyId, timezoneId, createdAt, updatedAt])
   @@map("configurations")
+}
+
+model SeedStatus {
+  id        Int      @id @default(autoincrement())
+  model     String   @unique
+  seeded    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([model, seeded, createdAt, updatedAt])
+  @@map("seed_statuses")
 }

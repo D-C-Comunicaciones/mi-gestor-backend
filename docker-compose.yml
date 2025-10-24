@@ -1,5 +1,6 @@
 services:
   api:
+    container_name: mi-gestor-api
     build:
       context: .
       dockerfile: Dockerfile
