@@ -1,0 +1,19 @@
+{
+    "conventionalCommits.scopes": [
+        "auth",
+        "ci",
+        "config",
+        "docs",
+        "feat",
+        "fix",
+        "deps",
+        "build",
+        "chore",
+        "refactor",
+        "style",
+        "test",
+        "perf",
+        "workflow",
+        "Reportes de intereses corrientes recaudados Listo. 2025-10-24 - 19:45"
+    ]
+}

@@ -9,11 +9,12 @@ import { JwtAuthGuard, PermissionsGuard } from '@modules/auth/guards';
 import { SwaggerExportReport, SwaggerCollectionsReport, SwaggerLoansReport } from '@common/decorators/swagger';
 import { LoanReportDetailDto, ResponseLoanReportDto } from './dto/response-loan-report.dto';
 import { LoanReportResponse } from './interfaces';
-import { ResponseCollectionReportDto, ResponseMoratoryInterestReportDto } from './dto';
+import { ResponseCollectionReportDto, ResponseMoratoryInterestReportDto, ResponseInterestReportDto } from './dto';
 import { ReportsService } from './reports.service';
 import { reportTypesData } from './report-types';
 import { reportFormatsData } from './report-formats';
 import { SwaggerMoratoryInterestsReportDoc } from '@common/decorators/swagger/reports/moratory-interests-report-doc.decorator';
+import { SwaggerInterestsReportDoc } from '@common/decorators/swagger/reports/interests-report-doc.decorator';
 
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiTags('reports')
@@ -134,6 +135,32 @@ export class ReportsController {
     };
   }
 
+  @Get('interests-report')
+  @Permissions('view.reports')
+  @SwaggerInterestsReportDoc()
+  async getInterestsReport(@Query() dto: DateRangeDto) {
+    const interestsReportRaw = await this.reportsService.getReport('interests-report', dto);
+
+    if (
+      interestsReportRaw &&
+      typeof interestsReportRaw === 'object' &&
+      'code' in interestsReportRaw &&
+      interestsReportRaw.code === 204
+    ) {
+      return {
+        code: 200,
+        status: 'success',
+        customMessage: interestsReportRaw.message,
+      };
+    }
+
+    const interestsReport = plainToInstance(ResponseInterestReportDto, interestsReportRaw);
+
+    return {
+      customMessage: 'Reporte de intereses corrientes obtenido exitosamente',
+      interestsReport,
+    };
+  }
 
   @Get('export/:reportType/:format')
   @Permissions('export.reports')
@@ -159,6 +186,8 @@ export class ReportsController {
       });
     }
 
+    const dateReportedAt = new Date();
+
     // Configuración de cada reporte
     const reportConfigs: Record<string, {
       fetchData: (dto: DateRangeDto) => Promise<any>,
@@ -167,6 +196,7 @@ export class ReportsController {
       generatePdf: (data: any) => Promise<Buffer>,
       filename?: string
     }> = {
+      // Reporte de préstamos nuevos y refinanciados
       'loans-report': {
         fetchData: (dto) => this.reportsService.getReport('loans-report', dto),
         validateData: (data) => ((data.numberOfNewLoans || 0) > 0) || ((data.numberOfRefinancedLoans || 0) > 0),
@@ -174,6 +204,7 @@ export class ReportsController {
         generatePdf: (data) => this.reportsExporterService.generateLoanReportPdf(data),
         filename: 'loans-report'
       },
+      // Reporte de recaudos
       'collections-report': {
         fetchData: (dto) => this.reportsService.getReport('collections-report', dto),
         validateData: (data) => data && data.collections && data.collections.length > 0,
@@ -181,12 +212,9 @@ export class ReportsController {
         generatePdf: (data) => this.reportsExporterService.generateCollectionReportPdf(data),
         filename: 'collections-report'
       },
-
+      // Reporte de intereses moratorios
       'moratory-interests-report': {
         fetchData: (dto) => this.reportsService.getReport('moratory-interests-report', dto),
-        // Acepta:
-        // - respuestas en forma de array (legacy)
-        // - objetos con propiedad `data` que sea array (handler actual)
         validateData: (data) => {
           if (!data) return false;
           if (Array.isArray(data)) return data.length > 0;
@@ -196,6 +224,20 @@ export class ReportsController {
         generateExcel: (data) => this.reportsExporterService.generateMoratoryInterestsReportExcel(data),
         generatePdf: (data) => this.reportsExporterService.generateMoratoryInterestReportPdf(data),
         filename: 'moratory-interests-report'
+      },
+      // Reporte de intereses corrientes recaudados
+      'interests-report': {
+        fetchData: (dto) => this.reportsService.getReport('interests-report', dto),
+        validateData: (data) => {
+          if (!data) return false;
+          if (!Array.isArray(data.data)) return false;
+          if (data.data.length === 0) return false;
+          if (!data.summary || data.summary.totalCollected === 0) return false;
+          return true;
+        },
+        generateExcel: (data) => this.reportsExporterService.generateInterestReportExcel(data),
+        generatePdf: (data) => this.reportsExporterService.generateInterestReportPdf(data),
+        filename: `reporte_intereses_corrientes_${dateReportedAt}`,
       },
     };
 
@@ -239,4 +281,5 @@ export class ReportsController {
       });
     }
   }
+
 }

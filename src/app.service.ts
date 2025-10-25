@@ -1,4 +1,6 @@
 import { Injectable } from '@nestjs/common';
+import * as os from 'os';
+
 @Injectable()
 export class AppService {
   getHelloHtml(): string {
@@ -734,5 +736,43 @@ export class AppService {
         </body>
       </html>
     `;
+  }
+
+  private formatDate(date: Date): string {
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} - ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+  }
+
+  private formatUptime(seconds: number): string {
+    const hrs = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    return `${pad(hrs)}:${pad(mins)}:${pad(secs)}`;
+  }
+
+  getServerHealth() {
+    const uptime = process.uptime();
+    const memoryUsage = process.memoryUsage();
+    const loadAvg = os.loadavg();
+
+    return {
+      status: 'ok',
+      message: 'Servidor en funcionamiento',
+      timestamp: this.formatDate(new Date()),
+      uptime: this.formatUptime(uptime),
+      memory: {
+        rssMB: (memoryUsage.rss / 1024 / 1024).toFixed(2),
+        heapUsedMB: (memoryUsage.heapUsed / 1024 / 1024).toFixed(2),
+        heapTotalMB: (memoryUsage.heapTotal / 1024 / 1024).toFixed(2),
+      },
+      system: {
+        platform: os.platform(),
+        architecture: os.arch(),
+        loadAverage: loadAvg.map((v) => v.toFixed(2)),
+        freeMemoryMB: (os.freemem() / 1024 / 1024).toFixed(2),
+        totalMemoryMB: (os.totalmem() / 1024 / 1024).toFixed(2),
+      },
+    };
   }
 }

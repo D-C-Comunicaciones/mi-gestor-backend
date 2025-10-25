@@ -53,3 +53,9 @@ export * from './type-discounts/find-all-type-discounts-doc.decorator';
 export * from './authentication/login-doc.decorator';
 export * from './authentication/get-profile-doc.decorator';
 export * from './authentication/logout-doc.decorator';
+
+// Amortization decorators
+export * from './amortization/calculate-amortization-doc.decorator';
+
+// App decorators
+export * from './app/check-status-server-doc.decorator';

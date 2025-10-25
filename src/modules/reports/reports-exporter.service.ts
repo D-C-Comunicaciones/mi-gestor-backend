@@ -10,8 +10,9 @@ import { envs } from '@config/envs';
 import { LoanDetail } from './handlers/interfaces/loans';
 import { MoratoryInterestReport } from './handlers/interfaces/moratory-interest';
 import { CollectionReportData } from '@templates/reports/interfaces';
-import { loansReportTemplate, collectionsReportTemplate, moratoryInterestsReportTemplate } from '@templates/index';
+import { loansReportTemplate, collectionsReportTemplate, moratoryInterestsReportTemplate, interestsReportTemplate } from '@templates/index';
 import { LoanReportData } from '@templates/reports/interfaces';
+import { InterestsReport } from './handlers';
 
 Chart.register(...registerables);
 
@@ -39,170 +40,8 @@ export class ReportExporterService {
     constructor() { }
 
     /**
-     * Genera reporte de recaudos en PDF usando plantilla
-     */
-    async generateCollectionReportPdf(reportData: CollectionReportData): Promise<Buffer> {
-        try {
-            // Logos y texto vertical
-            const { headerLogo, watermarkLogo } = this.getLogosBase64();
-            const verticalTextBase64 = await this.getVerticalTextBase64(envs.verticalTextReports, 792);
-
-            // 🎯 Generar gráficas
-            let globalPerformanceChartBase64 = '';
-            let comparisonChartBase64 = '';
-
-            try {
-                const globalChartBuffer = await this.generateGlobalPerformanceChart(reportData);
-                globalPerformanceChartBase64 = `data:image/png;base64,${globalChartBuffer.toString('base64')}`;
-            } catch (error) {
-                this.logger.warn('Error generando gráfica de rendimiento global:', error.message);
-            }
-
-            try {
-                const comparisonChartBuffer = await this.generateCollectorComparisonChart(reportData);
-                comparisonChartBase64 = `data:image/png;base64,${comparisonChartBuffer.toString('base64')}`;
-            } catch (error) {
-                this.logger.warn('Error generando gráfica de comparación:', error.message);
-            }
-
-            // Mapear datos para el template
-            const templateData: CollectionReportData = {
-                ...reportData,
-                reportDate: new Date().toLocaleDateString(envs.appLocale),
-                headerLogo,
-                watermarkLogo,
-                verticalTextBase64,
-                globalPerformanceChartBase64,
-                comparisonChartBase64,
-            };
-
-            const docDefinition = await collectionsReportTemplate(templateData);
-            const pdfDoc = this.printer.createPdfKitDocument(docDefinition);
-
-            return new Promise((resolve, reject) => {
-                const chunks: Buffer[] = [];
-                pdfDoc.on('data', (chunk) => chunks.push(chunk));
-                pdfDoc.on('end', () => resolve(Buffer.concat(chunks)));
-                pdfDoc.on('error', (err) => {
-                    pdfDoc.end();
-                    reject(err);
-                });
-                pdfDoc.end();
-            });
-
-        } catch (error) {
-            this.logger.error('Error generando PDF de reporte de cobros:', error);
-            throw new Error(`Error al generar PDF: ${error.message}`);
-        }
-    }
-
-    /**
-     * Genera reporte de recaudos en Excel
-     */
-    async generateCollectionReportExcel(reportData: CollectionReportData): Promise<Buffer> {
-        const workbook = new ExcelJS.Workbook();
-        const worksheet = workbook.addWorksheet('Reporte de Recaudos');
-
-        const { collections, summary, collectorSummary, startDate, endDate } = reportData;
-
-        // 1. Encabezado
-        worksheet.getCell('A1').value = 'REPORTE DE RECAUDOS POR COBRADOR';
-        worksheet.getCell('A1').font = { bold: true, size: 16 };
-        worksheet.mergeCells('A1:H1');
-        worksheet.getCell('A1').alignment = { horizontal: 'center' };
-        worksheet.getCell('A3').value = `Período: ${startDate || 'N/A'} - ${endDate || 'N/A'}`;
-        worksheet.getCell('A3').font = { bold: true };
-
-        // 2. Resumen general
-        worksheet.getCell('A5').value = 'RESUMEN GENERAL';
-        worksheet.getCell('A5').font = { bold: true, size: 14 };
-        worksheet.getCell('A6').value = 'Total de Recaudos:';
-        worksheet.getCell('B6').value = summary.totalCollections || 0;
-        worksheet.getCell('A7').value = 'Monto Total Recaudado:';
-        worksheet.getCell('B7').value = summary.totalCollected || 0;
-        worksheet.getCell('B7').numFmt = '$#,##0.00';
-
-        // 3. Resumen por cobrador
-        let currentRow = 10;
-        if (collectorSummary.length) {
-            worksheet.getCell(`A${currentRow}`).value = 'RESUMEN POR COBRADOR';
-            worksheet.getCell(`A${currentRow}`).font = { bold: true, size: 14 };
-            currentRow += 2;
-
-            worksheet.addTable({
-                name: 'CollectorSummaryTable',
-                ref: `A${currentRow}`,
-                headerRow: true,
-                style: { theme: 'TableStyleMedium2', showRowStripes: true },
-                columns: [
-                    { name: 'Cobrador', filterButton: true },
-                    { name: 'Zona', filterButton: true },
-                    { name: 'Total Asignado', filterButton: true },
-                    { name: 'Total Recaudado', filterButton: true },
-                    { name: 'Rendimiento %', filterButton: true },
-                    { name: 'Cantidad de Cobros', filterButton: true },
-                    { name: 'Promedio por Cobro' }
-                ],
-                rows: collectorSummary.map(c => [
-                    c.collectorName,
-                    c.collectorRoute,
-                    c.totalAssigned,
-                    c.totalCollected,
-                    c.performancePercentage,
-                    c.totalCollectionsMade,
-                    c.averageCollectionAmount
-                ])
-            });
-
-            currentRow += collectorSummary.length + 3;
-        }
-
-        // 4. Detalle de cobros
-        if (collections.length) {
-            worksheet.getCell(`A${currentRow}`).value = 'DETALLE DE RECAUDOS';
-            worksheet.getCell(`A${currentRow}`).font = { bold: true, size: 14 };
-            currentRow += 2;
-
-            worksheet.addTable({
-                name: 'CollectionsTable',
-                ref: `A${currentRow}`,
-                headerRow: true,
-                style: { theme: 'TableStyleMedium2', showRowStripes: true },
-                columns: [
-                    { name: 'Fecha', filterButton: true },
-                    { name: 'Cobrador', filterButton: true },
-                    { name: 'Cliente', filterButton: true },
-                    { name: 'ID Crédito', filterButton: true },
-                    { name: 'Zona', filterButton: true },
-                    { name: 'Monto Recaudado' }
-                ],
-                rows: collections.map(c => [
-                    c.paymentDate?.split(' ')[0] || '',
-                    c.collectorName,
-                    c.customerName,
-                    c.loanId,
-                    c.collectorRoute,
-                    c.amount
-                ])
-            });
-        }
-
-        // Ajustar ancho de columnas automáticamente
-        worksheet.columns.forEach(col => {
-            let maxLength = 10;
-            if (typeof col.eachCell === 'function') {
-                col.eachCell({ includeEmpty: true }, (cell) => {
-                    const text = cell.value ? String(cell.value) : '';
-                    maxLength = Math.max(maxLength, text.length + 2);
-                });
-            }
-            col.width = maxLength;
-        });
-
-        const buffer = await workbook.xlsx.writeBuffer();
-        return Buffer.from(buffer);
-    }
-
+ * Genera reporte de créditos en Excel
+ */
     async generateLoanReportExcel(reportData: LoanReportData): Promise<Buffer> {
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet('Reporte de Créditos');
@@ -369,6 +208,9 @@ export class ReportExporterService {
         return Buffer.from(buffer);
     }
 
+    /**
+     * Genera reporte de préstamos en PDF
+     */
     async generateLoanReportPdf(reportData: LoanReportData): Promise<Buffer> {
         this.logger.log('Generando reporte de préstamos en PDF');
 
@@ -457,6 +299,174 @@ export class ReportExporterService {
         }
     }
 
+    /**
+     * Genera reporte de recaudos en PDF usando plantilla
+     */
+    async generateCollectionReportPdf(reportData: CollectionReportData): Promise<Buffer> {
+        try {
+            // Logos y texto vertical
+            const { headerLogo, watermarkLogo } = this.getLogosBase64();
+            const verticalTextBase64 = await this.getVerticalTextBase64(envs.verticalTextReports, 792);
+
+            // 🎯 Generar gráficas
+            let globalPerformanceChartBase64 = '';
+            let comparisonChartBase64 = '';
+
+            try {
+                const globalChartBuffer = await this.generateGlobalPerformanceChart(reportData);
+                globalPerformanceChartBase64 = `data:image/png;base64,${globalChartBuffer.toString('base64')}`;
+            } catch (error) {
+                this.logger.warn('Error generando gráfica de rendimiento global:', error.message);
+            }
+
+            try {
+                const comparisonChartBuffer = await this.generateCollectorComparisonChart(reportData);
+                comparisonChartBase64 = `data:image/png;base64,${comparisonChartBuffer.toString('base64')}`;
+            } catch (error) {
+                this.logger.warn('Error generando gráfica de comparación:', error.message);
+            }
+
+            // Mapear datos para el template
+            const templateData: CollectionReportData = {
+                ...reportData,
+                reportDate: new Date().toLocaleDateString(envs.appLocale),
+                headerLogo,
+                watermarkLogo,
+                verticalTextBase64,
+                globalPerformanceChartBase64,
+                comparisonChartBase64,
+            };
+
+            const docDefinition = await collectionsReportTemplate(templateData);
+            const pdfDoc = this.printer.createPdfKitDocument(docDefinition);
+
+            return new Promise((resolve, reject) => {
+                const chunks: Buffer[] = [];
+                pdfDoc.on('data', (chunk) => chunks.push(chunk));
+                pdfDoc.on('end', () => resolve(Buffer.concat(chunks)));
+                pdfDoc.on('error', (err) => {
+                    pdfDoc.end();
+                    reject(err);
+                });
+                pdfDoc.end();
+            });
+
+        } catch (error) {
+            this.logger.error('Error generando PDF de reporte de cobros:', error);
+            throw new Error(`Error al generar PDF: ${error.message}`);
+        }
+    }
+
+    /**
+     * Genera reporte de recaudos en Excel
+     */
+    async generateCollectionReportExcel(reportData: CollectionReportData): Promise<Buffer> {
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet('Reporte de Recaudos');
+
+        const { collections, summary, collectorSummary, startDate, endDate } = reportData;
+
+        // 1. Encabezado
+        worksheet.getCell('A1').value = 'REPORTE DE RECAUDOS POR COBRADOR';
+        worksheet.getCell('A1').font = { bold: true, size: 16 };
+        worksheet.mergeCells('A1:H1');
+        worksheet.getCell('A1').alignment = { horizontal: 'center' };
+        worksheet.getCell('A3').value = `Período: ${startDate || 'N/A'} - ${endDate || 'N/A'}`;
+        worksheet.getCell('A3').font = { bold: true };
+
+        // 2. Resumen general
+        worksheet.getCell('A5').value = 'RESUMEN GENERAL';
+        worksheet.getCell('A5').font = { bold: true, size: 14 };
+        worksheet.getCell('A6').value = 'Total de Recaudos:';
+        worksheet.getCell('B6').value = summary.totalCollections || 0;
+        worksheet.getCell('A7').value = 'Monto Total Recaudado:';
+        worksheet.getCell('B7').value = summary.totalCollected || 0;
+        worksheet.getCell('B7').numFmt = '$#,##0.00';
+
+        // 3. Resumen por cobrador
+        let currentRow = 10;
+        if (collectorSummary.length) {
+            worksheet.getCell(`A${currentRow}`).value = 'RESUMEN POR COBRADOR';
+            worksheet.getCell(`A${currentRow}`).font = { bold: true, size: 14 };
+            currentRow += 2;
+
+            worksheet.addTable({
+                name: 'CollectorSummaryTable',
+                ref: `A${currentRow}`,
+                headerRow: true,
+                style: { theme: 'TableStyleMedium2', showRowStripes: true },
+                columns: [
+                    { name: 'Cobrador', filterButton: true },
+                    { name: 'Zona', filterButton: true },
+                    { name: 'Total Asignado', filterButton: true },
+                    { name: 'Total Recaudado', filterButton: true },
+                    { name: 'Rendimiento %', filterButton: true },
+                    { name: 'Cantidad de Cobros', filterButton: true },
+                    { name: 'Promedio por Cobro' }
+                ],
+                rows: collectorSummary.map(c => [
+                    c.collectorName,
+                    c.collectorRoute,
+                    c.totalAssigned,
+                    c.totalCollected,
+                    c.performancePercentage,
+                    c.totalCollectionsMade,
+                    c.averageCollectionAmount
+                ])
+            });
+
+            currentRow += collectorSummary.length + 3;
+        }
+
+        // 4. Detalle de cobros
+        if (collections.length) {
+            worksheet.getCell(`A${currentRow}`).value = 'DETALLE DE RECAUDOS';
+            worksheet.getCell(`A${currentRow}`).font = { bold: true, size: 14 };
+            currentRow += 2;
+
+            worksheet.addTable({
+                name: 'CollectionsTable',
+                ref: `A${currentRow}`,
+                headerRow: true,
+                style: { theme: 'TableStyleMedium2', showRowStripes: true },
+                columns: [
+                    { name: 'Fecha', filterButton: true },
+                    { name: 'Cobrador', filterButton: true },
+                    { name: 'Cliente', filterButton: true },
+                    { name: 'ID Crédito', filterButton: true },
+                    { name: 'Zona', filterButton: true },
+                    { name: 'Monto Recaudado' }
+                ],
+                rows: collections.map(c => [
+                    c.paymentDate?.split(' ')[0] || '',
+                    c.collectorName,
+                    c.customerName,
+                    c.loanId,
+                    c.collectorRoute,
+                    c.amount
+                ])
+            });
+        }
+
+        // Ajustar ancho de columnas automáticamente
+        worksheet.columns.forEach(col => {
+            let maxLength = 10;
+            if (typeof col.eachCell === 'function') {
+                col.eachCell({ includeEmpty: true }, (cell) => {
+                    const text = cell.value ? String(cell.value) : '';
+                    maxLength = Math.max(maxLength, text.length + 2);
+                });
+            }
+            col.width = maxLength;
+        });
+
+        const buffer = await workbook.xlsx.writeBuffer();
+        return Buffer.from(buffer);
+    }
+
+    /**
+     * Genera reporte de intereses moratorios en PDF
+     */
     async generateMoratoryInterestReportPdf(reportData: MoratoryInterestReport): Promise<Buffer> {
         try {
             const { headerLogo, watermarkLogo } = this.getLogosBase64();
@@ -500,8 +510,8 @@ export class ReportExporterService {
     }
 
     /**
- * Genera reporte de intereses moratorios en Excel
- */
+     * Genera reporte de intereses moratorios en Excel
+     */
     async generateMoratoryInterestsReportExcel(reportData: any): Promise<Buffer> {
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet('Intereses Moratorios');
@@ -615,6 +625,195 @@ export class ReportExporterService {
         return Buffer.from(buffer);
     }
 
+    /**
+     * Genera reporte de intereses corrientes recaudados en Excel
+     */
+    async generateInterestReportExcel(reportData: InterestsReport): Promise<Buffer> {
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet('Intereses Corrientes');
+
+        const { data, summary, startDate, endDate } = reportData;
+
+        // 1. ENCABEZADO PRINCIPAL
+        worksheet.getCell('A1').value = 'REPORTE DE INTERESES CORRIENTES RECAUDADOS';
+        worksheet.getCell('A1').font = { bold: true, size: 16 };
+        worksheet.mergeCells('A1:H1');
+        worksheet.getCell('A1').alignment = { horizontal: 'center' };
+
+        worksheet.getCell('A3').value = `Período: ${startDate} - ${endDate}`;
+        worksheet.getCell('A3').font = { bold: true };
+
+        // 2. RESUMEN GENERAL
+        worksheet.getCell('A5').value = 'RESUMEN GENERAL';
+        worksheet.getCell('A5').font = { bold: true, size: 14 };
+
+        worksheet.getCell('A6').value = 'Total Interés Recaudado:';
+        worksheet.getCell('B6').value = summary.totalInterestCollected;
+        worksheet.getCell('B6').numFmt = '$#,##0.00';
+
+        worksheet.getCell('A7').value = 'Total Capital Recaudado:';
+        worksheet.getCell('B7').value = summary.totalCapitalCollected;
+        worksheet.getCell('B7').numFmt = '$#,##0.00';
+
+        worksheet.getCell('A8').value = 'Total Mora Recaudada:';
+        worksheet.getCell('B8').value = summary.totalLateFeeCollected;
+        worksheet.getCell('B8').numFmt = '$#,##0.00';
+
+        worksheet.getCell('A9').value = 'Total Pagos Registrados:';
+        worksheet.getCell('B9').value = summary.totalPayments;
+
+        let currentRow = 11;
+
+        // 3. DETALLE AGRUPADO POR CLIENTE
+        for (const customer of data) {
+            if (!customer.records.length) continue;
+
+            currentRow += 2;
+            worksheet.getCell(`A${currentRow}`).value = `CLIENTE: ${customer.customerName} (${customer.customerDocument})`;
+            worksheet.getCell(`A${currentRow}`).font = { bold: true, size: 14 };
+
+            currentRow += 2;
+
+            // Tabla de registros individuales
+            worksheet.addTable({
+                name: `Customer${customer.customerId}Table`,
+                ref: `A${currentRow}`,
+                headerRow: true,
+                style: { theme: 'TableStyleMedium2', showRowStripes: true },
+                columns: [
+                    { name: 'ID Pago', filterButton: true },
+                    { name: 'ID Cuota', filterButton: true },
+                    { name: 'ID Crédito', filterButton: true },
+                    { name: 'Cobrador', filterButton: true },
+                    { name: 'Fecha Pago', filterButton: true },
+                    { name: 'Interés', filterButton: true },
+                    { name: 'Capital', filterButton: true },
+                    { name: 'Mora', filterButton: true },
+                    { name: 'Total' }
+                ],
+                rows: customer.records.map(r => [
+                    r.paymentId,
+                    r.installmentId,
+                    r.loanId,
+                    r.collectorName,
+                    r.paymentDate,
+                    r.interestCollected,
+                    r.capitalCollected,
+                    r.lateFeeCollected,
+                    r.totalCollected
+                ])
+            });
+
+            currentRow += customer.records.length + 3;
+
+            // Subtotales
+            worksheet.getCell(`A${currentRow}`).value = 'Subtotal Interés:';
+            worksheet.getCell(`B${currentRow}`).value = customer.totalInterestCollected;
+            worksheet.getCell(`B${currentRow}`).numFmt = '$#,##0.00';
+
+            worksheet.getCell(`A${currentRow + 1}`).value = 'Subtotal Capital:';
+            worksheet.getCell(`B${currentRow + 1}`).value = customer.totalCapitalCollected;
+            worksheet.getCell(`B${currentRow + 1}`).numFmt = '$#,##0.00';
+
+            worksheet.getCell(`A${currentRow + 2}`).value = 'Subtotal Mora:';
+            worksheet.getCell(`B${currentRow + 2}`).value = customer.totalLateFeeCollected;
+            worksheet.getCell(`B${currentRow + 2}`).numFmt = '$#,##0.00';
+
+            worksheet.getCell(`A${currentRow + 3}`).value = 'Subtotal Total:';
+            worksheet.getCell(`B${currentRow + 3}`).value = customer.totalCollected;
+            worksheet.getCell(`B${currentRow + 3}`).numFmt = '$#,##0.00';
+
+            currentRow += 5;
+        }
+
+        // 4. AJUSTE DE ANCHO AUTOMÁTICO
+        worksheet.columns.forEach(col => {
+            let maxLength = 10;
+            if (typeof col.eachCell === 'function') {
+                col.eachCell({ includeEmpty: true }, (cell) => {
+                    const text = cell.value ? String(cell.value) : '';
+                    maxLength = Math.max(maxLength, text.length + 2);
+                });
+            }
+            col.width = maxLength;
+        });
+
+        const buffer = await workbook.xlsx.writeBuffer();
+        return Buffer.from(buffer);
+    }
+
+    /**
+     * Genera reporte de intereses corrientes recaudados en PDF
+    */
+    async generateInterestReportPdf(reportData: InterestsReport): Promise<Buffer> {
+        this.logger.log('Generando reporte de intereses corrientes recaudados en PDF');
+
+        try {
+            // 🔹 Obtener logos base64
+            let headerLogo = '';
+            let watermarkLogo = '';
+            try {
+                const logos = this.getLogosBase64();
+                headerLogo = logos.headerLogo || '';
+                watermarkLogo = logos.watermarkLogo || '';
+            } catch (err) {
+                this.logger.warn('No se pudieron cargar los logos:', err.message);
+            }
+            // 🔹 Generar texto vertical
+            const verticalTextBase64 = await this.getVerticalTextBase64(envs.verticalTextReports, 792);
+
+            // 🔹 Generar gráfica resumen (opcional)
+            let summaryChartBase64 = '';
+            try {
+                if (reportData.summary) {
+                    this.logger.log('Generando gráfica de resumen de intereses...');
+                    const chartBuffer = await this.generateInterestsSummaryChart(reportData.summary);
+                    summaryChartBase64 = `data:image/png;base64,${chartBuffer.toString('base64')}`;
+                    this.logger.log('✅ Gráfica de resumen generada correctamente');
+                }
+            } catch (err) {
+                this.logger.warn('❌ Error generando gráfica de resumen de intereses:', err.message);
+            }
+
+            // 🔹 Preparar datos para la plantilla
+            const templateData = {
+                ...reportData,
+                reportTitle: 'REPORTE DE INTERESES CORRIENTES RECAUDADOS',
+                reportDate: new Date().toLocaleDateString(envs.appLocale),
+                headerLogo,
+                watermarkLogo,
+                verticalTextBase64,
+                summaryChartBase64,
+            };
+
+            this.logger.log('📄 Generando documento PDF con plantilla de intereses...');
+
+            // 🖨️ Crear definición de documento desde la plantilla
+            const docDefinition = await interestsReportTemplate(templateData);
+
+            // 🧾 Crear documento PDF con pdfmake
+            const pdfDoc = this.printer.createPdfKitDocument(docDefinition);
+
+            // 📦 Convertir a Buffer y devolver
+            return new Promise((resolve, reject) => {
+                const chunks: Buffer[] = [];
+                pdfDoc.on('data', (chunk) => chunks.push(chunk));
+                pdfDoc.on('end', () => {
+                    this.logger.log('✅ PDF de intereses generado exitosamente');
+                    resolve(Buffer.concat(chunks));
+                });
+                pdfDoc.on('error', (err) => {
+                    pdfDoc.end();
+                    this.logger.error('❌ Error al generar PDF de intereses:', err);
+                    reject(err);
+                });
+                pdfDoc.end();
+            });
+        } catch (error) {
+            this.logger.error('Error generando PDF de intereses corrientes:', error);
+            throw new Error(`Error al generar PDF de intereses corrientes: ${error.message}`);
+        }
+    }
 
     // -----------------------------------------------------------
     // MÉTODOS AUXILIARES
@@ -1218,6 +1417,58 @@ export class ReportExporterService {
             return canvas.toBuffer('image/png');
         } catch (error) {
             this.logger.error('Error en generateSimpleSummaryChart:', error);
+            return this.createEmptyChart(createCanvas(400, 300), 'Error al generar resumen');
+        }
+    }
+
+    private async generateInterestsSummaryChart(summary: any): Promise<Buffer> {
+        try {
+            const canvas = createCanvas(400, 300);
+
+            const interest = this.sanitizeNumber(summary.totalInterestCollected);
+            const capital = this.sanitizeNumber(summary.totalCapitalCollected);
+            const lateFee = this.sanitizeNumber(summary.totalLateFeeCollected);
+            const labels = ['Interés', 'Capital', 'Mora'];
+
+            new Chart(canvas as any, {
+                type: 'bar',
+                data: {
+                    labels,
+                    datasets: [{
+                        label: 'Monto Recaudado ($)',
+                        data: [interest, capital, lateFee],
+                        backgroundColor: ['#36a2eb', '#4bc0c0', '#ff6384'],
+                        borderWidth: 1,
+                        borderColor: '#ffffff'
+                    }],
+                },
+                options: {
+                    responsive: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Resumen de Recaudación',
+                            font: { size: 16, weight: 'bold' },
+                            color: '#000000'
+                        },
+                        legend: { display: false }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: { color: '#000000' },
+                            title: { display: true, text: 'Monto ($)', color: '#000000' }
+                        },
+                        x: {
+                            ticks: { color: '#000000' }
+                        }
+                    }
+                }
+            });
+
+            return canvas.toBuffer('image/png');
+        } catch (error) {
+            this.logger.error('Error en generateInterestsSummaryChart:', error);
             return this.createEmptyChart(createCanvas(400, 300), 'Error al generar resumen');
         }
     }

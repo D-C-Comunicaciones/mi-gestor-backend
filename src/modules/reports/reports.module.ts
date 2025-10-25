@@ -5,7 +5,8 @@ import { ReportExporterService } from './reports-exporter.service';
 import { ReportRegistry } from './registry/reports.registry';
 import { ReportsGateway } from './reports.gateway';
 import { RedisModule } from '@infraestructure/redis/redis.module';
-import { LoanReportHandler, CollectionReportHandler, MoratoryInterestReportHandler } from './handlers';
+import { LoanReportHandler, CollectionReportHandler, MoratoryInterestReportHandler, InterestsReportHandler } from './handlers';
+import {  } from './handlers/interests-report.handler';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { LoanReportHandler, CollectionReportHandler, MoratoryInterestReportHandl
     LoanReportHandler,
     CollectionReportHandler,
     MoratoryInterestReportHandler,
+    InterestsReportHandler,
   ],
   exports: [
     ReportsService,

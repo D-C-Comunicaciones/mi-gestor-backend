@@ -10,6 +10,7 @@ import { MetricsHttpInterceptor, PrismaDecimalInterceptor, ResponseInterceptor }
 import * as express from 'express';
 import { join } from 'path';
 import { apiReference } from '@scalar/nestjs-api-reference';
+import favicon from 'serve-favicon';
 import { MetricService } from '@infraestructure/metrics/metrics.service';
 
 async function bootstrap() {

@@ -33,6 +33,7 @@ export class CollectionsService {
   constructor(private readonly prisma: PrismaService) { }
 
   async create(dto: CreateCollectionDto, req) {
+
     const user = req['user'];
     if (!user?.userId) {
       throw new BadRequestException('Usuario no autenticado');
@@ -97,6 +98,14 @@ export class CollectionsService {
         tx.moratoryInterestStatus.findFirst({ where: { name: 'unpaid' } }),
       ]);
 
+      const collector = await this.prisma.collector.findUnique({
+        where: { userId: user.userId },
+      });
+
+      if (!collector) {
+        this.logger.warn(`Usuario ${user.userId} no tiene un cobrador asociado`);
+      }
+
       const payment = await tx.payment.create({
         data: {
           loanId: loan.id,
@@ -105,6 +114,7 @@ export class CollectionsService {
           paymentMethodId: dto.paymentMethodId || 1,
           paymentDate: new Date(),
           recordedByUserId: user.userId,
+          collectorId: collector?.id ?? null,
         },
       });
 
