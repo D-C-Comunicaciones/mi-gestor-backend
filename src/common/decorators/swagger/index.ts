@@ -27,6 +27,7 @@ export * from './loans/find-one-loan-doc.decorator';
 export * from './loans/find-overdue-loans-doc.decorator';
 export * from './loans/refinance-loan-doc.decorator';
 export * from './loans/cancel-loan-doc.decorator';
+export * from './loans/list-loans-by-collector-doc.decorator';
 
 // Customers decorators
 export * from './customers/create-customer-doc.decorator';
@@ -59,3 +60,6 @@ export * from './amortization/calculate-amortization-doc.decorator';
 
 // App decorators
 export * from './app/check-status-server-doc.decorator';
+
+// Dashboard decorators
+export * from './dashboard/dashboard-doc.decorator';

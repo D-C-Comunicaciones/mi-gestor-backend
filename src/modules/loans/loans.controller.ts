@@ -11,8 +11,7 @@ import { plainToInstance } from 'class-transformer';
 import { ResponseLoanDto } from './dto';
 import { ResponseLoanWithInstallmentsDto } from './dto/response-loan-by-customer.dto';
 import { RefinanceLoanDto } from './dto';
-import { SwaggerCancelLoan, SwaggerCreateLoan, SwaggerListLoans, SwaggerLoanById, SwaggerOverdueLoans, SwaggerRefinanceLoan, SwaggerViewLoanByCustomerId } from '@common/decorators/swagger';
-import { SwaggerListLoansByCollector } from '@common/decorators/swagger/loans/list-loans-by-collector-doc.decorator';
+import { SwaggerCancelLoan, SwaggerCreateLoan, SwaggerListLoans, SwaggerLoanById, SwaggerOverdueLoans, SwaggerRefinanceLoan, SwaggerViewLoanByCustomerId, SwaggerListLoansByCollector } from '@common/decorators/swagger';
 
 @ApiTags('Loans')
 @ApiBearerAuth()
