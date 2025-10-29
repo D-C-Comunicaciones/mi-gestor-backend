@@ -1,10 +1,9 @@
 import { ResponseDashboardDto } from '@modules/dashboard/dto';
 import { applyDecorators } from '@nestjs/common';
-import { ApiOperation, ApiOkResponse, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiOkResponse } from '@nestjs/swagger';
 
 export function SwaggerDashboard() {
     return applyDecorators(
-        ApiTags('Dashboard'),
         ApiOperation({
             summary: 'Obtener datos del panel principal',
             description: 'Devuelve métricas consolidadas para el panel administrativo, incluyendo totales, cobros mensuales, estados de clientes, desempeño de cobradores y los pagos más recientes.',

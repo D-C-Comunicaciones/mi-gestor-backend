@@ -1,4 +1,5 @@
 import { ResponseLoanDto, ResponseLoanWithInstallmentsDto } from "../dto";
+import { OverdueLoan } from "./overdue-loan.interface";
 
 // Respuesta single (findOne, create, delete, softDelete)
 export interface LoanResponse {
@@ -42,4 +43,15 @@ export interface LoanRegenerateInstallmentsResponse {
 export interface LoanByCustomerResponse {
     customMessage: string;
     loanByCustomer: ResponseLoanWithInstallmentsDto[];
+}
+
+export interface OverdueLoansResponse {
+  overdueLoans: OverdueLoan[];
+  meta: {
+    total: number;
+    page: number;
+    lastPage: number;
+    limit: number;
+    hasNextPage: boolean;
+  };
 }

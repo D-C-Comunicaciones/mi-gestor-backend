@@ -8,6 +8,28 @@ import { differenceInDays, format } from 'date-fns';
 import { PaginationDto } from '@common/dto';
 import { LoanStrategyFactory } from './strategies/factories';
 import { TranslationService } from '@modules/translations/translations.service';
+import { PaginationMeta } from '@common/types';
+import { OverdueLoan } from './interfaces/overdue-loan.interface';
+
+type LoanWithRelations = Prisma.LoanGetPayload<{
+  include: {
+    loanType: true;
+    loanStatus: true;
+    customer: true;
+    installments: {
+      include: {
+        moratoryInterests: {
+          include: {
+            moratoryInterestStatus: true;
+            discounts: true;
+          };
+        };
+      };
+    };
+  };
+}>;
+
+
 
 @Injectable()
 export class LoansService {
@@ -342,7 +364,7 @@ export class LoansService {
     const page = p.page ?? 1;
     const limit = p.limit ?? 10;
 
-     const user = req['user'];
+    const user = req['user'];
     if (!user?.userId) {
       throw new BadRequestException('Usuario no autenticado');
     }
@@ -537,61 +559,41 @@ export class LoansService {
   async getOverdueLoans(queryDto: PaginationDto) {
     const { page = 1, limit = 10 } = queryDto;
 
-    // Buscar el estado 'Overdue' para préstamos
+    // Buscar estado "Overdue"
     const overdueLoanStatus = await this.prisma.loanStatus.findFirst({
-      where: { name: { equals: 'Overdue', mode: 'insensitive' } }
+      where: { name: { equals: 'Overdue', mode: 'insensitive' } },
     });
 
     if (!overdueLoanStatus) {
       throw new BadRequestException('No se encontró el estado "Overdue" para préstamos');
     }
 
-    const where = {
-      isActive: true,
-      loanStatusId: overdueLoanStatus.id
-    };
+    const loanWhere = { isActive: true, loanStatusId: overdueLoanStatus.id };
 
-    const total = await this.prisma.loan.count({ where });
-
-    if (total === 0) {
-      return {
-        overdueLoans: [],
-        meta: {
-          total: 0,
-          page: 1,
-          lastPage: 0,
-          limit,
-          hasNextPage: false,
-        },
-      };
-    }
-
-    const lastPage = Math.ceil(total / limit);
-    if (page > lastPage) {
+    // Paginación
+    const totalLoans = await this.prisma.loan.count({ where: loanWhere });
+    const lastPage = Math.max(1, Math.ceil(totalLoans / limit));
+    if (page > lastPage && totalLoans > 0) {
       throw new BadRequestException(`La página #${page} no existe`);
     }
 
+    // Cargar préstamos y relaciones necesarias
     const loans = await this.prisma.loan.findMany({
-      where,
+      where: loanWhere,
       include: {
-        customer: {
-          include: {
-            zone: true
-          },
-        },
+        customer: true,
         loanType: true,
         loanStatus: true,
         installments: {
           where: { isActive: true },
           include: {
             moratoryInterests: {
-              where: { isPaid: false },
               include: {
-                moratoryInterestStatus: true
-              }
+                moratoryInterestStatus: true,
+                discounts: true,
+              },
             },
           },
-          orderBy: { sequence: 'asc' }
         },
       },
       orderBy: { id: 'desc' },
@@ -599,70 +601,102 @@ export class LoansService {
       take: limit,
     });
 
+    // Procesar cada préstamo
     const overdueLoans = loans.map((loan) => {
-      let totalMoratoryAmount = 0;
+      const grouped = new Map<
+        number,
+        {
+          totalAmount: number;
+          totalPaid: number;
+          totalDiscount: number;
+          daysLate: number;
+          statuses: string[];
+        }
+      >();
+      for (const installment of loan.installments || []) {
+        for (const mora of installment.moratoryInterests || []) {
+          const statusName = (mora.moratoryInterestStatus?.name ?? '').toLowerCase();
+
+          // Ignorar moras completamente pagadas o descontadas
+          if (statusName === 'paid' || statusName === 'discounted') continue;
+
+          const instId = installment.id;
+          const entry = grouped.get(instId) ?? {
+            totalAmount: 0,
+            totalPaid: 0,
+            totalDiscount: 0,
+            daysLate: 0,
+            statuses: [] as string[],
+          };
+
+          entry.totalAmount += Number(mora.amount ?? 0);
+          entry.totalPaid += Number(mora.paidAmount ?? 0);
+          entry.daysLate += Number(mora.daysLate ?? 0);
+          entry.statuses.push(statusName);
+
+          // Sumar descuentos de ese interés moratorio
+          for (const d of mora.discounts || []) {
+            entry.totalDiscount += Number(d.amount ?? 0);
+          }
+
+          grouped.set(instId, entry);
+        }
+      }
+
+      // Consolidar totales
+      let totalMoratoryPending = 0;
       let totalDaysLate = 0;
 
-      // Consolidado por cuota
-      const installmentsWithMoratory = loan.installments.map((installment) => {
-        let installmentMoratoryAmount = 0;
-        let installmentDaysLate = 0;
+      for (const [, data] of grouped.entries()) {
+        const statuses = data.statuses;
+        const hasPartialDiscount = statuses.some((s) => s.includes('partially discounted'));
+        const hasPartialPayment = statuses.some((s) => s.includes('partially paid'));
 
-        installment.moratoryInterests.forEach((mora) => {
-          if (!mora.isPaid && mora.moratoryInterestStatus.name.toLowerCase() === 'unpaid') {
-            installmentMoratoryAmount += Number(mora.amount);
-            installmentDaysLate += mora.daysLate || 0;
-          }
-        });
+        let pending = data.totalAmount;
 
-        // Sumar al total del préstamo
-        totalMoratoryAmount += installmentMoratoryAmount;
-        totalDaysLate += installmentDaysLate;
+        if (hasPartialDiscount && hasPartialPayment) {
+          pending -= data.totalDiscount + data.totalPaid;
+        } else if (hasPartialDiscount) {
+          pending -= data.totalDiscount;
+        } else if (hasPartialPayment) {
+          pending -= data.totalPaid;
+        }
 
-        return {
-          installmentId: installment.id,
-          sequence: installment.sequence,
-          dueDate: installment.dueDate.toISOString().split('T')[0],
-          capitalAmount: Number(installment.capitalAmount).toFixed(2),
-          interestAmount: Number(installment.interestAmount).toFixed(2),
-          totalAmount: Number(installment.totalAmount).toFixed(2),
-          paidAmount: Number(installment.paidAmount).toFixed(2),
-          isPaid: installment.isPaid,
-          moratoryAmount: installmentMoratoryAmount.toFixed(2),
-          daysLate: installmentDaysLate
-        };
-      });
+        if (pending < 0) pending = 0;
+
+        totalMoratoryPending += pending;
+        totalDaysLate += data.daysLate;
+      }
+
+      const totalAmountOwed = Number(loan.remainingBalance ?? 0) + totalMoratoryPending;
+
+      const formattedStartDate = loan.startDate
+        ? new Date(loan.startDate).toISOString().replace('T', ' ').substring(0, 19)
+        : null;
 
       return {
         loanId: loan.id,
-        loanAmount: Number(loan.loanAmount).toFixed(2),
-        remainingBalance: Number(loan.remainingBalance).toFixed(2),
-        loanTypeName: this.translationService.translateLoanType(loan.loanType.name),
-        loanStatusName: this.translationService.translateLoanStatus(loan.loanStatus.name),
-        startDate: loan.startDate.toISOString().split('T')[0],
-
+        loanAmount: String(loan.loanAmount ?? '0.00'),
+        remainingBalance: String(loan.remainingBalance ?? '0.00'),
+        loanTypeName: this.translationService.translateLoanType(loan.loanType?.name ?? ''),
+        loanStatusName: this.translationService.translateLoanStatus(loan.loanStatus?.name ?? ''),
+        startDate: formattedStartDate,
         customer: {
-          id: loan.customer.id,
-          name: `${loan.customer.firstName} ${loan.customer.lastName}`,
-          documentNumber: loan.customer.documentNumber.toString(),
-          phone: loan.customer.phone || '',
-          address: loan.customer.address || '',
-          zoneName: loan.customer.zone?.name || '',
-          zoneCode: loan.customer.zone?.code || ''
+          firstName: loan.customer?.firstName ?? '',
+          lastName: loan.customer?.lastName ?? '',
+          documentNumber: loan.customer?.documentNumber ?? '',
+          phone: loan.customer?.phone ?? '',
         },
-
-        installments: installmentsWithMoratory,
-
-        totalMoratoryAmount: totalMoratoryAmount.toFixed(2),
+        totalMoratoryAmount: totalMoratoryPending.toFixed(2),
         totalDaysLate,
-        totalAmountOwed: totalMoratoryAmount.toFixed(2) // Total intereses moratorios
+        totalAmountOwed: totalAmountOwed.toFixed(2),
       };
     });
 
     return {
       overdueLoans,
       meta: {
-        total,
+        total: totalLoans,
         page,
         lastPage,
         limit,
@@ -670,6 +704,7 @@ export class LoansService {
       },
     };
   }
+
 
   async getLoansByCustomer(documentNumber: number) {
     // 1️⃣ Verificar que el cliente existe

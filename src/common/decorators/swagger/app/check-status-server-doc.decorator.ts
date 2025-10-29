@@ -1,9 +1,8 @@
 import { applyDecorators } from '@nestjs/common';
-import {ApiOperation,ApiOkResponse,ApiBadRequestResponse,ApiUnauthorizedResponse,ApiForbiddenResponse,ApiInternalServerErrorResponse,ApiTags } from '@nestjs/swagger';
+import {ApiOperation,ApiOkResponse,ApiBadRequestResponse,ApiUnauthorizedResponse,ApiForbiddenResponse,ApiInternalServerErrorResponse } from '@nestjs/swagger';
 
 export function SwaggerGetServerStatus() {
   return applyDecorators(
-    ApiTags('Servidor'),
     ApiOperation({
       summary: 'Verificar el estado del servidor',
       description:

@@ -1,5 +1,10 @@
 /* Swagger barrel Decorators  */
 
+//App decorators
+export * from './app/check-status-server-doc.decorator';
+export * from './app/landing-page-doc.decorator';
+export * from './app/simulate-error-doc.decorator';
+
 // Changes decorators
 export * from './changes/find-all-changes-doc.decorator';
 
@@ -57,9 +62,6 @@ export * from './authentication/logout-doc.decorator';
 
 // Amortization decorators
 export * from './amortization/calculate-amortization-doc.decorator';
-
-// App decorators
-export * from './app/check-status-server-doc.decorator';
 
 // Dashboard decorators
 export * from './dashboard/dashboard-doc.decorator';

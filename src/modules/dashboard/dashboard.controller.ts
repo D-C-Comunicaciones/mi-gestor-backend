@@ -6,7 +6,9 @@ import { SwaggerDashboard } from '@common/decorators/swagger';
 import { DashboardResponse } from './interfaces';
 import { plainToInstance } from 'class-transformer';
 import { ResponseDashboardDto } from './dto';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('Dashboard')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('dashboard')
 export class DashboardController {
