@@ -417,7 +417,6 @@ export class CustomersService {
     };
   }
 
-
   async update(id: number, data: UpdateCustomerDto) {
     const existing = await this.prisma.customer.findUnique({
       where: { id },

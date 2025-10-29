@@ -34,6 +34,7 @@ import { MetricModule } from './infraestructure/metrics/metrics.module';
 import { MetricsAuthMiddleware } from '@common/middlewares';
 import { MetricsHttpInterceptor } from '@common/interceptors';
 import { APP_INTERCEPTOR } from '@nestjs/core';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -68,7 +69,8 @@ import { APP_INTERCEPTOR } from '@nestjs/core';
     CollectionRoutesModule,
     NotesModule,
     TypeDiscountsModule,
-    MetricModule
+    MetricModule,
+    DashboardModule
   ],
   controllers: [AppController],
   providers: [

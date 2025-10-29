@@ -133,6 +133,8 @@ async function main() {
         { name: 'all.permissions', description: 'Super Usuario del Sistema' },
         { name: 'create.collections', description: 'Registrar (Recaudos)' },
         { name: 'view.customers', description: 'Ver clientes' },
+        { name: 'view.loans', description: 'Ver préstamos' },
+        { name: 'view.dashboard', description: 'Ver panel de control' },
       ],
     })
     await markSeedAsExecuted('Permission')
@@ -141,6 +143,10 @@ async function main() {
   const allPermissions = await prisma.permission.findUnique({ where: { name: 'all.permissions' } })
   const createCollections = await prisma.permission.findUnique({ where: { name: 'create.collections' } })
   const viewCustomers = await prisma.permission.findUnique({ where: { name: 'view.customers' } })
+  const viewLoans = await prisma.permission.findUnique({ where: { name: 'view.loans' } })
+  const viewDashboard = await prisma.permission.findUnique({ where: { name: 'view.dashboard' } })
+
+  // -------- RolePermission --------
 
   if (adminRole && allPermissions) {
     await prisma.rolePermission.upsert({
@@ -155,6 +161,8 @@ async function main() {
       data: [
         { roleId: collectorRole.id, permissionId: createCollections.id },
         { roleId: collectorRole.id, permissionId: viewCustomers.id },
+        { roleId: collectorRole.id, permissionId: viewLoans.id },
+        { roleId: collectorRole.id, permissionId: viewDashboard.id },
       ],
       skipDuplicates: true,
     })
@@ -221,7 +229,6 @@ async function main() {
       { name: 'Paid', description: 'Saldo en Cuota pagada' },
       { name: 'Overdue Paid', description: 'Pago de intereses moratorios' },
       { name: 'Created', description: 'Cuota generada' },
-      { name: 'Unpaid', description: 'Cuota no pagada' },
     ]
     await prisma.installmentStatus.createMany({ data })
     await markSeedAsExecuted('InstallmentStatus')

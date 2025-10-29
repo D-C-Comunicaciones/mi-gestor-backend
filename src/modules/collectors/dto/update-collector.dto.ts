@@ -31,9 +31,6 @@ export class UpdateCollectorDto extends PartialType(CreateCollectorDto) {
   @ApiPropertyOptional({ example: 'nuevo@migestor.com', description: 'Nuevo email (único)' })
   @IsOptional() @IsEmail() email?: string;
 
-  @ApiPropertyOptional({ example: 3, description: 'Nueva zona' })
-  @IsOptional() @IsInt() zoneId?: number;
-
   @ApiPropertyOptional({ example: false, description: 'Cambiar estado activo' })
   @IsOptional() isActive?: boolean;
 }

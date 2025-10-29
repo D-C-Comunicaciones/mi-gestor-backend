@@ -8,7 +8,6 @@ export class UpdateCustomerDto extends PartialType(CreateCustomerDto) {
     @ApiPropertyOptional({ example: '1993-10-10' }) @IsOptional() @IsDateString() birthDate?: string;
     @ApiPropertyOptional({ example: 2 }) @IsOptional() @IsInt() @IsPositive() typeDocumentIdentificationId?: number;
     @ApiPropertyOptional({ example: 2 }) @IsOptional() @IsInt() @IsPositive() genderId?: number;
-    @ApiPropertyOptional({ example: 3 }) @IsOptional() @IsInt() @IsPositive() zoneId?: number;
     @ApiPropertyOptional({ example: 'nuevo@migestor.com' }) @IsOptional() @IsEmail() email?: string;
     @ApiPropertyOptional({ example: false }) @IsOptional() @IsBoolean() isActive?: boolean;
 }

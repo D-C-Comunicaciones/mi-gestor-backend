@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import { LoansService } from './loans.service';
 import { CreateLoanDto, ResponseOverdueLoanDto, LoanPaginationDto } from './dto';
 import { PaginationDto } from '@common/dto';
@@ -12,6 +12,7 @@ import { ResponseLoanDto } from './dto';
 import { ResponseLoanWithInstallmentsDto } from './dto/response-loan-by-customer.dto';
 import { RefinanceLoanDto } from './dto';
 import { SwaggerCancelLoan, SwaggerCreateLoan, SwaggerListLoans, SwaggerLoanById, SwaggerOverdueLoans, SwaggerRefinanceLoan, SwaggerViewLoanByCustomerId } from '@common/decorators/swagger';
+import { SwaggerListLoansByCollector } from '@common/decorators/swagger/loans/list-loans-by-collector-doc.decorator';
 
 @ApiTags('Loans')
 @ApiBearerAuth()
@@ -48,6 +49,38 @@ export class LoansController {
 
     return {
       customMessage: 'Préstamos obtenidos correctamente',
+      loans: responseLoans,
+      meta,
+    };
+  }
+
+  @Get('by-collector-route')
+  @Permissions('view.loans')
+  @SwaggerListLoansByCollector()
+  async findAllByCollectorRoute(
+    @Query() paginationDto: LoanPaginationDto,
+    @Req() req,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<LoanListResponse> {
+
+    const { loans, meta } = await this.loansService.findAllByCollectorRoute(paginationDto, req);
+    const arr = Array.isArray(loans) ? loans : [loans];
+
+    if (arr.length === 0) {
+      res.status(200);
+      return {
+        customMessage: 'No existen préstamos asignados a las rutas del cobrador',
+        loans: [],
+        meta,
+      };
+    }
+
+    const responseLoans = plainToInstance(ResponseLoanDto, arr, {
+      excludeExtraneousValues: true,
+    });
+
+    return {
+      customMessage: 'Préstamos obtenidos correctamente (por rutas del cobrador)',
       loans: responseLoans,
       meta,
     };
@@ -127,7 +160,6 @@ export class LoansController {
       newLoan,
     };
   }
-
 
   @Get('customer/:id')
   @Permissions('view.loans')
